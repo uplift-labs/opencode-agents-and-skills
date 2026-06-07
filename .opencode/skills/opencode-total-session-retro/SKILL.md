@@ -1,6 +1,6 @@
 ---
 name: opencode-total-session-retro
-description: Analyze all reachable OpenCode sessions across projects and installs to find evidence-backed improvements for global skills, agents, prompts, rules, and validators.
+description: Analyze all reachable OpenCode sessions across projects and installs to synthesize trends and, when authorized, design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
 license: MIT
 ---
 
@@ -8,7 +8,7 @@ license: MIT
 
 Use ONLY when the user asks to analyze all OpenCode sessions ever run, all reachable OpenCode history, cross-project session archives, or the whole personal/team OpenCode corpus to improve global skills, agents, prompts, `AGENTS.md`, validators, hooks, or reusable workflow artifacts.
 
-Default mode is read-only analysis with inline, redacted output. Edit global or repository instruction artifacts, write generated ledgers, fetch remote/shared URLs, or use authenticated remote sources only when the user explicitly grants that scope. Commits, pushes, destructive cleanup, data repair, session deletion, or remote-state changes require explicit permission.
+Default mode is read-only analysis with inline, redacted output. Edit global or repository instruction artifacts, write generated ledgers, fetch remote/shared URLs, or use authenticated remote sources only when the user explicitly grants that scope. When the user grants write scope for applied improvements, continue from trend analysis into solution design, implementation, and validation for the approved artifact changes. Commits, pushes, destructive cleanup, data repair, session deletion, or remote-state changes require explicit permission.
 
 For behavior-changing improvements to scripts, validators, skills, agents, config, examples, or other executable artifacts, add or update the smallest focused test, fixture, validation gate, or acceptance check before editing. If test-first work is infeasible, state why and name the closest reproducible substitute evidence.
 
@@ -21,6 +21,7 @@ For behavior-changing improvements to scripts, validators, skills, agents, confi
 - Do not assume a stable session store path or schema. Verify current OpenCode storage, event, SDK, and loader behavior against local docs, source, schemas, or live output before relying on implementation-sensitive details.
 - Never expose secrets, tokens, credentials, private personal data, raw transcript snippets, or unrelated sensitive snippets found in sessions. Redact raw content, sensitive paths, session titles, project names, workspace names, and stable ids when they are not needed for evidence.
 - Improvements must target reusable global artifacts unless evidence proves the lesson is project-local.
+- A complete applied run has five phases: source coverage, per-session insight cards with batches only as an execution/reporting aid, corpus trend synthesis, solution design, and approved artifact implementation with validation.
 
 ## Relationship To Nearby Skills
 
@@ -72,7 +73,7 @@ Use `npm run retro:inventory -- --format json --out <path>` only when the user a
 
 The inventory tool is a coverage and batching aid, not a substitute for retro findings. Treat its counts, source refs, duplicate detection, Desktop state classification, and suggested batches as the initial ledger; still inspect source sessions read-only and verify implementation-sensitive recommendations against current artifacts, docs, schemas, tests, or live output.
 
-The analysis tool is a structured aggregation aid, not a judgment engine. It reads OpenCode SQLite stores in read-only mode and emits schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names, tool statuses, input key names, TODO status/priority counts, event types, and session summary counters. It must not scan transcript content for fuzzy patterns, emit raw prompts, emit command values, or infer intent from arbitrary text.
+The analysis tool is a structured aggregation aid, not a judgment engine. It reads OpenCode SQLite stores in read-only mode and emits schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names, tool statuses, input key names, TODO status/priority counts, event types, and session summary counters. Markdown output highlights action-oriented rollups for tool error hotspots, TODO status/priority counts, daily session buckets, and `session_message` types. It must not scan transcript content for fuzzy patterns, emit raw prompts, emit command values, or infer intent from arbitrary text.
 
 Use `npm run retro:analyze -- --format json --out <path>` only when the user approved writing a generated analysis report. Existing output files are refused unless `--overwrite` is supplied explicitly. Use `--show-paths` only when home-redacted source paths are acceptable for the report audience; otherwise paths are omitted.
 
@@ -92,12 +93,15 @@ When repository write scope for retro analytics helpers is explicitly granted, p
 4. Dedupe sessions across stores, exports, summaries, shared copies, and restored backups using stable ids first, then title/date/project/message fingerprints.
 5. Sort sessions chronologically and group them into batches by date, project, or artifact type. Keep child/background sessions linked to their parent when evidence exists.
 6. For very large archives, use read-only `orchestrator` fan-out only after stable batch boundaries and output contracts are clear. The main session owns privacy filtering, cross-batch synthesis, and final recommendations.
-7. Summarize every substantive session or sampled batch before global synthesis. If full per-session coverage is infeasible in the current turn, mark the run as partial and preserve the unprocessed ledger in the final output or a user-approved file.
-8. For each session card or batch card, capture:
+7. Create a per-session insight card for every readable reachable session before global synthesis. Use batches only as an execution and reporting aid; sampling requires explicit user approval. If full per-session coverage is infeasible in the current turn, mark the run as partial and preserve counts, processed/unprocessed session refs, and the unprocessed ledger in the final output or a user-approved file.
+8. For each session insight card, capture:
 
 - Session id/title/date/project/workspace and parent id when available.
 - User goal and constraints.
 - Assistant strategy and tool use.
+- What worked well and should be preserved or strengthened.
+- What went poorly, caused friction, or created risk.
+- What should be improved, automated, clarified, split, or validated differently next time.
 - Tool failures, wrong assumptions, skipped validation, or repeated retries.
 - User corrections, dissatisfaction, clarifications, or praise.
 - Edits applied and evidence that edits actually happened.
@@ -106,10 +110,14 @@ When repository write scope for retro analytics helpers is explicitly granted, p
 - Outcome: success, partial, failed, blocked, or unclear.
 - Candidate global lesson and confidence: high, medium, or low.
 
-9. Promote a pattern only when it appears across multiple independent sessions, across multiple projects, or in one severe/high-confidence session with clear global impact.
-10. Separate global reusable improvements from project-specific lessons. Do not generalize local tool names, paths, services, issue trackers, or private workflows into global artifacts.
-11. Prefer executable automation over prose when the improvement can be checked mechanically.
-12. Reconcile every proposed skill/agent/rule/validator change against current repository artifacts, installed artifacts when in scope, and OpenCode docs/schema/source/live behavior before recommending or applying it.
+9. Group candidate lessons from all processed session insight cards into positive trends, negative trends, and neutral or low-confidence observations. Keep representative evidence and confidence with each group.
+10. Promote a pattern only when it appears across multiple independent sessions, across multiple projects, or in one severe/high-confidence session with clear global impact.
+11. Deeply analyze every promoted trend before proposing changes. Identify likely root cause, affected artifact(s), why the current instruction/tooling succeeded or failed, whether the right response is prose, automation, validation, routing, reviewer gates, or artifact split/merge, and what regression risk the change creates.
+12. Design solutions for negative trends and reinforcement for positive trends. Prefer minimal, project-neutral artifact changes or deterministic automation with explicit validation over broad new reminders.
+13. Separate global reusable improvements from project-specific lessons. Do not generalize local tool names, paths, services, issue trackers, or private workflows into global artifacts.
+14. Prefer executable automation over prose when the improvement can be checked mechanically.
+15. Reconcile every proposed skill/agent/rule/validator change against current repository artifacts, installed artifacts when in scope, and OpenCode docs/schema/source/live behavior before recommending or applying it.
+16. If write scope for applied improvements was explicitly granted, implement approved high-confidence changes after the solution design phase, using the smallest test-first or validation-first edit that proves the behavior. Defer low-confidence, ambiguous, destructive, remote, or out-of-scope changes to the backlog instead of applying them.
 
 ## Pattern Categories
 
@@ -138,10 +146,11 @@ Return:
 - `Scope And Coverage`: sources checked, sessions/messages/reflections/logs counted, date range, included/excluded installs/projects/workspaces.
 - `Coverage Ledger`: concise redacted inline table by default, or link/path to a generated ledger only when the user approved writing it, including unreadable and deduped sources.
 - `Coverage Limits`: missing, inaccessible, truncated, remote-only, retention-limited, or unverifiable sources and confidence impact.
-- `Corpus Rollup`: chronological or batch-level summary of the whole corpus.
+- `Corpus Rollup`: chronological or batch-level summary of the whole corpus, including per-session insight cards for every processed readable session with what worked well, what went poorly, and what to improve or preserve.
 - `Findings`: severity, pattern, representative evidence, impact, recommendation, confidence.
+- `Trend Analysis And Solution Design`: promoted positive and negative trends, root-cause analysis, proposed fixes or reinforcements, affected artifacts, validation path, and regression risk.
 - `Global Skill Improvement Backlog`: prioritized artifact changes with trigger, action, validation, risk, and owner scope.
-- `Applied Changes`: changed files or `none`.
+- `Applied Changes`: changed files, or `none` with whether the run was read-only, not authorized for writes, or had no approved high-confidence changes.
 - `Validation`: checks run or skipped with reason.
 - `Privacy Notes`: redactions and sensitive-source handling.
 - `Residual Risks`: low-confidence observations, source drift, and unverified OpenCode storage assumptions.

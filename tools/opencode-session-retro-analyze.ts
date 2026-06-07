@@ -68,6 +68,7 @@ type StructuredEnvelope = {
 };
 
 type ToolEnvelope = {
+  errorToolStatusCounts: ToolStatusBucket[];
   errorStatusSessions: number;
   errorStatusToolParts: number;
   inputKeyCounts: CountBucket[];
@@ -541,6 +542,7 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
   const toolCounts = new Map<string, number>();
   const statusCounts = new Map<string, number>();
   const toolStatusCounts = new Map<string, number>();
+  const errorToolStatusCounts = new Map<string, number>();
   const inputKeyCounts = new Map<string, number>();
   const errorStatusSessions = new Set<string>();
   let parsedRows = 0;
@@ -550,7 +552,7 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
   if (!tables.has("part")) {
     return {
       partEnvelope: { keyCounts: [], parsedRows, typeCounts: [], unreadableRows },
-      toolEnvelope: { errorStatusSessions: 0, errorStatusToolParts, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts, toolStatusCounts: [] },
+      toolEnvelope: { errorToolStatusCounts: [], errorStatusSessions: 0, errorStatusToolParts, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts, toolStatusCounts: [] },
     };
   }
   for (const row of db.prepare("select session_id, data from part").iterate() as Iterable<{ data: unknown; session_id: unknown }>) {
@@ -578,6 +580,7 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
     if (status === "error") {
       errorStatusToolParts++;
       errorStatusSessions.add(String(row.session_id));
+      increment(errorToolStatusCounts, `${tool}\u0000${status}`);
     }
     const input = typeof state.input === "object" && state.input != null && !Array.isArray(state.input) ? state.input as Record<string, unknown> : null;
     if (input) {
@@ -594,6 +597,7 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
       unreadableRows,
     },
     toolEnvelope: {
+      errorToolStatusCounts: sortedToolStatusBuckets(errorToolStatusCounts, maxBuckets),
       errorStatusSessions: errorStatusSessions.size,
       errorStatusToolParts,
       inputKeyCounts: sortedCountBuckets(inputKeyCounts, maxBuckets),
@@ -736,7 +740,7 @@ function newEmptySource(dbPath: string, showPaths: boolean): SqliteAnalysis {
     sourceRef: hashRef("source", dbPath),
     status: "unreadable",
     todoCounts: [],
-    toolEnvelope: { errorStatusSessions: 0, errorStatusToolParts: 0, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts: 0, toolStatusCounts: [] },
+    toolEnvelope: { errorToolStatusCounts: [], errorStatusSessions: 0, errorStatusToolParts: 0, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts: 0, toolStatusCounts: [] },
     type: "sqlite-opencode-analysis",
     warnings: [],
   };
@@ -908,12 +912,43 @@ function renderMarkdown(report: AnalysisReport): string {
       ["Permission rows", String(source.permissionRows)],
       ["Message parsed/unreadable", `${source.messageEnvelope.parsedRows} / ${source.messageEnvelope.unreadableRows}`],
       ["Part parsed/unreadable", `${source.partEnvelope.parsedRows} / ${source.partEnvelope.unreadableRows}`],
+      ["Tool error sessions/parts", `${source.toolEnvelope.errorStatusSessions} / ${source.toolEnvelope.errorStatusToolParts}`],
       ["Tool status counts", renderStatusBuckets(source.toolEnvelope.statusCounts)],
       ["Tool counts", renderToolBuckets(source.toolEnvelope.toolCounts)],
       ["Message role counts", renderCountBuckets(source.messageEnvelope.roleCounts ?? [])],
       ["Part type counts", renderCountBuckets(source.partEnvelope.typeCounts ?? [])],
       ["Event types", renderCountBuckets(source.eventTypeCounts)],
     ]));
+    lines.push("");
+    lines.push("### Tool Error Hotspots");
+    lines.push("");
+    const toolErrorRows = source.toolEnvelope.errorToolStatusCounts.map((row) => [
+      row.tool,
+      row.status,
+      String(row.count),
+    ]);
+    lines.push(...markdownTable(["Tool", "Status", "Count"], toolErrorRows.length > 0 ? toolErrorRows : [["none", "none", "0"]]));
+    lines.push("");
+    lines.push("### Todo Rollup");
+    lines.push("");
+    const todoRows = source.todoCounts.map((row) => [row.status, row.priority, String(row.count)]);
+    lines.push(...markdownTable(["Status", "Priority", "Count"], todoRows.length > 0 ? todoRows : [["none", "none", "0"]]));
+    lines.push("");
+    lines.push("### Day Buckets");
+    lines.push("");
+    const dayRows = source.dayBuckets.map((row) => [
+      row.day,
+      String(row.sessions),
+      String(row.childSessions),
+      String(row.archivedSessions),
+      String(row.projectRefs),
+    ]);
+    lines.push(...markdownTable(["Day", "Sessions", "Child", "Archived", "Projects"], dayRows.length > 0 ? dayRows : [["none", "0", "0", "0", "0"]]));
+    lines.push("");
+    lines.push("### Session Message Types");
+    lines.push("");
+    const sessionMessageRows = source.sessionMessageTypes.map((row) => [row.key, String(row.count)]);
+    lines.push(...markdownTable(["Type", "Count"], sessionMessageRows.length > 0 ? sessionMessageRows : [["none", "0"]]));
     lines.push("");
   }
   lines.push("## Coverage Limits");

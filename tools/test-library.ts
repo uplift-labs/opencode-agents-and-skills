@@ -848,6 +848,53 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validator warns on broad permission wildcard allow",
+    run: () => {
+      const riskyFixture = newLibraryFixture("permission-wildcard-risk");
+      writeText(path.join(riskyFixture, "opencode.jsonc"), lines([
+        "{",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"permission\": {",
+        "    \"*\": \"allow\",",
+        "    \"bash\": {",
+        "      \"git reset --hard*\": \"ask\",",
+        "      \"*\": \"allow\"",
+        "    },",
+        "    \"read\": {",
+        "      \"*\": \"allow\"",
+        "    }",
+        "  }",
+        "}",
+      ]));
+      const riskyResult = invokeValidator(riskyFixture);
+      assertSuccess(riskyResult, "Broad permission wildcard allow should be warning-only.");
+      assertOutputContains(riskyResult, "WARN:", "Broad permission wildcard allow should emit a warning.");
+      assertOutputContains(riskyResult, "permission.*", "Permission warning should identify top-level wildcard allow.");
+      assertOutputContains(riskyResult, "permission.bash", "Permission warning should identify the affected permission key.");
+      assertOutputContains(riskyResult, "wildcard allow", "Permission warning should explain the wildcard allow risk.");
+      assertOutputExcludes(riskyResult, "permission.read", "Read wildcard allow should not warn as mutation-capable permission.");
+
+      const safeFixture = newLibraryFixture("permission-wildcard-safe");
+      writeText(path.join(safeFixture, "opencode.jsonc"), lines([
+        "{",
+        "  // JSONC comments are allowed by this validator subset.",
+        "  \"$schema\": \"https://opencode.ai/config.json\",",
+        "  \"permission\": {",
+        "    \"*\": \"ask\",",
+        "    \"bash\": {",
+        "      \"*\": \"ask\",",
+        "      \"git status*\": \"allow\",",
+        "    },",
+        "  },",
+        "}",
+      ]));
+      const safeResult = invokeValidator(safeFixture);
+      assertSuccess(safeResult, "Safe broad ask plus narrow allow should pass validation.");
+      assertOutputContains(safeResult, "warnings=0", "Safe permission config should emit no validator warnings.");
+      assertOutputExcludes(safeResult, "OpenCode permission config", "Safe permission config should not emit permission warnings.");
+    },
+  },
+  {
     name: "installer dry-run writes nothing",
     run: () => {
       const configDir = path.join(newTempDir("installer-dry-run"), "config");
@@ -1178,6 +1225,82 @@ const tests: TestCase[] = [
       assertOutputExcludes(result, "share_secret_id", "Retro analyze must not expose raw share ids.");
       assertOutputExcludes(result, "raw secret", "Retro analyze must not expose raw message, part, todo, or command data.");
       assertOutputExcludes(result, "dangerous secret token command", "Retro analyze must not expose raw command values.");
+    },
+  },
+  {
+    name: "retro analyze markdown reports action-oriented redacted sections",
+    run: () => {
+      const dbPath = newOpenCodeSessionDbFixture("retro-analyze-markdown");
+      const db = new DatabaseSync(dbPath);
+      try {
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_tool_error",
+          "msg_1",
+          "ses_secret_root",
+          1700000002000,
+          1700000003000,
+          JSON.stringify({
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "error",
+              input: {
+                command: "raw secret command value",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_tool_completed_1",
+          "msg_1",
+          "ses_secret_root",
+          1700000004000,
+          1700000005000,
+          JSON.stringify({
+            type: "tool",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: {
+                filePath: "raw secret file path",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_tool_completed_2",
+          "msg_1",
+          "ses_secret_root",
+          1700000006000,
+          1700000007000,
+          JSON.stringify({
+            type: "tool",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: {
+                filePath: "raw secret file path",
+              },
+            },
+          }),
+        );
+      } finally {
+        db.close();
+      }
+      const result = invokeRetroAnalyze(["--db", dbPath, "--only-explicit", "--format", "markdown", "--max-buckets", "1"]);
+      assertSuccess(result, "Retro analyze markdown should read a minimal OpenCode SQLite fixture.");
+      assertOutputContains(result, "### Tool Error Hotspots", "Markdown output should make tool errors visible without JSON inspection.");
+      assertOutputContains(result, "| bash | error | 1 |", "Markdown output should include redacted tool error buckets.");
+      assertOutputContains(result, "### Todo Rollup", "Markdown output should include TODO status and priority counts.");
+      assertOutputContains(result, "| completed | high | 1 |", "Markdown output should include redacted TODO rollup rows.");
+      assertOutputContains(result, "### Day Buckets", "Markdown output should include chronological session buckets.");
+      assertOutputContains(result, "| 2023-11-14 | 2 | 1 | 1 | 1 |", "Markdown output should include redacted daily session counts.");
+      assertOutputContains(result, "### Session Message Types", "Markdown output should include session_message type counts.");
+      assertOutputContains(result, "| user | 1 |", "Markdown output should include session_message type buckets.");
+      assertOutputExcludes(result, "Secret root title", "Retro analyze markdown must not expose raw session titles.");
+      assertOutputExcludes(result, "SensitiveProjectName", "Retro analyze markdown must not expose raw project names or paths by default.");
+      assertOutputExcludes(result, "ses_secret_root", "Retro analyze markdown must not expose stable session ids by default.");
+      assertOutputExcludes(result, "raw secret", "Retro analyze markdown must not expose raw message, part, todo, or command data.");
     },
   },
   {

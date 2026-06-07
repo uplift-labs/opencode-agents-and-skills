@@ -15,6 +15,7 @@ type Options = {
 const errors: string[] = [];
 const warnings: string[] = [];
 const forbiddenCodeExtensions = new Set([".cjs", ".js", ".mjs", ".ps1", ".psd1", ".psm1", ".py", ".pyw"]);
+const mutationCapablePermissionKeys = new Set(["bash", "edit", "task", "external_directory"]);
 const legacyToolingReferences = [
   "pwsh -NoProfile -File",
   "validate-library.ps1",
@@ -486,6 +487,153 @@ function validatePackageScripts(root: string): void {
   }
 }
 
+function stripJsonComments(text: string): string {
+  let output = "";
+  let inString = false;
+  let quote = "";
+  let escaping = false;
+  for (let index = 0; index < text.length; index++) {
+    const current = text[index];
+    const next = text[index + 1];
+    if (inString) {
+      output += current;
+      if (escaping) {
+        escaping = false;
+      } else if (current === "\\") {
+        escaping = true;
+      } else if (current === quote) {
+        inString = false;
+      }
+      continue;
+    }
+    if (current === '"' || current === "'") {
+      inString = true;
+      quote = current;
+      output += current;
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      while (index < text.length && text[index] !== "\n") {
+        index++;
+      }
+      output += "\n";
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      index += 2;
+      while (index < text.length && !(text[index] === "*" && text[index + 1] === "/")) {
+        output += text[index] === "\n" ? "\n" : " ";
+        index++;
+      }
+      index++;
+      continue;
+    }
+    output += current;
+  }
+  return output;
+}
+
+function stripJsonTrailingCommas(text: string): string {
+  let output = "";
+  let inString = false;
+  let quote = "";
+  let escaping = false;
+  for (let index = 0; index < text.length; index++) {
+    const current = text[index];
+    if (inString) {
+      output += current;
+      if (escaping) {
+        escaping = false;
+      } else if (current === "\\") {
+        escaping = true;
+      } else if (current === quote) {
+        inString = false;
+      }
+      continue;
+    }
+    if (current === '"' || current === "'") {
+      inString = true;
+      quote = current;
+      output += current;
+      continue;
+    }
+    if (current === ",") {
+      let lookahead = index + 1;
+      while (lookahead < text.length && /\s/.test(text[lookahead])) {
+        lookahead++;
+      }
+      if (text[lookahead] === "}" || text[lookahead] === "]") {
+        continue;
+      }
+    }
+    output += current;
+  }
+  return output;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value != null && !Array.isArray(value);
+}
+
+function validateOpenCodePermissionRules(config: unknown, file: string): void {
+  if (!isPlainRecord(config)) {
+    return;
+  }
+  const permission = config.permission;
+  if (permission === "allow") {
+    addWarning(`OpenCode permission config uses top-level allow; this allows all tools by default: ${file}`);
+    return;
+  }
+  if (!isPlainRecord(permission)) {
+    return;
+  }
+  if (permission["*"] === "allow") {
+    addWarning(`OpenCode permission config permission.* uses wildcard allow; all otherwise-unmatched tools are allowed: ${file}`);
+  }
+  for (const [permissionKey, value] of Object.entries(permission)) {
+    if (!mutationCapablePermissionKeys.has(permissionKey)) {
+      continue;
+    }
+    if (value === "allow") {
+      addWarning(`OpenCode permission config permission.${permissionKey} uses tool-wide allow; unmatched operations are allowed: ${file}`);
+      continue;
+    }
+    if (!isPlainRecord(value)) {
+      continue;
+    }
+    const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string");
+    const wildcardAllowIndex = entries.findIndex(([pattern, action]) => pattern === "*" && action === "allow");
+    if (wildcardAllowIndex < 0) {
+      continue;
+    }
+    const protectiveIndex = entries.findIndex(([pattern, action]) => pattern !== "*" && (action === "ask" || action === "deny"));
+    if (protectiveIndex < 0) {
+      addWarning(`OpenCode permission config permission.${permissionKey} uses wildcard allow; unmatched operations are allowed: ${file}`);
+    } else if (wildcardAllowIndex > protectiveIndex) {
+      addWarning(`OpenCode permission config permission.${permissionKey} places wildcard allow after narrower ask/deny rules; last matching permission rule can override protections: ${file}`);
+    } else {
+      addWarning(`OpenCode permission config permission.${permissionKey} uses wildcard allow with narrower ask/deny rules; unmatched operations are allowed: ${file}`);
+    }
+  }
+}
+
+function validateOpenCodeConfigFiles(root: string): void {
+  for (const file of walkRepositoryFiles(root)) {
+    if (path.basename(file) !== "opencode.json" && path.basename(file) !== "opencode.jsonc") {
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(stripJsonTrailingCommas(stripJsonComments(readText(file))));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addError(`Invalid OpenCode config JSON: ${file}: ${message}`);
+      continue;
+    }
+    validateOpenCodePermissionRules(parsed, file);
+  }
+}
+
 function validateMarkdownFile(root: string, file: string, forbiddenAnchors: string[]): void {
   const raw = fs.readFileSync(file, "utf8");
   const lines = raw.split(/\r?\n/);
@@ -562,6 +710,7 @@ function main(): void {
   const instructionNames = getInstructionNames(root);
   validateTypeScriptOnlySourceFiles(root);
   validatePackageScripts(root);
+  validateOpenCodeConfigFiles(root);
   validateReadme(root, skillNames, agentNames, instructionNames);
   validateAgentsMd(root);
 
