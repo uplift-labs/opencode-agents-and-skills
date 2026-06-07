@@ -41,6 +41,8 @@ Parallelize only when workers can make progress without waiting on each other.
 
 Orchestrator wraps other skills only when their work naturally splits into independent bounded tracks. It does not replace domain contracts; keep the loaded skill's invariants in the master plan and delegate only slices that benefit from coordinated fan-out.
 
+If the task still needs business/requirements intake, lane selection, OpenSpec creation, architecture decisions, or user approval before workstream execution, route through `adaptive-delivery` or the relevant planning/spec skill before entering orchestrator posture.
+
 Include relevant domain-skill rules in each worker prompt. Workers must not launch nested orchestration.
 
 ## Master Algorithm

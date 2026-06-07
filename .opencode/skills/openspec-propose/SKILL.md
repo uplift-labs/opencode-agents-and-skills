@@ -8,6 +8,8 @@ license: MIT
 
 Use this skill when the user wants to create a new OpenSpec change or turn an explored idea into implementation-ready artifacts.
 
+For broad or unclear user work where it is not yet known whether OpenSpec is required, use `adaptive-delivery` first to choose the lane. For unstable requirements, use `openspec-explore` before drafting proposal/spec/tasks.
+
 ## Workflow
 
 - Choose a concise change id using the repository's naming convention.

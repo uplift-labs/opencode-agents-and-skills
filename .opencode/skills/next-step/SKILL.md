@@ -10,6 +10,8 @@ Use this skill when the user asks what to do next, how to continue a change, or 
 
 This skill is an entrypoint, not an implementation skill. It inventories OpenSpec-backed work, shows the user only high-level workstream choices, asks for approval before multi-stream fan-out, and then hands approved broad work to `orchestrator`.
 
+For a new broad task that is not yet tied to existing OpenSpec work, use `adaptive-delivery` first; this skill should not infer an implementation backlog from source alone.
+
 ## Routing
 
 - If the repository has OpenSpec artifacts or the user mentions OpenSpec/spec-first/spec changes, inspect all active OpenSpec work before recommending a next step.

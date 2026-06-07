@@ -83,6 +83,7 @@ pwsh -NoProfile -File tools/validate-library.ps1 -ForbiddenAnchor "OldProductNam
 
 ### Planning And Workflow
 
+- `adaptive-delivery`: adaptive entrypoint for broad, unclear, high-risk, or process-sensitive work; chooses the smallest useful lane across direct execution, planning, OpenSpec, architecture, orchestration, and reviewer gates.
 - `deep-task-planning`: execution-grade plans for complex work.
 - `next-step`: discover OpenSpec-backed workstreams, request approval for orchestrator fan-out, or choose one concrete serial next step.
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
