@@ -98,6 +98,13 @@ Helper code must have explicit inputs and outputs, a schema or fixture-backed co
 - Incomplete evidence before readiness/merge/archive claims.
 - Successful practices to preserve.
 
+## Improvement Backlog Routing
+
+- If the retro produces several concrete project-local or session-scoped improvement tasks, group them into OpenSpec follow-up changes so the backlog is durable and discoverable by `next-step`.
+- Keep single obvious fixes, low-confidence observations, and speculative polish in the retro output instead of creating OpenSpec noise.
+- In read-only mode, recommend candidate change groups and change ids; create or update OpenSpec files only when write scope and the repository's OpenSpec workflow are available.
+- For global reusable OpenCode artifact improvements, route broad or cross-project backlogs through `opencode-total-session-retro` unless the user intentionally scoped the retro to this repository's OpenCode artifacts.
+
 ## Output
 
 Return:
@@ -112,4 +119,5 @@ Return:
 - `Applied Changes`: changed files or `none`.
 - `Validation`: checks run or skipped with reason.
 - `Privacy Notes`: redactions or sensitive-source handling.
-- `Actionable Continuation Items`: concrete next tasks or `none`.
+- `OpenSpec Follow-Up Backlog`: change groups created or recommended, or `none`.
+- `Actionable Continuation Items`: concrete next tasks, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.

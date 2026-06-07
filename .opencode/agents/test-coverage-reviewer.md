@@ -61,6 +61,6 @@ Return:
 - `Weak Assertion Findings`: tests that execute without proving the contract.
 - `Missing Tests`: smallest useful missing tests/evidence.
 - `Required Evidence`: minimal evidence needed before acceptance.
-- `Actionable Continuation Items`: concrete follow-up tasks for the main session or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks for the main session, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

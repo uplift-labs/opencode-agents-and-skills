@@ -44,6 +44,12 @@ Before deep work, define:
 - If fixes are allowed, add/update a focused regression or characterization test before behavior fixes when practical, then make the smallest fix, validate, and re-review.
 - Do not stop while scoped ledger items are unreviewed, fixable, validatable, or need re-review unless blocked by an external dependency.
 
+## Follow-Up Backlog Gate
+
+- If the audit produces several concrete fixes, validations, or investigation tasks that are related to this session but outside the current audit/fix scope, group them into OpenSpec follow-up changes instead of leaving a long untracked final list.
+- In read-only mode, recommend candidate change groups and change ids as `Actionable Continuation Items`; create or update OpenSpec files only when write scope and the repository's OpenSpec workflow are available.
+- Do not create OpenSpec changes for nits, speculative polish, duplicated phrasing in the final answer, or a single obvious next step.
+
 ## Deterministic Helper Automation Gate
 
 Good audit helpers gather explicit evidence: file/block inventories, line counts, duplicate exact-match maps, import/export lists, test-to-requirement matrices, changed-block ledgers, schema checks, generated status reports, or validation-command wrappers.
@@ -62,4 +68,5 @@ Return:
 - `Failure Mode Matrix`: scenario -> expected behavior -> evidence or blocker.
 - `Validation`: commands and reviewer gates run.
 - `Residual Risks`: unresolved or low-confidence areas.
-- `Actionable Continuation Items`: concrete next audit/fix/validation tasks or `none`.
+- `OpenSpec Follow-Up Backlog`: change groups created or recommended, or `none`.
+- `Actionable Continuation Items`: concrete next audit/fix/validation tasks, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.

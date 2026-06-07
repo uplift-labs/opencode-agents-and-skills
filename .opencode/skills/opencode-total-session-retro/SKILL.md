@@ -138,6 +138,9 @@ When repository write scope for retro analytics helpers is explicitly granted, p
 - Keep global changes project-neutral. Use placeholders for local repositories, services, issue trackers, hardware, commands, and paths.
 - Do not add new prose rules when a validator, hook, fixture, script, schema check, or generated status report would make the issue machine-checkable.
 - Preserve successful global behaviors. Do not remove a rule solely because one session found it inconvenient.
+- When promoted trends yield several concrete follow-up tasks, group them into OpenSpec changes so the backlog is durable, reviewable, and discoverable by `next-step`; prefer one change per artifact family, workflow gap, validator/tooling need, or reusable behavior outcome.
+- Do not create OpenSpec changes for low-confidence observations, one-off project-local lessons, single obvious fixes, or speculative polish; keep those in the retro backlog with confidence and evidence.
+- In read-only mode, recommend candidate change groups and change ids; create or update OpenSpec files only when write scope and the target repository's OpenSpec workflow are available.
 
 ## Output
 
@@ -154,4 +157,5 @@ Return:
 - `Validation`: checks run or skipped with reason.
 - `Privacy Notes`: redactions and sensitive-source handling.
 - `Residual Risks`: low-confidence observations, source drift, and unverified OpenCode storage assumptions.
-- `Actionable Continuation Items`: concrete next tasks or `none`.
+- `OpenSpec Follow-Up Backlog`: change groups created or recommended, or `none`.
+- `Actionable Continuation Items`: concrete next tasks, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.

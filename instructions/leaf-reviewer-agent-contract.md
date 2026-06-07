@@ -67,4 +67,4 @@ Return:
 - `Findings`: ordered by severity. Each finding includes `Severity`, `Evidence`, `Evidence Type`, `Impact`, `Recommendation`, `Confidence`, and `Needs external reviewer`.
 - `Matrices`: domain-specific coverage/risk matrices requested by the prompt.
 - `Residual Risks`: known gaps and low-confidence areas.
-- `Actionable Continuation Items`: concrete tasks for the main session or `none`.
+- `Actionable Continuation Items`: concrete tasks for the main session, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.

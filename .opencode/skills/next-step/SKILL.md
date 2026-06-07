@@ -10,7 +10,7 @@ Use this skill when the user asks what to do next, how to continue a change, or 
 
 This skill is an entrypoint, not an implementation skill. It inventories OpenSpec-backed work, shows the user only high-level workstream choices, asks for approval before multi-stream fan-out, and then hands approved broad work to `orchestrator`.
 
-For a new broad task that is not yet tied to existing OpenSpec work, use `adaptive-delivery` first; this skill should not infer an implementation backlog from source alone.
+For a new broad task that is not yet tied to existing OpenSpec work, use `adaptive-delivery` first; this skill should not infer an implementation backlog from source alone. If the current session already produced OpenSpec follow-up changes from an audit, retro, reviewer gate, or validation failure, include those changes in the inventory.
 
 ## Routing
 
@@ -19,12 +19,14 @@ For a new broad task that is not yet tied to existing OpenSpec work, use `adapti
 - If two or more independent OpenSpec-backed workstreams are visible, prepare an orchestration proposal and ask for approval before launching workers.
 - Do not start detailed planning, implementation, tests, or review workers before the user approves the proposed workstreams.
 - Do not infer a backlog from source code alone. Source, tests, diffs, and validation output are evidence only when connected to OpenSpec changes, specs, tasks, or acceptance criteria.
+- Treat backlog-style OpenSpec follow-up changes as valid workstreams only when they have session evidence, a coherent outcome, and bounded tasks; loose final-response bullets should be routed through `adaptive-delivery` or `openspec-propose` before orchestration.
 
 ## Workflow
 
 - Inspect the current repository state, OpenSpec change directories, specs, tasks, proposal/design files, archive candidates, recent diffs, and validation evidence if available.
 - Prefer the repository's OpenSpec commands when available, such as `openspec list`, `openspec list --specs`, and `openspec validate --all`; otherwise inspect the OpenSpec files directly.
 - Inventory all available OpenSpec-backed work, including incomplete implementation tasks, missing tests, spec/doc synchronization, consistency reviews, validation failures, proposal/exploration gaps, and archive-ready completed changes.
+- Include lightweight follow-up changes whose primary artifact is `tasks.md`, especially changes created from audits, retros, reviewer gates, or validation failure triage.
 - Group items into independent workstreams, not low-level task lists. Each workstream should have a clear outcome, bounded scope, readiness state, and likely validation evidence.
 - Keep the user-facing discovery summary high-level. Do not include detailed file-by-file plans, worker prompts, implementation steps, or test matrices until orchestration is approved.
 - Prefer steps that reduce uncertainty, unblock implementation, or produce a reviewable slice.

@@ -61,6 +61,6 @@ Return:
 - `Autonomy And Handoff Review`: where user intervention is necessary, unnecessary, or missing.
 - `Safety And Permission Review`: read/write boundaries, remote/destructive guards, host-mutation risks.
 - `Validation Gaps`: missing validators, tests, fixtures, or reviewer gates.
-- `Actionable Continuation Items`: concrete next tasks for the main session or `none`.
+- `Actionable Continuation Items`: concrete next tasks for the main session, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

@@ -107,6 +107,7 @@ If the command is not available in the target repository, use repository-native 
 - If a refactor changes behavior, add/update the focused test-first gate before the refactor when practical.
 - Use `code-quality-reviewer` as the read-only post-change reviewer after non-trivial code edits when feasible.
 - Escalate to `test-coverage-reviewer`, `performance-reliability-reviewer`, `rust-concurrency-reviewer`, or protocol/deployment reviewers when the finding is primarily in those domains.
+- If the review yields several concrete out-of-scope follow-ups from the current session, recommend grouping them into OpenSpec follow-up changes; do not do this for isolated nits, local style preferences, or one obvious next step.
 
 ## Output
 
@@ -119,4 +120,4 @@ Return:
 - `Smell Matrix`: smell -> evidence -> remedy -> force/optional/nit.
 - `Validation`: tests, inventory commands, reviewer gates, or skipped checks with reason.
 - `Residual Risks`: remaining maintainability risks or low-confidence areas.
-- `Actionable Continuation Items`: concrete fixes/gates or `none`.
+- `Actionable Continuation Items`: concrete fixes/gates, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.

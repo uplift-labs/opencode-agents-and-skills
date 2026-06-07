@@ -39,6 +39,7 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - When a real blocker or user-owned decision remains, the main session offers 2-4 self-contained next actions via `question` when available.
 - Put the recommended option first and end its label with `(Recommended)`.
 - In read-only, no-question, reviewer-agent, or subagent contexts, do not ask the user directly; return `Suggested Next Options` or `Actionable Continuation Items` for the main session instead.
+- When an audit, retro, reviewer gate, broad discovery, or validation failure produces several concrete tasks related to the current session but outside its approved scope, prefer grouping them into OpenSpec follow-up changes when the repository already uses OpenSpec or the user approved adding it; otherwise return grouped candidates instead of leaving a loose final-message backlog. Do not create OpenSpec ceremony for isolated nits, speculative polish, or one obvious next step.
 - If the user selects an actionable option, continue immediately in the current context instead of asking them to restate the task.
 - If no real blocker remains, report the completed work, validation, residual risks, and ready-to-land status without an interactive handoff.
 

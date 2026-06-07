@@ -39,6 +39,7 @@ For broad audits that include multiple skills/agents, global config, installed c
 - Do not encode fuzzy scoring, probabilistic classification, model-like summarization, trigger-quality ranking, or unstated inference in helper code; unsupported inputs should produce `unknown`, `unreadable`, `unsupported`, or `blocked`.
 - Replace project-specific paths, tools, issue trackers, and product names with placeholders unless the artifact is intentionally project-local.
 - Remove obsolete instructions instead of adding override paragraphs.
+- If review or tuning exposes several concrete artifact follow-ups outside the approved scope, recommend grouping them into OpenSpec follow-up changes rather than expanding the current edit silently or leaving a loose backlog.
 
 ## Output
 
@@ -51,6 +52,6 @@ For review-only work, return:
 - `Validation`: checks run or explicitly skipped with reason.
 - `Runtime/Installed Evidence`: installed drift, active config, loader docs/source/live checks, or explicit gaps when in scope.
 - `Residual Risks`: missing evals, unverified loader behavior, or model-version sensitivity.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.
 
 For implementation work, also return changed files and mention that running OpenCode sessions may need restart or a new session before changed skills/agents are loaded.

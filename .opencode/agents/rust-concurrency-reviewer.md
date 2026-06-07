@@ -56,6 +56,6 @@ Return:
 - `Findings`: severity, evidence, evidence type, impact, recommendation, confidence, needs external reviewer.
 - `Concurrency Matrix`: shared resource/task/channel -> owner -> risk -> evidence.
 - `Missing Tests`: smallest concurrency tests or harnesses needed.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

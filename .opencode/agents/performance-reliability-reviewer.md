@@ -55,6 +55,6 @@ Return:
 - `Performance Evidence Matrix`: claim/path -> evidence -> gap.
 - `Reliability Failure Matrix`: scenario -> expected behavior -> evidence/gap.
 - `Benchmark Suggestions`: minimal useful benchmark/load profiles.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

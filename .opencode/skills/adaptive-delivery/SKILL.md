@@ -64,6 +64,17 @@ Ask the user only for decisions that cannot be safely inferred from repository e
 - Continue immediately when the user selects an actionable option that is within the current scope and safety boundaries.
 - If no real blocker remains, report status, validation, changed files, and residual risks without interactive handoff.
 
+## Session Follow-Up Tracking
+
+Use OpenSpec as a durable follow-up tracker only when the current session produces a real backlog, not for every incidental note.
+
+- Keep one or two obvious in-scope next actions in the final response or active task list; do not create OpenSpec ceremony for every minor issue.
+- When an audit, retro, reviewer gate, failed validation, or broad discovery produces several concrete tasks that are related to this session but outside the current approved scope, group them into one or more OpenSpec changes.
+- Prefer one OpenSpec change per coherent outcome, capability, risk area, or artifact family; use `tasks.md` as the backlog surface and add proposal/spec/design detail only when requirements, behavior, compatibility, or acceptance criteria need it.
+- Create or update OpenSpec files only when the repository already uses OpenSpec or the user approved adding that workflow; otherwise return grouped candidates as continuation items.
+- In read-only/no-write runs, recommend exact follow-up groups or candidate change ids as `Actionable Continuation Items` or `Suggested Next Options` instead of writing files.
+- After creating or identifying follow-up changes, use `next-step` to choose the next OpenSpec-backed workstream instead of continuing from loose final-message bullets.
+
 ## Business And Requirement Analysis
 
 For medium or larger work, capture just enough product context to prevent wrong implementation.
@@ -115,6 +126,7 @@ Use existing OpenSpec skills rather than duplicating their contracts.
 
 - Use `openspec-explore` when requirements are not stable enough for proposal/spec/tasks.
 - Use `openspec-propose` when the task needs proposal, design, spec deltas, tasks, acceptance criteria, or traceability before implementation.
+- Use `openspec-propose` to convert several session-scoped follow-up tasks from audits, retros, reviewer gates, or validation failures into lightweight OpenSpec changes when they pass the follow-up threshold.
 - Use `openspec-consistency-review` before implementation, archive, release, or merge when specs/tasks/docs/tests may have drifted.
 - Use `openspec-apply-change` for accepted OpenSpec changes and keep its TDD, task update, validation, and reviewer gate rules.
 - Use `next-step` when the user asks what to do next in an existing OpenSpec-backed workflow.

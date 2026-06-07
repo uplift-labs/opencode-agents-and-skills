@@ -28,6 +28,7 @@ Do not use it for quick wording edits, single small comments, or normal code rev
 - Check stale claims, broken navigation, duplicated concepts, oversized docs, missing traceability, and status words like implemented, supported, ready, blocked, planned, or tested.
 - Fix only material risks: incorrect claims, missing evidence, broken links, contradictory specs, duplicated normative text, or navigation that hides critical context.
 - Validate changed docs with available link checks, spec validation, grep/readback, tests, or review gates.
+- If the loop discovers several implementation, validation, or spec-sync tasks outside the approved doc scope, recommend grouping them into OpenSpec follow-up changes instead of leaving an untracked doc-review backlog.
 
 ## Deterministic Helper Automation Gate
 
@@ -45,4 +46,4 @@ Return:
 - `Changed Files`: if edits were made.
 - `Validation`: commands/checks run and result.
 - `Residual Risks`: docs-only claims or missing external evidence.
-- `Actionable Continuation Items`: concrete next tasks or `none`.
+- `Actionable Continuation Items`: concrete next tasks, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.

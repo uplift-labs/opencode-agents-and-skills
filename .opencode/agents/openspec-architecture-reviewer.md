@@ -55,6 +55,6 @@ Return:
 - `Findings`: severity, evidence, evidence type, impact, recommendation, confidence, needs external reviewer.
 - `Architecture Risk Matrix`: area -> risk -> evidence -> recommendation.
 - `Traceability Notes`: requirement/task/test gaps.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

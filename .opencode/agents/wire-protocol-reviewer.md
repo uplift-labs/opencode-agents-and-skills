@@ -57,6 +57,6 @@ Return:
 - `Protocol Findings`: byte-level issues or risks.
 - `Missing Golden Tests`: exact vectors/scenarios.
 - `Compatibility Notes`: legacy/capture/schema comparison when relevant.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

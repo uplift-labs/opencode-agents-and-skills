@@ -133,6 +133,7 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
 - Existing OpenSpec continuation or "what next" work -> `next-step`; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
+- Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved, then use `next-step` to choose the next workstream.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
 - Broad independent tracks -> `orchestrator` only after bounded workstreams, success criteria, and validation evidence are clear; user approval is required only for ambiguous scope, remote/destructive actions, dirty-state preservation, or other user-owned decisions.
 - Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `session-archive-retro`; all-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `opencode-total-session-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
@@ -151,6 +152,16 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 - Rust async/concurrency/backpressure/shutdown -> `rust-concurrency-reviewer`.
 - Protocol/API semantics, schema evolution, correlation, reconnect -> `protocol-api-reviewer`; byte-level fixtures, framing, golden vectors -> `wire-protocol-reviewer`.
 - Legacy source evidence and compatibility behavior -> `legacy-evidence-reviewer`; legacy client/tool workflow compatibility -> `legacy-client-compatibility-reviewer`.
+
+## OpenSpec Follow-Up Tracking
+
+Use OpenSpec as a durable follow-up tracker when a session produces a real backlog, not for every incidental note.
+
+- Good triggers: codebase audits, session retros, instruction-artifact audits, reviewer gates, broad discovery, and validation failure triage that produce several concrete tasks outside the current approved scope.
+- Bad triggers: isolated nits, speculative polish, local style preferences, duplicated final-answer bullets, or one obvious next step.
+- Prefer one OpenSpec change per coherent outcome, capability, risk area, or artifact family. For lightweight backlog changes, `tasks.md` can be the primary surface; add proposal/spec/design detail only when requirements, behavior, compatibility, architecture, or acceptance criteria need it.
+- Create or update OpenSpec files only when the repository already has an OpenSpec workflow or the user approved adding one; otherwise return grouped follow-up candidates as continuation items.
+- Reviewer agents remain read-only: they recommend OpenSpec follow-up tracking in `Actionable Continuation Items`; the main session owns any file writes and `next-step` continuation.
 
 ## Skill Catalog
 
@@ -182,7 +193,7 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 ### OpenSpec
 
 - `openspec-explore`: explore requirements/options before a change.
-- `openspec-propose`: draft proposal/design/spec/tasks.
+- `openspec-propose`: draft proposal/design/spec/tasks, including lightweight follow-up backlog changes from audit/retro/reviewer evidence.
 - `openspec-apply-change`: implement accepted OpenSpec changes with TDD-first task execution.
 - `openspec-consistency-review`: review proposal/design/spec/tasks/docs/tests sync.
 - `openspec-archive-change`: archive completed changes after evidence gates.
@@ -244,6 +255,7 @@ Overly narrow future-scope behavior that depended on one product domain was inte
 - Keep artifacts project-neutral unless the artifact name explicitly scopes a reusable domain.
 - Prefer concrete evidence, validation, permissions, and output schemas over vague instructions.
 - For repetitive, evidence-heavy, or token-heavy workflows, consider a small deterministic helper before adding more prose process.
+- When several session-scoped follow-ups appear outside approved scope, prefer grouping them into OpenSpec changes when OpenSpec exists or is approved instead of leaving an untracked final-message backlog; avoid OpenSpec ceremony for isolated nits or one obvious next step.
 - Helper automation in skills or agents must be deterministic and contract-driven: explicit inputs/outputs, fixtures or schemas, stable ordering, privacy-safe output, and no hidden heuristics.
 - Implementation-capable artifacts should require TDD/test-first by default for behavior changes, or require an explicit infeasibility note plus the closest reproducible validation evidence.
 - Keep TDD proportional: require the smallest useful test/gate for the scoped behavior, not unrelated coverage expansion or speculative test suites.

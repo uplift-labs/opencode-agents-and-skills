@@ -45,6 +45,7 @@
 - Treat `(Recommended)` as presentation-only when interpreting the selected option.
 - If the user selects an actionable option, continue immediately in the current context.
 - Read-only reviewer subagents must not call `question` or ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
+- When an audit, retro, reviewer gate, broad discovery, or validation failure produces several concrete tasks that are related to the current session but outside its approved scope, prefer grouping them into OpenSpec follow-up changes when the repository already uses OpenSpec or the user approved adding it; otherwise return grouped candidates instead of leaving a loose final-message backlog. Do not create OpenSpec ceremony for isolated nits, speculative polish, or one obvious next step.
 - If no real blocker remains, report completed work, validation, residual risks, and ready-to-land status without an interactive handoff.
 - If a blocker remains and the question tool is unavailable, include a short `Next Steps` fallback with the same recommended-first ordering.
 

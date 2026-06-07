@@ -57,6 +57,6 @@ Return:
 - `Readiness Matrix`: requirement/decision -> status -> evidence/gap.
 - `Missing Decisions`: exact decisions needed.
 - `Required Evidence`: tests/docs/source/validation needed before implementation.
-- `Actionable Continuation Items`: concrete next tasks or `none`.
+- `Actionable Continuation Items`: concrete next tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

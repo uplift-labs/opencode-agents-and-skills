@@ -93,7 +93,7 @@ Return:
 - `Validation`: commands, reviewer gates, live checks, and skipped gates with reasons.
 - `Non-Repo Changes`: exact external files changed or inspected.
 - `Residual Risks`: restart gaps, unresolved runtime evidence, model-version sensitivity, or semantic guard gaps.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including OpenSpec follow-up candidates when several session-scoped items remain, or `none`.
 
 ## Completion Gate
 

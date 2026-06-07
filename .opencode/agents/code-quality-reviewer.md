@@ -101,6 +101,6 @@ Return:
 - `Navigation Signals`: attention/split-candidate files, responsibility map, and split-or-justify decisions.
 - `Smell Matrix`: smell -> evidence -> force/optional/nit -> remedy.
 - `Validation Gaps`: missing tests, inventories, or reviewer evidence that would change confidence.
-- `Actionable Continuation Items`: concrete main-session fixes/gates or `none`.
+- `Actionable Continuation Items`: concrete main-session fixes/gates, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.

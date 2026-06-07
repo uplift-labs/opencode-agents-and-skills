@@ -53,6 +53,6 @@ Return:
 - `Findings`: severity, evidence, evidence type, impact, recommendation, confidence, needs external reviewer.
 - `Config Matrix`: field/limit/default -> validation evidence -> gap.
 - `Deployment Matrix`: lifecycle step -> evidence -> gap.
-- `Actionable Continuation Items`: concrete follow-up tasks or `none`.
+- `Actionable Continuation Items`: concrete follow-up tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.
 
 Do not modify files.
