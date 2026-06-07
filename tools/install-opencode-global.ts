@@ -9,6 +9,7 @@ type Options = {
   agentsMdSource: string | null;
   configDir: string | null;
   dryRun: boolean;
+  noPrune: boolean;
   noBackup: boolean;
   skipAgentsMd: boolean;
 };
@@ -37,7 +38,8 @@ Options:
   --agents-md-source <path>   Source file to install into global AGENTS.md block.
                               Default: instructions/global-opencode-agent-instructions.md
   --skip-agents-md           Install only skills and agents.
-  --no-backup                Replace changed artifacts without backup copies.
+  --no-prune                 Keep destination skills/agents not present in this repository.
+  --no-backup                Replace changed or pruned artifacts without backup copies.
   --dry-run, --what-if       Preview changes without writing files.
   --help                     Show this help.
 `);
@@ -63,6 +65,7 @@ function parseArgs(args: string[]): Options {
     agentsMdSource: null,
     configDir: null,
     dryRun: false,
+    noPrune: false,
     noBackup: false,
     skipAgentsMd: false,
   };
@@ -84,6 +87,8 @@ function parseArgs(args: string[]): Options {
       options.agentsMdSource = readInlineOptionValue(arg.slice("--agents-md-source=".length), "--agents-md-source");
     } else if (arg === "--skip-agents-md" || arg === "-SkipAgentsMd") {
       options.skipAgentsMd = true;
+    } else if (arg === "--no-prune" || arg === "-NoPrune") {
+      options.noPrune = true;
     } else if (arg === "--no-backup" || arg === "-NoBackup") {
       options.noBackup = true;
     } else if (arg === "--dry-run" || arg === "--what-if" || arg === "-WhatIf") {
@@ -226,13 +231,32 @@ function toPosixRelative(relativePath: string): string {
   return relativePath.split(path.sep).join("/");
 }
 
-function normalizePathForContainment(target: string): string {
-  let resolved = path.resolve(target);
-  try {
-    resolved = fs.realpathSync.native(resolved);
-  } catch (_error) {
-    // The destination may not exist yet. Resolved absolute paths still catch unsafe self-installs.
+function resolvePathThroughExistingAncestor(target: string): string {
+  const absolute = path.resolve(target);
+  let current = absolute;
+  const suffix: string[] = [];
+
+  while (!pathExists(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    suffix.unshift(path.basename(current));
+    current = parent;
   }
+
+  let resolvedAncestor = current;
+  try {
+    resolvedAncestor = fs.realpathSync.native(current);
+  } catch (_error) {
+    resolvedAncestor = current;
+  }
+
+  return path.resolve(resolvedAncestor, ...suffix);
+}
+
+function normalizePathForContainment(target: string): string {
+  const resolved = resolvePathThroughExistingAncestor(target);
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
@@ -244,6 +268,19 @@ function isPathInsideOrEqual(candidate: string, parent: string): boolean {
 function assertNoSourceOverlap(target: string, source: string, label: string): void {
   if (isPathInsideOrEqual(target, source) || isPathInsideOrEqual(source, target)) {
     throw new Error(`${label} must not overlap source artifact directory: ${target} conflicts with ${source}`);
+  }
+}
+
+function isSamePath(left: string, right: string): boolean {
+  return normalizePathForContainment(left) === normalizePathForContainment(right);
+}
+
+function assertAgentsMdSourceSafe(source: string, destinationAgentsMd: string, destinationSkillsDir: string, destinationAgentsDir: string): void {
+  if (isSamePath(source, destinationAgentsMd)) {
+    throw new Error(`AGENTS.md source must not be the destination AGENTS.md: ${source}`);
+  }
+  if (isPathInsideOrEqual(source, destinationSkillsDir) || isPathInsideOrEqual(source, destinationAgentsDir)) {
+    throw new Error(`AGENTS.md source must not be inside destination skills or agents loader directories: ${source}`);
   }
 }
 
@@ -392,6 +429,47 @@ function installDirectory(source: string, destination: string, label: string, co
   console.log(backup ? `installed: ${label} (backup: ${backup})` : `installed: ${label}`);
 }
 
+function prunePath(target: string, label: string, context: InstallContext): void {
+  const backup = createBackup(target, context);
+  if (context.dryRun) {
+    const backupMessage = backup ? ` (would backup: ${backup})` : "";
+    console.log(`would prune: ${label} -> ${target}${backupMessage}`);
+    return;
+  }
+  removePath(target);
+  console.log(backup ? `pruned: ${label} (backup: ${backup})` : `pruned: ${label}`);
+}
+
+function pruneStaleDirectories(destinationRoot: string, desiredNames: Set<string>, labelPrefix: string, context: InstallContext): void {
+  if (!pathExists(destinationRoot)) {
+    return;
+  }
+  if (!isDirectoryFollowingSymlink(destinationRoot)) {
+    throw new Error(`Destination ${labelPrefix} root exists but is not a directory: ${destinationRoot}`);
+  }
+  for (const dir of listDirectories(destinationRoot)) {
+    const name = path.basename(dir);
+    if (!desiredNames.has(name)) {
+      prunePath(dir, `stale ${labelPrefix} ${name}`, context);
+    }
+  }
+}
+
+function pruneStaleFiles(destinationRoot: string, desiredNames: Set<string>, extension: string, labelPrefix: string, context: InstallContext): void {
+  if (!pathExists(destinationRoot)) {
+    return;
+  }
+  if (!isDirectoryFollowingSymlink(destinationRoot)) {
+    throw new Error(`Destination ${labelPrefix} root exists but is not a directory: ${destinationRoot}`);
+  }
+  for (const file of listFiles(destinationRoot, extension)) {
+    const basename = path.basename(file);
+    if (!desiredNames.has(basename)) {
+      prunePath(file, `stale ${labelPrefix} ${path.basename(file, extension)}`, context);
+    }
+  }
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -519,6 +597,7 @@ function run(): void {
   assertNoSourceOverlap(destinationSkillsDir, sourceSkillsDir, "destination skills directory");
   assertNoSourceOverlap(destinationAgentsDir, sourceAgentsDir, "destination agents directory");
   if (sourceAgentsMd) {
+    assertAgentsMdSourceSafe(sourceAgentsMd, destinationAgentsMd, destinationSkillsDir, destinationAgentsDir);
     validateAgentsMdMarkers(readExistingAgentsMd(destinationAgentsMd), destinationAgentsMd);
   }
 
@@ -528,10 +607,20 @@ function run(): void {
   for (const skillDir of skillDirs) {
     installDirectory(skillDir, path.join(destinationSkillsDir, path.basename(skillDir)), `skill ${path.basename(skillDir)}`, context);
   }
+  if (options.noPrune) {
+    console.log("skipped: stale skill pruning");
+  } else {
+    pruneStaleDirectories(destinationSkillsDir, new Set(skillDirs.map((dir) => path.basename(dir))), "skill", context);
+  }
 
   console.log(`Installing agents: ${agentFiles.length}`);
   for (const agentFile of agentFiles) {
     installFile(agentFile, path.join(destinationAgentsDir, path.basename(agentFile)), `agent ${path.basename(agentFile, ".md")}`, context);
+  }
+  if (options.noPrune) {
+    console.log("skipped: stale agent pruning");
+  } else {
+    pruneStaleFiles(destinationAgentsDir, new Set(agentFiles.map((file) => path.basename(file))), ".md", "agent", context);
   }
 
   if (options.skipAgentsMd || sourceAgentsMd == null) {

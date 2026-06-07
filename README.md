@@ -24,7 +24,7 @@ Install all skills, agents, and a reusable global `AGENTS.md` block into OpenCod
 npm run install:global
 ```
 
-By default this installs into `~/.config/opencode`, copies skills to `skills/`, copies agents to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Existing changed files/directories are backed up under `.backups/agents-and-skills/` before replacement, outside OpenCode's loader folders.
+By default this installs into `~/.config/opencode`, syncs skills to `skills/`, syncs agents to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Full sync prunes destination skill directories and agent `.md` files that are not present in this repository. Existing changed or pruned files/directories are backed up under `.backups/agents-and-skills/` before replacement/removal, outside OpenCode's loader folders.
 
 Useful options:
 
@@ -32,7 +32,8 @@ Useful options:
 - `--config-dir <path>`: install into a custom OpenCode config directory.
 - `--agents-md-source <path>`: install a custom source file into the global `AGENTS.md` block.
 - `--skip-agents-md`: install only skills and agents.
-- `--no-backup`: replace changed artifacts without creating backup copies.
+- `--no-prune`: keep destination skills/agents not present in this repository.
+- `--no-backup`: replace changed or pruned artifacts without creating backup copies.
 
 Use `--agents-md-source AGENTS.md` only if you intentionally want this repository's local maintenance rules in the global `AGENTS.md` block.
 

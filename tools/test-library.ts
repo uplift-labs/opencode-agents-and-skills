@@ -214,6 +214,22 @@ function assertOutputExcludes(result: ProcessResult, needle: string, message: st
   }
 }
 
+function anyPathWithBasename(rootPath: string, basename: string): boolean {
+  if (!fs.existsSync(rootPath)) {
+    return false;
+  }
+  for (const entry of fs.readdirSync(rootPath, { withFileTypes: true })) {
+    const entryPath = path.join(rootPath, entry.name);
+    if (entry.name === basename) {
+      return true;
+    }
+    if (entry.isDirectory() && anyPathWithBasename(entryPath, basename)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function newOpenCodeSessionDbFixture(name: string): string {
   const dir = newTempDir(name);
   const dbPath = path.join(dir, "opencode.db");
@@ -815,6 +831,46 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "installer rejects symlinked source config dirs",
+    run: () => {
+      const fixture = newTempDir("installer-symlink-overlap");
+      const repoLink = path.join(fixture, "repo-link");
+      try {
+        fs.symlinkSync(root, repoLink, process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(`SKIP: installer rejects symlinked source config dirs (${message})`);
+        return;
+      }
+      const configDir = path.join(repoLink, ".opencode", "skills", "adaptive-delivery", "install-target");
+      const result = invokeInstaller(["--dry-run", "--config-dir", configDir]);
+      assertFailure(result, "Installer should reject config paths nested inside symlinked source skills.");
+      assertOutputContains(result, "overlap source artifact directory", "Symlink overlap rejection should explain the source overlap.");
+    },
+  },
+  {
+    name: "installer rejects destination AGENTS source",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-agents-source-self"), "config");
+      const agentsPath = path.join(configDir, "AGENTS.md");
+      writeText(agentsPath, lines(["# User Rules", ""]));
+      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--agents-md-source", agentsPath]);
+      assertFailure(result, "Installer should reject using destination AGENTS.md as the source block.");
+      assertOutputContains(result, "must not be the destination AGENTS.md", "Destination AGENTS source failure should explain the self-source risk.");
+    },
+  },
+  {
+    name: "installer rejects loader-dir AGENTS source",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-agents-source-loader"), "config");
+      const sourcePath = path.join(configDir, "agents", "source.md");
+      writeText(sourcePath, lines(["# Source", ""]));
+      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--agents-md-source", sourcePath]);
+      assertFailure(result, "Installer should reject AGENTS source paths inside destination loader directories.");
+      assertOutputContains(result, "must not be inside destination skills or agents", "Loader-dir source failure should explain prune/loader risk.");
+    },
+  },
+  {
     name: "installer rejects duplicate AGENTS markers",
     run: () => {
       const configDir = path.join(newTempDir("installer-markers"), "config");
@@ -830,6 +886,103 @@ const tests: TestCase[] = [
         "",
       ]));
       assertFailure(invokeInstaller(["--dry-run", "--config-dir", configDir]), "Duplicate AGENTS.md markers should fail.");
+    },
+  },
+  {
+    name: "installer prunes stale skills and agents",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-prune"), "config");
+      const staleSkillDir = path.join(configDir, "skills", "stale-skill");
+      const staleAgentFile = path.join(configDir, "agents", "stale-agent.md");
+      writeText(path.join(staleSkillDir, "SKILL.md"), lines([
+        "---",
+        "name: stale-skill",
+        "description: Stale installed skill.",
+        "---",
+        "",
+        "# Stale Skill",
+        "",
+      ]));
+      writeText(staleAgentFile, lines(["---", "description: Stale installed agent.", "mode: subagent", "---", ""]));
+      const result = invokeInstaller(["--config-dir", configDir, "--skip-agents-md"]);
+      assertSuccess(result, "Installer should prune stale skills and agents during full sync.");
+      assertOutputContains(result, "pruned: stale skill stale-skill", "Installer should report stale skill pruning.");
+      assertOutputContains(result, "pruned: stale agent stale-agent", "Installer should report stale agent pruning.");
+      if (fs.existsSync(staleSkillDir)) {
+        throw new Error(`Stale skill directory still exists: ${staleSkillDir}`);
+      }
+      if (fs.existsSync(staleAgentFile)) {
+        throw new Error(`Stale agent file still exists: ${staleAgentFile}`);
+      }
+      const backupRoot = path.join(configDir, ".backups", "agents-and-skills");
+      if (!anyPathWithBasename(backupRoot, "stale-skill")) {
+        throw new Error(`Stale skill was not backed up under: ${backupRoot}`);
+      }
+      if (!anyPathWithBasename(backupRoot, "stale-agent.md")) {
+        throw new Error(`Stale agent was not backed up under: ${backupRoot}`);
+      }
+    },
+  },
+  {
+    name: "installer dry-run does not prune stale artifacts",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-prune-dry-run"), "config");
+      const staleSkillDir = path.join(configDir, "skills", "stale-skill");
+      const staleAgentFile = path.join(configDir, "agents", "stale-agent.md");
+      writeText(path.join(staleSkillDir, "SKILL.md"), lines(["# Stale Skill", ""]));
+      writeText(staleAgentFile, lines(["# Stale Agent", ""]));
+      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--skip-agents-md"]);
+      assertSuccess(result, "Installer dry-run prune should succeed.");
+      assertOutputContains(result, "would prune: stale skill stale-skill", "Dry-run should report stale skill prune without deleting.");
+      assertOutputContains(result, "would prune: stale agent stale-agent", "Dry-run should report stale agent prune without deleting.");
+      if (!fs.existsSync(staleSkillDir)) {
+        throw new Error(`Dry-run removed stale skill directory: ${staleSkillDir}`);
+      }
+      if (!fs.existsSync(staleAgentFile)) {
+        throw new Error(`Dry-run removed stale agent file: ${staleAgentFile}`);
+      }
+    },
+  },
+  {
+    name: "installer no-backup prunes without backups",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-prune-no-backup"), "config");
+      const staleSkillDir = path.join(configDir, "skills", "stale-skill");
+      const staleAgentFile = path.join(configDir, "agents", "stale-agent.md");
+      writeText(path.join(staleSkillDir, "SKILL.md"), lines(["# Stale Skill", ""]));
+      writeText(staleAgentFile, lines(["# Stale Agent", ""]));
+      const result = invokeInstaller(["--config-dir", configDir, "--skip-agents-md", "--no-backup"]);
+      assertSuccess(result, "Installer --no-backup prune should succeed.");
+      assertOutputContains(result, "pruned: stale skill stale-skill", "No-backup prune should still report stale skill pruning.");
+      assertOutputContains(result, "pruned: stale agent stale-agent", "No-backup prune should still report stale agent pruning.");
+      if (fs.existsSync(staleSkillDir)) {
+        throw new Error(`No-backup prune left stale skill directory: ${staleSkillDir}`);
+      }
+      if (fs.existsSync(staleAgentFile)) {
+        throw new Error(`No-backup prune left stale agent file: ${staleAgentFile}`);
+      }
+      const backupRoot = path.join(configDir, ".backups", "agents-and-skills");
+      if (fs.existsSync(backupRoot)) {
+        throw new Error(`--no-backup created backup root during prune: ${backupRoot}`);
+      }
+    },
+  },
+  {
+    name: "installer no-prune keeps stale artifacts",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-no-prune"), "config");
+      const staleSkillDir = path.join(configDir, "skills", "stale-skill");
+      const staleAgentFile = path.join(configDir, "agents", "stale-agent.md");
+      writeText(path.join(staleSkillDir, "SKILL.md"), lines(["# Stale Skill", ""]));
+      writeText(staleAgentFile, lines(["# Stale Agent", ""]));
+      const result = invokeInstaller(["--config-dir", configDir, "--skip-agents-md", "--no-prune"]);
+      assertSuccess(result, "Installer --no-prune should succeed.");
+      if (!fs.existsSync(staleSkillDir)) {
+        throw new Error(`--no-prune removed stale skill directory: ${staleSkillDir}`);
+      }
+      if (!fs.existsSync(staleAgentFile)) {
+        throw new Error(`--no-prune removed stale agent file: ${staleAgentFile}`);
+      }
     },
   },
   {
