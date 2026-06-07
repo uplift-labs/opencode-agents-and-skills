@@ -16,6 +16,13 @@ Use this helper only with `documentation-hardening-loop` or an equivalent exhaus
 - Store paths, line ranges, short excerpts, evidence refs, verdicts, findings, fix decisions, and re-review status. Do not store secrets or large source dumps.
 - If a file changes after review, mark affected blocks `needs-rereview`.
 
+## Deterministic Helper Automation
+
+- Prefer helper code for mechanical ledger work when it can gather explicit evidence faster than manual review: file inventories, continuous line/block ranges, heading/link/anchor maps, exact duplicate text maps, changed-block detection, and validation status reports.
+- Helper code must be deterministic and contract-driven: explicit inputs, explicit outputs, fixtures or schemas, stable ordering, privacy-safe output where applicable, and no hidden heuristics.
+- Do not encode fuzzy quality scoring, probabilistic classification, model-like summarization, inferred correctness, or hidden priority ranking in helper code; unsupported inputs must be reported as `unknown`, `unreadable`, `unsupported`, or `blocked`.
+- The final documentation judgment still comes from reviewed ledger rows, source-of-truth evidence, and reviewer synthesis.
+
 ## Minimal Ledger
 
 ```markdown

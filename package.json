@@ -1,0 +1,14 @@
+{
+  "name": "agents-and-skills",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "install:global": "node tools/install-opencode-global.ts",
+    "retro:inventory": "node tools/opencode-session-retro-inventory.ts",
+    "test": "node tools/test-library.ts",
+    "validate": "node tools/validate-library.ts"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

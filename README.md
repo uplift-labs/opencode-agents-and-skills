@@ -7,7 +7,12 @@ Reusable OpenCode skills, reviewer agents, and instruction templates for agentic
 - `.opencode/skills/`: reusable OpenCode skills.
 - `.opencode/agents/`: reusable read-only reviewer agents.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
-- `tools/`: validation and install scripts for this library.
+- `tools/`: TypeScript validation, test, install, and OpenCode session-retro inventory tooling for this library.
+
+## Prerequisites
+
+- Node `>=24` is required because repository tooling runs TypeScript entrypoints directly.
+- `npm test` and `npm run retro:inventory` use Node's `node:sqlite`; Node may print an `ExperimentalWarning` while the API remains experimental.
 
 ## Install
 
@@ -16,7 +21,7 @@ Reusable OpenCode skills, reviewer agents, and instruction templates for agentic
 Install all skills, agents, and a reusable global `AGENTS.md` block into OpenCode's global config directory:
 
 ```sh
-node tools/install-opencode-global.js
+npm run install:global
 ```
 
 By default this installs into `~/.config/opencode`, copies skills to `skills/`, copies agents to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Existing changed files/directories are backed up under `.backups/agents-and-skills/` before replacement, outside OpenCode's loader folders.
@@ -71,26 +76,42 @@ Copy selected files from `instructions/` into a global or project `AGENTS.md` or
 
 Run the structural validator and fixture-based acceptance checks after changing library artifacts:
 
-```powershell
-pwsh -NoProfile -File tools/validate-library.ps1
-pwsh -NoProfile -File tools/test-library.ps1
+```sh
+npm run validate
+npm test
 ```
 
-The validator checks skill and agent frontmatter shape, README catalog sync, README routing/reviewer gate sections, repo `AGENTS.md` autonomous handoff, reusable reviewer permission policy, optional project-neutral anchors passed via `-ForbiddenAnchor`, trailing whitespace, and warning-level TDD guard findings for Markdown artifacts with implementation-related language that do not mention test-first, TDD, before-code fixtures/gates, or equivalent validation-first language.
+The validator checks skill and agent frontmatter shape, README catalog sync, README routing/reviewer gate sections, repo `AGENTS.md` autonomous handoff, TypeScript-only development policy, deterministic helper automation policy, reusable reviewer permission policy, optional project-neutral anchors passed via `--forbidden-anchor`, trailing whitespace, and warning-level TDD guard findings for Markdown artifacts with implementation-related language that do not mention test-first, TDD, before-code fixtures/gates, or equivalent validation-first language.
 
 For installer changes, also prove the no-write path before using a real config directory:
 
-```powershell
-node tools/install-opencode-global.js --dry-run --config-dir <temp-config-dir>
+```sh
+npm run install:global -- --dry-run --config-dir <temp-config-dir>
 ```
 
 For ports from a project-local prompt set, pass anchors that must not remain in reusable Markdown:
 
-```powershell
-pwsh -NoProfile -File tools/validate-library.ps1 -ForbiddenAnchor "OldProductName","D:/old/project/path"
+```sh
+npm run validate -- --forbidden-anchor "OldProductName" "D:/old/project/path"
 ```
 
 For broad instruction-artifact audits, use `instructions/instruction-artifact-audit-runbook.md` to prove repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes. Capture before/after metrics such as global rules line count, top heavy skill line counts, installed-copy drift, validator test count, and reviewer findings.
+
+## Session Retro Inventory
+
+Before running `opencode-total-session-retro`, generate a redacted coverage and batching ledger for locally reachable OpenCode session stores:
+
+```sh
+npm run retro:inventory -- --format markdown
+```
+
+For machine-readable fan-out manifests, write JSON only when the output path is approved for generated ledgers:
+
+```sh
+npm run retro:inventory -- --format json --out <ledger-path>
+```
+
+The inventory tool reads OpenCode SQLite stores in read-only mode, classifies Desktop state files without emitting raw prompts, redacts session IDs/project names/paths by default, and suggests stable batches for later evidence review. Use `--db <path>`, `--data-dir <path>`, or `--desktop-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Existing `--out` files are refused unless `--overwrite` is passed explicitly.
 
 ## Routing Map
 
@@ -99,7 +120,7 @@ For broad instruction-artifact audits, use `instructions/instruction-artifact-au
 - Existing OpenSpec continuation or "what next" work -> `next-step`; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
 - Broad independent tracks -> `orchestrator` only after bounded workstreams, success criteria, and validation evidence are clear; user approval is required only for ambiguous scope, remote/destructive actions, dirty-state preservation, or other user-owned decisions.
-- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session retros -> `session-archive-retro`; all-history/cross-install/whole-corpus retros targeting global skill improvements -> `opencode-total-session-retro`; reflection-file-only inputs -> `reflection-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
+- Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `session-archive-retro`; all-history/cross-install/whole-corpus retros targeting global skill improvements -> `opencode-total-session-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
 
 ## Reviewer Gate Map
@@ -125,7 +146,6 @@ For broad instruction-artifact audits, use `instructions/instruction-artifact-au
 - `merge-request-review-loop`: autonomous MR/PR review follow-up for status checks, reviewer feedback, local fixes, revalidation, outcome handoff, and remote-action gates.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
 - `orchestrator`: prompt-only master coordination for broad independent work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead; it is not a durable runtime orchestration service.
-- `reflection-retro`: turn accumulated reflection files into workflow improvements.
 - `opencode-total-session-retro`: analyze all reachable OpenCode sessions across projects and installs to improve global skills, agents, prompts, rules, and validators.
 - `session-archive-retro`: analyze bounded/current-project session history, transcripts, and logs for recurring workflow improvements.
 
@@ -204,6 +224,8 @@ Overly narrow future-scope behavior that depended on one product domain was inte
 
 - Keep artifacts project-neutral unless the artifact name explicitly scopes a reusable domain.
 - Prefer concrete evidence, validation, permissions, and output schemas over vague instructions.
+- For repetitive, evidence-heavy, or token-heavy workflows, consider a small deterministic helper before adding more prose process.
+- Helper automation in skills or agents must be deterministic and contract-driven: explicit inputs/outputs, fixtures or schemas, stable ordering, privacy-safe output, and no hidden heuristics.
 - Implementation-capable artifacts should require TDD/test-first by default for behavior changes, or require an explicit infeasibility note plus the closest reproducible validation evidence.
 - Keep TDD proportional: require the smallest useful test/gate for the scoped behavior, not unrelated coverage expansion or speculative test suites.
 - Reviewer agents should remain leaf validators with `bash`, `edit`, `task`, `question`, `skill`, `webfetch`, `websearch`, `todowrite`, `external_directory`, `lsp`, and `doom_loop` denied unless a separate validation-enabled profile is intentionally created.

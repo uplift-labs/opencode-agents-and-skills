@@ -24,9 +24,8 @@ For behavior-changing improvements to scripts, validators, skills, agents, confi
 
 ## Relationship To Nearby Skills
 
-- Use `session-archive-retro` for current-project, selected-project, or bounded session history analysis.
+- Use `session-archive-retro` for current-project, selected-project, or bounded session, transcript, reflection, and log retros.
 - Use this skill for whole-corpus OpenCode retros where the goal is improving global skills, agents, rules, prompts, guards, validators, or reusable OpenCode workflows.
-- Use `reflection-retro` when the input is reflection files rather than full session archives.
 - Use `instruction-artifact-tuning` after this skill identifies concrete artifact edits that need focused review or implementation.
 
 ## Evidence Sources
@@ -54,6 +53,24 @@ Use read-only inspection for databases and logs. Never run database writes, migr
 - Which storage formats and source/docs/live checks were used to identify session artifacts?
 - Which artifacts are unreadable, binary, encrypted, truncated, remote-only, or permission-blocked?
 - Is the task read-only, or did the user explicitly request applied global skill improvements?
+
+## Tooling Shortcut
+
+When this library's TypeScript tools are available, start the inventory phase with a redacted, read-only coverage run before interpreting session content:
+
+```sh
+npm run retro:inventory -- --format markdown
+```
+
+Use `npm run retro:inventory -- --format json --out <path>` only when the user approved writing a generated ledger or manifest. The tool refuses to replace existing output files unless `--overwrite` is supplied explicitly. Use `--db <path>`, `--data-dir <path>`, and `--desktop-dir <path>` to add explicitly discovered sources. Use `--only-explicit` for controlled runs that must ignore default discovery. Use `--show-paths` only when home-redacted source paths are acceptable for the report audience.
+
+The inventory tool is a coverage and batching aid, not a substitute for retro findings. Treat its counts, source refs, duplicate detection, Desktop state classification, and suggested batches as the initial ledger; still inspect source sessions read-only and verify implementation-sensitive recommendations against current artifacts, docs, schemas, tests, or live output.
+
+## Deterministic Helper Automation Gate
+
+After the initial source inventory, explicitly decide and record whether a small deterministic helper would materially reduce token use, manual ledger work, privacy risk, or repeated counting for the remaining retro. Ask the user only when helper work requires unapproved writes, remote/shared access, destructive actions, or other user-owned scope decisions. Good candidates are source discovery, schema inspection, redacted coverage ledgers, stable batching, duplicate detection, path/id redaction, drift checks, and fixture-backed validators.
+
+Only write or recommend helper code when its contract can be explicit: inputs, outputs, schema or fixture, ordering, redaction rules, failure states, and validation command. Do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference in helper code. If the helper cannot determine something from its inputs, it must report `unknown`, `unreadable`, `unsupported`, or `blocked`; the agent owns judgment-heavy synthesis.
 
 ## Total-Corpus Algorithm
 

@@ -1,17 +1,36 @@
 #!/usr/bin/env node
-"use strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const crypto = require("node:crypto");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
+type Options = {
+  agentsMdSource: string | null;
+  configDir: string | null;
+  dryRun: boolean;
+  noBackup: boolean;
+  skipAgentsMd: boolean;
+};
+
+type InstallContext = {
+  backupRoot: string;
+  configDir: string;
+  dryRun: boolean;
+  noBackup: boolean;
+  runStamp: string;
+};
+
+type RelativeEntry =
+  | { relative: string; type: "file" }
+  | { relative: string; target: string; type: "symlink" };
 
 const BEGIN_MARKER = "<!-- agents-and-skills:begin -->";
 const END_MARKER = "<!-- agents-and-skills:end -->";
 
-function printUsage() {
+function printUsage(): void {
   console.log(`Usage:
-  node tools/install-opencode-global.js [options]
+  npm run install:global -- [options]
 
 Options:
   --config-dir <path>         OpenCode config directory. Default: ~/.config/opencode
@@ -24,7 +43,7 @@ Options:
 `);
 }
 
-function readOptionValue(args, index, name) {
+function readOptionValue(args: string[], index: number, name: string): string {
   const value = args[index + 1];
   if (!value || value.trim() === "" || value.startsWith("-")) {
     throw new Error(`Missing value for ${name}.`);
@@ -32,15 +51,15 @@ function readOptionValue(args, index, name) {
   return value;
 }
 
-function readInlineOptionValue(value, name) {
+function readInlineOptionValue(value: string, name: string): string {
   if (!value || value.trim() === "") {
     throw new Error(`Missing value for ${name}.`);
   }
   return value;
 }
 
-function parseArgs(args) {
-  const options = {
+function parseArgs(args: string[]): Options {
+  const options: Options = {
     agentsMdSource: null,
     configDir: null,
     dryRun: false,
@@ -77,7 +96,11 @@ function parseArgs(args) {
   return options;
 }
 
-function requireHome() {
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}
+
+function requireHome(): string {
   const home = os.homedir();
   if (!home) {
     throw new Error("Home directory is not available; pass --config-dir explicitly.");
@@ -85,7 +108,7 @@ function requireHome() {
   return home;
 }
 
-function expandHome(input) {
+function expandHome(input: string | null): string | null {
   if (!input) {
     return input;
   }
@@ -98,62 +121,69 @@ function expandHome(input) {
   return input;
 }
 
-function resolveConfigDir(input) {
+function resolveConfigDir(input: string | null): string {
   if (input != null && input.trim() === "") {
     throw new Error("Missing value for --config-dir.");
   }
   const configured = input == null ? path.join(requireHome(), ".config", "opencode") : input;
-  return path.resolve(expandHome(configured));
+  const expanded = expandHome(configured);
+  if (expanded == null) {
+    throw new Error("Missing value for --config-dir.");
+  }
+  return path.resolve(expanded);
 }
 
-function resolveSourcePath(input, repoRoot, defaultRelativePath) {
+function resolveSourcePath(input: string | null, repoRoot: string, defaultRelativePath: string): string {
   if (input != null && input.trim() === "") {
     throw new Error("Missing value for --agents-md-source.");
   }
   const configured = input == null ? defaultRelativePath : input;
   const expanded = expandHome(configured);
+  if (expanded == null) {
+    throw new Error("Missing value for --agents-md-source.");
+  }
   if (path.isAbsolute(expanded)) {
     return path.resolve(expanded);
   }
   return path.resolve(repoRoot, expanded);
 }
 
-function assertDirectoryExists(target, label) {
+function assertDirectoryExists(target: string, label: string): void {
   if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
     throw new Error(`Missing ${label} directory: ${target}`);
   }
 }
 
-function assertFileExists(target, label) {
+function assertFileExists(target: string, label: string): void {
   if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
     throw new Error(`Missing ${label} file: ${target}`);
   }
 }
 
-function pathExists(target) {
+function pathExists(target: string): boolean {
   try {
     fs.lstatSync(target);
     return true;
   } catch (error) {
-    if (error && error.code === "ENOENT") {
+    if (isNodeError(error) && error.code === "ENOENT") {
       return false;
     }
     throw error;
   }
 }
 
-function isDirectoryFollowingSymlink(target) {
+function isDirectoryFollowingSymlink(target: string): boolean {
   try {
     return fs.statSync(target).isDirectory();
   } catch (error) {
-    if (error && error.code === "ENOENT") {
+    if (isNodeError(error) && error.code === "ENOENT") {
       return false;
     }
     throw error;
   }
 }
 
-function ensureDirectory(target, context) {
+function ensureDirectory(target: string, context: InstallContext): void {
   if (pathExists(target)) {
     if (!isDirectoryFollowingSymlink(target)) {
       const backup = createBackup(target, context);
@@ -176,7 +206,7 @@ function ensureDirectory(target, context) {
   fs.mkdirSync(target, { recursive: true });
 }
 
-function listDirectories(root) {
+function listDirectories(root: string): string[] {
   return fs
     .readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -184,7 +214,7 @@ function listDirectories(root) {
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
 }
 
-function listFiles(root, extension) {
+function listFiles(root: string, extension: string): string[] {
   return fs
     .readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
@@ -192,11 +222,11 @@ function listFiles(root, extension) {
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
 }
 
-function toPosixRelative(relativePath) {
+function toPosixRelative(relativePath: string): string {
   return relativePath.split(path.sep).join("/");
 }
 
-function normalizePathForContainment(target) {
+function normalizePathForContainment(target: string): string {
   let resolved = path.resolve(target);
   try {
     resolved = fs.realpathSync.native(resolved);
@@ -206,18 +236,18 @@ function normalizePathForContainment(target) {
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
-function isPathInsideOrEqual(candidate, parent) {
+function isPathInsideOrEqual(candidate: string, parent: string): boolean {
   const relative = path.relative(normalizePathForContainment(parent), normalizePathForContainment(candidate));
   return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
-function assertNoSourceOverlap(target, source, label) {
+function assertNoSourceOverlap(target: string, source: string, label: string): void {
   if (isPathInsideOrEqual(target, source) || isPathInsideOrEqual(source, target)) {
     throw new Error(`${label} must not overlap source artifact directory: ${target} conflicts with ${source}`);
   }
 }
 
-function listRelativeEntries(root, current = root, result = []) {
+function listRelativeEntries(root: string, current = root, result: RelativeEntry[] = []): RelativeEntry[] {
   const entries = fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const entryPath = path.join(current, entry.name);
@@ -234,11 +264,11 @@ function listRelativeEntries(root, current = root, result = []) {
   return result;
 }
 
-function sha256(filePath) {
+function sha256(filePath: string): string {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
-function isSameFile(source, destination) {
+function isSameFile(source: string, destination: string): boolean {
   if (!fs.existsSync(destination) || !fs.statSync(destination).isFile()) {
     return false;
   }
@@ -247,7 +277,7 @@ function isSameFile(source, destination) {
   return sourceStat.size === destinationStat.size && sha256(source) === sha256(destination);
 }
 
-function isSameDirectory(source, destination) {
+function isSameDirectory(source: string, destination: string): boolean {
   if (!fs.existsSync(destination) || !fs.statSync(destination).isDirectory()) {
     return false;
   }
@@ -265,14 +295,14 @@ function isSameDirectory(source, destination) {
     if (sourceEntry.type === "file" && !isSameFile(path.join(source, sourceEntry.relative), path.join(destination, destinationEntry.relative))) {
       return false;
     }
-    if (sourceEntry.type === "symlink" && sourceEntry.target !== destinationEntry.target) {
+    if (sourceEntry.type === "symlink" && destinationEntry.type === "symlink" && sourceEntry.target !== destinationEntry.target) {
       return false;
     }
   }
   return true;
 }
 
-function copyPath(source, destination) {
+function copyPath(source: string, destination: string): void {
   const stat = fs.lstatSync(source);
   if (stat.isDirectory()) {
     fs.mkdirSync(destination, { recursive: true });
@@ -290,11 +320,11 @@ function copyPath(source, destination) {
   }
 }
 
-function removePath(target) {
+function removePath(target: string): void {
   fs.rmSync(target, { force: true, recursive: true });
 }
 
-function relativeUnderConfig(target, configDir) {
+function relativeUnderConfig(target: string, configDir: string): string | null {
   const relative = path.relative(configDir, target);
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
     return null;
@@ -302,7 +332,7 @@ function relativeUnderConfig(target, configDir) {
   return toPosixRelative(relative);
 }
 
-function backupPathFor(target, context) {
+function backupPathFor(target: string, context: InstallContext): string {
   const relative = relativeUnderConfig(path.resolve(target), context.configDir) || path.basename(target);
   const parts = relative.split("/").filter(Boolean);
   let candidate = path.join(context.backupRoot, context.runStamp, ...parts);
@@ -314,7 +344,7 @@ function backupPathFor(target, context) {
   return candidate;
 }
 
-function createBackup(target, context) {
+function createBackup(target: string, context: InstallContext): string | null {
   if (context.noBackup || !pathExists(target)) {
     return null;
   }
@@ -326,7 +356,7 @@ function createBackup(target, context) {
   return destination;
 }
 
-function installFile(source, destination, label, context) {
+function installFile(source: string, destination: string, label: string, context: InstallContext): void {
   if (isSameFile(source, destination)) {
     console.log(`unchanged: ${label}`);
     return;
@@ -345,7 +375,7 @@ function installFile(source, destination, label, context) {
   console.log(backup ? `installed: ${label} (backup: ${backup})` : `installed: ${label}`);
 }
 
-function installDirectory(source, destination, label, context) {
+function installDirectory(source: string, destination: string, label: string, context: InstallContext): void {
   if (isSameDirectory(source, destination)) {
     console.log(`unchanged: ${label}`);
     return;
@@ -362,11 +392,11 @@ function installDirectory(source, destination, label, context) {
   console.log(backup ? `installed: ${label} (backup: ${backup})` : `installed: ${label}`);
 }
 
-function escapeRegExp(value) {
+function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function countOccurrences(text, needle) {
+function countOccurrences(text: string, needle: string): number {
   let count = 0;
   let index = 0;
   while ((index = text.indexOf(needle, index)) !== -1) {
@@ -376,7 +406,7 @@ function countOccurrences(text, needle) {
   return count;
 }
 
-function validateAgentsMdMarkers(existing, destination) {
+function validateAgentsMdMarkers(existing: string, destination: string): void {
   const pattern = new RegExp(`${escapeRegExp(BEGIN_MARKER)}[\\s\\S]*?${escapeRegExp(END_MARKER)}\\r?\\n?`);
   const beginCount = countOccurrences(existing, BEGIN_MARKER);
   const endCount = countOccurrences(existing, END_MARKER);
@@ -391,16 +421,16 @@ function validateAgentsMdMarkers(existing, destination) {
   }
 }
 
-function detectNewline(text) {
+function detectNewline(text: string): string {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
 
-function agentsMdBlock(source, newline) {
+function agentsMdBlock(source: string, newline: string): string {
   const sourceText = fs.readFileSync(source, "utf8").trimEnd().replace(/\r\n?/g, "\n").replace(/\n/g, newline);
   return `${BEGIN_MARKER}${newline}${sourceText}${newline}${END_MARKER}${newline}`;
 }
 
-function readExistingAgentsMd(destination) {
+function readExistingAgentsMd(destination: string): string {
   if (!pathExists(destination)) {
     return "";
   }
@@ -410,21 +440,21 @@ function readExistingAgentsMd(destination) {
     }
     return fs.readFileSync(destination, "utf8");
   } catch (error) {
-    if (error && error.code === "ENOENT") {
+    if (isNodeError(error) && error.code === "ENOENT") {
       return "";
     }
     throw error;
   }
 }
 
-function installAgentsMd(source, destination, context) {
+function installAgentsMd(source: string, destination: string, context: InstallContext): void {
   const existing = readExistingAgentsMd(destination);
   validateAgentsMdMarkers(existing, destination);
   const newline = existing ? detectNewline(existing) : "\n";
   const block = agentsMdBlock(source, newline);
   const pattern = new RegExp(`${escapeRegExp(BEGIN_MARKER)}[\\s\\S]*?${escapeRegExp(END_MARKER)}\\r?\\n?`);
 
-  let next;
+  let next: string;
   if (pattern.test(existing)) {
     next = existing.replace(pattern, block);
   } else if (existing.trim() === "") {
@@ -452,16 +482,16 @@ function installAgentsMd(source, destination, context) {
   console.log(backup ? `installed: AGENTS.md block (backup: ${backup})` : "installed: AGENTS.md block");
 }
 
-function run() {
+function run(): void {
   const options = parseArgs(process.argv.slice(2));
-  const repoRoot = path.resolve(__dirname, "..");
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const sourceSkillsDir = path.join(repoRoot, ".opencode", "skills");
   const sourceAgentsDir = path.join(repoRoot, ".opencode", "agents");
   const sourceAgentsMd = options.skipAgentsMd
     ? null
     : resolveSourcePath(options.agentsMdSource, repoRoot, path.join("instructions", "global-opencode-agent-instructions.md"));
   const configDir = resolveConfigDir(options.configDir);
-  const context = {
+  const context: InstallContext = {
     backupRoot: path.join(configDir, ".backups", "agents-and-skills"),
     configDir,
     dryRun: options.dryRun,
@@ -504,7 +534,7 @@ function run() {
     installFile(agentFile, path.join(destinationAgentsDir, path.basename(agentFile)), `agent ${path.basename(agentFile, ".md")}`, context);
   }
 
-  if (options.skipAgentsMd) {
+  if (options.skipAgentsMd || sourceAgentsMd == null) {
     console.log("skipped: AGENTS.md block");
   } else {
     installAgentsMd(sourceAgentsMd, destinationAgentsMd, context);
@@ -520,6 +550,7 @@ function run() {
 try {
   run();
 } catch (error) {
-  console.error(`ERROR: ${error.message}`);
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`ERROR: ${message}`);
   process.exit(1);
 }

@@ -17,6 +17,13 @@ Use this helper with `codebase-audit-loop` when the audit must prove coverage ra
 - If a reviewed file changes, mark affected blocks `needs-rereview`.
 - Missing evidence for critical behavior is a finding, blocker, or accepted risk, not a silent no-finding.
 
+## Deterministic Helper Automation
+
+- Prefer helper code for mechanical ledger work when it can gather explicit evidence faster than manual review: file inventories, block ranges, exact duplicate maps, changed-block detection, schema checks, and validation status reports.
+- Helper code must be deterministic and contract-driven: explicit inputs, explicit outputs, fixtures or schemas, stable ordering, privacy-safe output where applicable, and no hidden heuristics.
+- Do not encode fuzzy scoring, probabilistic classification, model-like summarization, inferred severity, or hidden risk ranking in helper code; unsupported inputs must be reported as `unknown`, `unreadable`, `unsupported`, or `blocked`.
+- The final audit judgment still comes from reviewed ledger rows, evidence, and reviewer synthesis.
+
 ## Minimal Ledger
 
 ```markdown

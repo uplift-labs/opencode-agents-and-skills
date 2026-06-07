@@ -35,12 +35,19 @@ Before deep work, define:
 ## Workflow
 
 - Use `codebase-audit-ledger` for durable coverage when scope is large enough to risk skipped areas.
+- Before deep review at scale, decide whether a deterministic helper would reduce repeated counting, inventory, diffing, coverage bookkeeping, or validation effort without replacing reviewer judgment.
 - Inventory files, tests, specs, commands, and critical flows.
 - For broad audits with independent file or subsystem ranges, consider `orchestrator` with read-only workers and ledger-assigned ranges; keep quick or non-shardable audits serial.
 - Delegate independent read-only reviewer agents when useful, but keep the main session responsible for synthesis and edits.
 - Findings require evidence, impact, and a minimal recommendation.
 - If fixes are allowed, add/update a focused regression or characterization test before behavior fixes when practical, then make the smallest fix, validate, and re-review.
 - Do not stop while scoped ledger items are unreviewed, fixable, validatable, or need re-review unless blocked by an external dependency.
+
+## Deterministic Helper Automation Gate
+
+Good audit helpers gather explicit evidence: file/block inventories, line counts, duplicate exact-match maps, import/export lists, test-to-requirement matrices, changed-block ledgers, schema checks, generated status reports, or validation-command wrappers.
+
+Helper code must define explicit inputs, outputs, fixtures or schemas, stable ordering, privacy-safe output where applicable, and failure states. Do not encode fuzzy scoring, probabilistic classification, model-like summarization, inferred severity, or hidden risk ranking in helper code. If a helper cannot prove a fact from its inputs, it reports `unknown`, `unreadable`, `unsupported`, or `blocked`; findings and severity remain reviewer judgments.
 
 ## Output
 

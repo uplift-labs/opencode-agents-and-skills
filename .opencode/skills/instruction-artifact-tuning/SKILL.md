@@ -24,6 +24,7 @@ For broad audits that include multiple skills/agents, global config, installed c
 - Context efficiency: remove repeated boilerplate, stale examples, source dumps, and project-specific details that should be local.
 - AI usability: critical routing, permissions, blockers, and output schema are near the top and easy to retrieve.
 - Runtime realism: distinguish startup rules, discovered skill/agent catalogs, on-demand skill content, installed copies, active config, and live loader behavior.
+- Deterministic automation opportunities: identify where a small helper could gather, validate, diff, redact, or inventory evidence faster than prose, without replacing judgment.
 
 ## Checks
 
@@ -34,6 +35,8 @@ For broad audits that include multiple skills/agents, global config, installed c
 - For behavior-changing instruction artifacts, add or update a minimal loader/schema/eval fixture or validation checklist before editing when feasible; document missing harnesses.
 - For broad audits, cover repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes using the audit runbook.
 - For broad independent artifact inventories, consider `orchestrator` with bounded read-only workers; keep single-artifact or tightly coupled tuning serial.
+- When helper code would materially reduce repeated inspection or token use, require an explicit input/output contract, fixture or schema, stable ordering, privacy-safe output, and no hidden heuristics.
+- Do not encode fuzzy scoring, probabilistic classification, model-like summarization, trigger-quality ranking, or unstated inference in helper code; unsupported inputs should produce `unknown`, `unreadable`, `unsupported`, or `blocked`.
 - Replace project-specific paths, tools, issue trackers, and product names with placeholders unless the artifact is intentionally project-local.
 - Remove obsolete instructions instead of adding override paragraphs.
 

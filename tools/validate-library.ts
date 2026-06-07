@@ -1,0 +1,593 @@
+#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+type FrontmatterValue = string | Record<string, never>;
+type FrontmatterMap = Map<string, FrontmatterValue>;
+
+type Options = {
+  forbiddenAnchors: string[];
+  root: string;
+};
+
+const errors: string[] = [];
+const warnings: string[] = [];
+const forbiddenCodeExtensions = new Set([".cjs", ".js", ".mjs", ".ps1", ".psd1", ".psm1", ".py", ".pyw"]);
+const legacyToolingReferences = [
+  "pwsh -NoProfile -File",
+  "validate-library.ps1",
+  "test-library.ps1",
+  "install-opencode-global.js",
+];
+
+function addError(message: string): void {
+  errors.push(message);
+}
+
+function addWarning(message: string): void {
+  warnings.push(message);
+}
+
+function defaultRoot(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+function readOptionValue(args: string[], index: number, name: string): string {
+  const value = args[index + 1];
+  if (!value || value.trim() === "" || value.startsWith("-")) {
+    throw new Error(`Missing value for ${name}.`);
+  }
+  return value;
+}
+
+function splitForbiddenAnchorValues(values: string[]): string[] {
+  return values
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function parseArgs(args: string[]): Options {
+  let root = defaultRoot();
+  const forbiddenAnchors: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--root" || arg === "--Root" || arg === "-Root") {
+      root = readOptionValue(args, i, arg);
+      i++;
+    } else if (arg.startsWith("--root=")) {
+      root = arg.slice("--root=".length);
+    } else if (arg.startsWith("--Root=")) {
+      root = arg.slice("--Root=".length);
+    } else if (arg === "--forbidden-anchor" || arg === "--ForbiddenAnchor" || arg === "-ForbiddenAnchor") {
+      const values: string[] = [];
+      while (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+        values.push(args[i + 1]);
+        i++;
+      }
+      if (values.length === 0) {
+        throw new Error(`Missing value for ${arg}.`);
+      }
+      forbiddenAnchors.push(...splitForbiddenAnchorValues(values));
+    } else if (arg.startsWith("--forbidden-anchor=")) {
+      forbiddenAnchors.push(...splitForbiddenAnchorValues([arg.slice("--forbidden-anchor=".length)]));
+    } else if (arg.startsWith("--ForbiddenAnchor=")) {
+      forbiddenAnchors.push(...splitForbiddenAnchorValues([arg.slice("--ForbiddenAnchor=".length)]));
+    } else {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+  }
+
+  return { forbiddenAnchors, root: path.resolve(root) };
+}
+
+function readText(filePath: string): string {
+  return fs.readFileSync(filePath, "utf8");
+}
+
+function convertFromFrontmatterScalar(value: string, file: string, lineNumber: number): string {
+  const trimmed = value.trim();
+  const doubleQuoted = trimmed.startsWith('"') || trimmed.endsWith('"');
+  const singleQuoted = trimmed.startsWith("'") || trimmed.endsWith("'");
+
+  if (
+    (doubleQuoted && !(trimmed.startsWith('"') && trimmed.endsWith('"'))) ||
+    (singleQuoted && !(trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    addError(`Invalid frontmatter quoting: ${file}:${lineNumber}`);
+    return trimmed;
+  }
+
+  if (!doubleQuoted && !singleQuoted && /:\s/.test(trimmed)) {
+    addError(`Invalid unquoted frontmatter scalar containing ': ': ${file}:${lineNumber}`);
+  }
+
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
+
+function getFrontmatterMap(text: string, file: string): FrontmatterMap {
+  const match = text.match(/^---\r?\n(?<body>[\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  const values: FrontmatterMap = new Map();
+  if (!match?.groups?.body) {
+    addError(`Missing leading frontmatter block: ${file}`);
+    return values;
+  }
+
+  let currentMap: string | null = null;
+  const lines = match.groups.body.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    const lineNumber = index + 2;
+    const line = lines[index];
+    if (line.trim() === "" || line.trimStart().startsWith("#")) {
+      continue;
+    }
+
+    const mapMatch = line.match(/^([A-Za-z_][A-Za-z0-9_-]*):\s*$/);
+    if (mapMatch) {
+      currentMap = mapMatch[1];
+      values.set(currentMap, {});
+      continue;
+    }
+
+    const scalarMatch = line.match(/^([A-Za-z_][A-Za-z0-9_-]*):\s*(.+?)\s*$/);
+    if (scalarMatch) {
+      currentMap = null;
+      values.set(scalarMatch[1], convertFromFrontmatterScalar(scalarMatch[2], file, lineNumber));
+      continue;
+    }
+
+    const nestedScalarMatch = line.match(/^\s{2,}([A-Za-z_][A-Za-z0-9_-]*):\s*(.+?)\s*$/);
+    if (nestedScalarMatch) {
+      if (!currentMap) {
+        addError(`Nested frontmatter value without parent map: ${file}:${lineNumber}`);
+      } else {
+        values.set(`${currentMap}.${nestedScalarMatch[1]}`, convertFromFrontmatterScalar(nestedScalarMatch[2], file, lineNumber));
+      }
+      continue;
+    }
+
+    addError(`Unsupported frontmatter syntax: ${file}:${lineNumber}`);
+  }
+
+  return values;
+}
+
+function toPosixPath(value: string): string {
+  return value.split(path.sep).join("/");
+}
+
+function walkMarkdownFiles(root: string, current = root, result: string[] = []): string[] {
+  const entries = fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const entryPath = path.join(current, entry.name);
+    if (entry.isDirectory()) {
+      if ([".git", ".serena", "node_modules"].includes(entry.name)) {
+        continue;
+      }
+      walkMarkdownFiles(root, entryPath, result);
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      result.push(entryPath);
+    }
+  }
+  return result;
+}
+
+function walkRepositoryFiles(root: string, current = root, result: string[] = []): string[] {
+  const entries = fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    const entryPath = path.join(current, entry.name);
+    if (entry.isDirectory()) {
+      if ([".git", ".serena", "node_modules"].includes(entry.name)) {
+        continue;
+      }
+      walkRepositoryFiles(root, entryPath, result);
+    } else if (entry.isFile()) {
+      result.push(entryPath);
+    }
+  }
+  return result;
+}
+
+function validateTypeScriptOnlySourceFiles(root: string): void {
+  for (const file of walkRepositoryFiles(root)) {
+    const extension = path.extname(file).toLowerCase();
+    if (forbiddenCodeExtensions.has(extension)) {
+      addError(`Non-TypeScript source/tooling file is not allowed: ${toPosixPath(path.relative(root, file))}`);
+    }
+  }
+}
+
+function getMarkdownFiles(root: string): string[] {
+  const gitDir = path.join(root, ".git");
+  if (fs.existsSync(gitDir)) {
+    const gitResult = spawnSync("git", ["-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "*.md"], {
+      encoding: "utf8",
+    });
+    if (gitResult.status === 0 && typeof gitResult.stdout === "string") {
+      return gitResult.stdout
+        .split(/\r?\n/)
+        .filter((relative) => relative.trim() !== "")
+        .map((relative) => toPosixPath(relative))
+        .filter((relative) => !/(^|\/)\.serena\//.test(relative))
+        .map((relative) => path.join(root, relative))
+        .filter((file) => fs.existsSync(file));
+    }
+  }
+
+  return walkMarkdownFiles(root).sort((a, b) => a.localeCompare(b));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getCatalogEntries(readmeText: string, startHeading: string, endHeading: string, readmePath: string): string[] {
+  const pattern = new RegExp(`^##\\s+${escapeRegExp(startHeading)}\\s*$\\r?\\n(?<body>.*?)^##\\s+${escapeRegExp(endHeading)}\\s*$`, "ms");
+  const match = readmeText.match(pattern);
+  if (!match?.groups?.body) {
+    addError(`Missing README catalog section '${startHeading}': ${readmePath}`);
+    return [];
+  }
+
+  return Array.from(match.groups.body.matchAll(/^-\s+`([^`]+)`:/gm), (entry) => entry[1]);
+}
+
+function getRequiredHeadingSection(readmeText: string, heading: string, readmePath: string): string {
+  const pattern = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$\\r?\\n(?<body>.*?)(?=^##\\s+|(?![\\s\\S]))`, "ms");
+  const match = readmeText.match(pattern);
+  if (!match?.groups?.body) {
+    addError(`Missing README section '${heading}': ${readmePath}`);
+    return "";
+  }
+  return match.groups.body;
+}
+
+function requireBulletedSection(body: string, label: string, file: string): void {
+  if (!/^-\s+\S/m.test(body)) {
+    addError(`${label} must include at least one bullet: ${file}`);
+  }
+}
+
+function compareCatalog(label: string, expected: string[], actual: string[], readmePath: string): void {
+  const expectedSorted = [...expected].sort();
+  const actualSorted = [...actual].sort();
+  for (const name of expectedSorted) {
+    if (!actualSorted.includes(name)) {
+      addError(`${label} catalog missing '${name}': ${readmePath}`);
+    }
+  }
+  for (const name of actualSorted) {
+    if (!expectedSorted.includes(name)) {
+      addError(`${label} catalog references missing artifact '${name}': ${readmePath}`);
+    }
+  }
+}
+
+function requireTextContains(text: string, needle: string, label: string, file: string): void {
+  if (!text.includes(needle)) {
+    addError(`${label} must include '${needle}': ${file}`);
+  }
+}
+
+function getRequiredScalar(frontmatter: FrontmatterMap, key: string, file: string): string | null {
+  if (!frontmatter.has(key)) {
+    return null;
+  }
+  const value = frontmatter.get(key);
+  if (typeof value !== "string") {
+    addError(`Frontmatter field must be a scalar: ${file}:${key}`);
+    return null;
+  }
+  return value;
+}
+
+function directoryExists(target: string): boolean {
+  return fs.existsSync(target) && fs.statSync(target).isDirectory();
+}
+
+function fileExists(target: string): boolean {
+  return fs.existsSync(target) && fs.statSync(target).isFile();
+}
+
+function listDirectories(root: string): string[] {
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, entry.name))
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+function listFiles(root: string, extension: string): string[] {
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
+    .map((entry) => path.join(root, entry.name))
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+function validateSkills(root: string): string[] {
+  const skillsDir = path.join(root, ".opencode", "skills");
+  if (!directoryExists(skillsDir)) {
+    addError(`Missing skills directory: ${skillsDir}`);
+    return [];
+  }
+
+  const skillNames: string[] = [];
+  for (const dir of listDirectories(skillsDir)) {
+    const folderName = path.basename(dir);
+    skillNames.push(folderName);
+    const file = path.join(dir, "SKILL.md");
+    if (!fileExists(file)) {
+      addError(`Missing SKILL.md for skill folder: ${folderName}`);
+      continue;
+    }
+
+    const text = readText(file);
+    const frontmatter = getFrontmatterMap(text, file);
+    const name = getRequiredScalar(frontmatter, "name", file);
+    const description = getRequiredScalar(frontmatter, "description", file);
+    if (!name || name.trim() === "") {
+      addError(`Missing skill name: ${file}`);
+    } else if (name !== folderName) {
+      addError(`Skill name mismatch: folder=${folderName} name=${name}`);
+    } else if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+      addError(`Invalid skill name format: ${name}`);
+    }
+    if (!description || description.trim() === "") {
+      addError(`Missing skill description: ${file}`);
+    } else if (description.length > 1024) {
+      addError(`Skill description exceeds 1024 chars: ${file}`);
+    }
+  }
+
+  return skillNames;
+}
+
+function validateAgents(root: string): string[] {
+  const agentsDir = path.join(root, ".opencode", "agents");
+  if (!directoryExists(agentsDir)) {
+    addError(`Missing agents directory: ${agentsDir}`);
+    return [];
+  }
+
+  const agentNames: string[] = [];
+  for (const file of listFiles(agentsDir, ".md")) {
+    agentNames.push(path.basename(file, ".md"));
+    const text = readText(file);
+    const frontmatter = getFrontmatterMap(text, file);
+    const description = getRequiredScalar(frontmatter, "description", file);
+    const mode = getRequiredScalar(frontmatter, "mode", file);
+    if (!description || description.trim() === "") {
+      addError(`Missing agent description: ${file}`);
+    }
+    if (mode !== "subagent") {
+      addError(`Reusable reviewer agent must use mode: subagent: ${file}`);
+    }
+    for (const permission of ["read", "glob", "grep", "list"]) {
+      const key = `permission.${permission}`;
+      if (frontmatter.get(key) !== "allow") {
+        addError(`Agent permission must set ${permission}: allow: ${file}`);
+      }
+    }
+    for (const permission of ["bash", "edit", "task", "question", "skill", "webfetch", "websearch", "todowrite", "external_directory", "lsp", "doom_loop"]) {
+      const key = `permission.${permission}`;
+      if (frontmatter.get(key) !== "deny") {
+        addError(`Agent permission must set ${permission}: deny: ${file}`);
+      }
+    }
+  }
+
+  return agentNames;
+}
+
+function getInstructionNames(root: string): string[] {
+  const instructionsDir = path.join(root, "instructions");
+  if (!directoryExists(instructionsDir)) {
+    return [];
+  }
+  return listFiles(instructionsDir, ".md").map((file) => path.basename(file));
+}
+
+function validateReadme(root: string, skillNames: string[], agentNames: string[], instructionNames: string[]): void {
+  const readmePath = path.join(root, "README.md");
+  if (!fileExists(readmePath)) {
+    addError(`Missing README.md: ${readmePath}`);
+    return;
+  }
+
+  const readmeText = readText(readmePath);
+  const routingMap = getRequiredHeadingSection(readmeText, "Routing Map", readmePath);
+  const reviewerGateMap = getRequiredHeadingSection(readmeText, "Reviewer Gate Map", readmePath);
+  requireBulletedSection(routingMap, "README routing map", readmePath);
+  requireBulletedSection(reviewerGateMap, "README reviewer gate map", readmePath);
+  requireTextContains(routingMap, "instruction-artifact-tuning", "README instruction-artifact route", readmePath);
+  requireTextContains(routingMap, "instruction-artifact-audit-runbook.md", "README instruction-artifact route", readmePath);
+  requireTextContains(reviewerGateMap, "instruction-artifact-reviewer", "README reviewer gate map", readmePath);
+  compareCatalog("Skill", skillNames, getCatalogEntries(readmeText, "Skill Catalog", "Agent Catalog", readmePath), readmePath);
+  compareCatalog("Agent", agentNames, getCatalogEntries(readmeText, "Agent Catalog", "Instruction Templates", readmePath), readmePath);
+  compareCatalog("Instruction template", instructionNames, getCatalogEntries(readmeText, "Instruction Templates", "Porting Notes", readmePath), readmePath);
+}
+
+function validateAgentsMd(root: string): void {
+  const agentsPath = path.join(root, "AGENTS.md");
+  if (!fileExists(agentsPath)) {
+    addError(`Missing AGENTS.md: ${agentsPath}`);
+    return;
+  }
+
+  const agentsText = readText(agentsPath);
+  requireTextContains(agentsText, "## Autonomous Work Contract", "AGENTS.md autonomous work contract", agentsPath);
+  requireTextContains(agentsText, "Ask the user only", "AGENTS.md autonomous work contract", agentsPath);
+  requireTextContains(agentsText, "## Completion Handoff", "AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "`question`", "AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "(Recommended)", "AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "Suggested Next Options", "AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "Actionable Continuation Items", "AGENTS.md completion handoff contract", agentsPath);
+  requireTextContains(agentsText, "## TypeScript Development", "AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "TypeScript", "AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "PowerShell", "AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "Python", "AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "JavaScript", "AGENTS.md TypeScript-only development policy", agentsPath);
+  requireTextContains(agentsText, "## Deterministic Helper Automation", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "repetitive, evidence-heavy", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "no hidden heuristics", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "explicit inputs", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "explicit outputs", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "privacy-safe output", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "fuzzy scoring", "AGENTS.md deterministic helper automation policy", agentsPath);
+  requireTextContains(agentsText, "model-like summarization", "AGENTS.md deterministic helper automation policy", agentsPath);
+  for (const fallback of ["unknown", "unreadable", "unsupported", "blocked"]) {
+    requireTextContains(agentsText, fallback, "AGENTS.md deterministic helper automation fallback policy", agentsPath);
+  }
+
+  if (/after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)/i.test(agentsText)) {
+    addError(`AGENTS.md must not require routine post-task question handoff: ${agentsPath}`);
+  }
+}
+
+function validatePackageScripts(root: string): void {
+  const packagePath = path.join(root, "package.json");
+  if (!fileExists(packagePath)) {
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readText(packagePath));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    addError(`Invalid package.json: ${packagePath}: ${message}`);
+    return;
+  }
+
+  if (!parsed || typeof parsed !== "object" || !("scripts" in parsed)) {
+    return;
+  }
+
+  const scripts = (parsed as { scripts?: unknown }).scripts;
+  if (!scripts || typeof scripts !== "object") {
+    return;
+  }
+
+  for (const [name, value] of Object.entries(scripts as Record<string, unknown>)) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    if (/(^|\s)(pwsh|powershell)(\s|$)|\.(ps1|psd1|psm1|py|pyw|js|cjs|mjs)\b/i.test(value)) {
+      addError(`Package script '${name}' must use TypeScript tooling, not PowerShell, Python, or JavaScript entrypoints: ${packagePath}`);
+    }
+  }
+}
+
+function validateMarkdownFile(root: string, file: string, forbiddenAnchors: string[]): void {
+  const raw = fs.readFileSync(file, "utf8");
+  const lines = raw.split(/\r?\n/);
+  const text = lines.join("\n");
+
+  for (let index = 0; index < lines.length; index++) {
+    if (/[ \t]+$/.test(lines[index])) {
+      addError(`Trailing whitespace: ${file}:${index + 1}`);
+    }
+  }
+
+  for (const anchor of forbiddenAnchors) {
+    if (anchor.trim() !== "" && text.includes(anchor)) {
+      addError(`Forbidden anchor '${anchor}' found in ${file}`);
+    }
+  }
+
+  const relative = toPosixPath(path.relative(root, file));
+  const isInstructionArtifact = /^\.opencode\/(skills|agents)\//.test(relative) ||
+    /^instructions\//.test(relative) ||
+    ["AGENTS.md", "README.md"].includes(relative);
+  if (isInstructionArtifact) {
+    for (const reference of legacyToolingReferences) {
+      if (text.includes(reference)) {
+        addError(`Legacy non-TypeScript tooling reference '${reference}' found in ${file}`);
+      }
+    }
+  }
+
+  const mentionsImplementation = /\b(implement|implementation|code changes?|behavior-changing|behavior changes?|fixes are allowed|edit workers?|write scope|make the smallest correct change)\b/i.test(text);
+  const mentionsTdd = /\b(TDD|test-first|validation-first|tests? before|failing tests?[^.\n]{0,80}\bbefore\b|(?:tests?|benchmarks?|manual gates?|golden vectors?|fixtures?)[^.\n]{0,120}\bbefore\b|\bbefore\b[^.\n]{0,120}(?:tests?|benchmarks?|manual gates?|golden vectors?|fixtures?))\b/is.test(text);
+
+  if (isInstructionArtifact && mentionsImplementation && !mentionsTdd) {
+    addWarning(`Implementation-related artifact language lacks TDD/test-first language: ${file}`);
+  }
+  if (isInstructionArtifact && /after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)/i.test(text)) {
+    addError(`Instruction artifact must not require routine post-task question handoff: ${file}`);
+  }
+  if (isInstructionArtifact && /(^#{2,4}\s+.*Self-Improvement\s*$|Self-improvement while context is hot|Core principle\s+[-\u2014]\s+do not remove)/im.test(text)) {
+    addError(`Instruction artifact must not include automatic self-improvement/self-edit loops: ${file}`);
+  }
+  if (isInstructionArtifact && /\bshared URLs?\b/i.test(text)) {
+    const hasSharedUrlApproval = /user-approved shared URLs?/i.test(text) ||
+      /fetch remote\/shared URLs?.{0,160}(explicitly grants|explicit permission|user approved|user-approved|approved)/is.test(text);
+    const hasSharedUrlProhibition = /(never|do not|must not|out of scope|exclude|excluded|not in scope).{0,120}shared URLs?/is.test(text) ||
+      /shared URLs?.{0,120}(out of scope|excluded|not in scope|must not|never)/is.test(text);
+    if (!hasSharedUrlApproval && !hasSharedUrlProhibition) {
+      addError(`Instruction artifact mentioning shared URLs must require user-approved remote/shared URL access: ${file}`);
+    }
+  }
+
+  const isSkillArtifact = /^\.opencode\/skills\/[^/]+\/SKILL\.md$/.test(relative);
+  const isSessionRetroArtifact = isSkillArtifact && (
+    /^\.opencode\/skills\/[^/]*(session|retro)[^/]*\/SKILL\.md$/.test(relative) ||
+    /\b(OpenCode sessions?|session (archive|history|retros?|artifacts?|transcripts?))\b/i.test(text)
+  );
+  if (isSessionRetroArtifact && /\bledger\b/i.test(text)) {
+    const hasRedactedLedger = /redacted.{0,80}ledger|ledger.{0,80}redacted/i.test(text);
+    const hasLedgerWriteApproval = /(write generated ledgers|write a generated ledger file|generated ledger|ledger file).{0,200}(explicitly grants|explicit permission|user approved|user-approved|approved|approval)/is.test(text) ||
+      /(explicitly grants|explicit permission|user approved|user-approved|approved|approval).{0,200}(write generated ledgers|write a generated ledger file|generated ledger|ledger file)/is.test(text);
+    const hasLedgerProhibition = /(never|do not|must not|out of scope|exclude|excluded|not in scope).{0,120}ledger/is.test(text) ||
+      /ledger.{0,120}(out of scope|excluded|not in scope|must not|never)/is.test(text);
+    if (!hasLedgerProhibition && (!hasRedactedLedger || !hasLedgerWriteApproval)) {
+      addError(`Session retro artifact with a session ledger must require redaction and user-approved generated ledger writes: ${file}`);
+    }
+  }
+}
+
+function main(): void {
+  const options = parseArgs(process.argv.slice(2));
+  const root = options.root;
+  const skillNames = validateSkills(root);
+  const agentNames = validateAgents(root);
+  const instructionNames = getInstructionNames(root);
+  validateTypeScriptOnlySourceFiles(root);
+  validatePackageScripts(root);
+  validateReadme(root, skillNames, agentNames, instructionNames);
+  validateAgentsMd(root);
+
+  const markdownFiles = getMarkdownFiles(root);
+  for (const file of markdownFiles) {
+    validateMarkdownFile(root, file, options.forbiddenAnchors);
+  }
+
+  for (const warning of warnings) {
+    console.log(`WARN: ${warning}`);
+  }
+
+  if (errors.length > 0) {
+    for (const error of errors) {
+      console.log(`ERROR: ${error}`);
+    }
+    process.exit(1);
+  }
+
+  console.log(`OK: skills=${skillNames.length} agents=${agentNames.length} markdown=${markdownFiles.length} warnings=${warnings.length}`);
+}
+
+try {
+  main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`ERROR: ${message}`);
+  process.exit(1);
+}

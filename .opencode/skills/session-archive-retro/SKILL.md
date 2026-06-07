@@ -55,6 +55,12 @@ If a source is unavailable, state it plainly and continue with remaining evidenc
 
 Use read-only inspection for databases and logs. Never run database writes, migrations, vacuum, repair, or destructive cleanup against live session stores.
 
+## Deterministic Helper Automation Gate
+
+Before summarizing sessions at scale, decide whether a small deterministic helper would make the retro faster, safer, or less token-heavy. Good candidates are redacted source inventories, stable session batches, duplicate checks, path/id redaction, coverage ledgers, checkpoint manifests, and validation reports.
+
+Helper code must have explicit inputs and outputs, a schema or fixture-backed contract, stable ordering, privacy-safe output, and no hidden heuristics. Do not put fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference in code. If the helper cannot determine a fact from its inputs, it reports `unknown`, `unreadable`, `unsupported`, or `blocked`; pattern synthesis stays with the agent.
+
 ## Session-By-Session Algorithm
 
 1. Build a redacted evidence ledger for all sessions in scope. Keep it inline by default; write a generated ledger file only when the user approved the path and write scope.

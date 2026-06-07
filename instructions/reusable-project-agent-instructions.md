@@ -31,6 +31,14 @@ Use this template as a starting point for a project-level `AGENTS.md`. Keep only
 - Missing evidence for critical behavior is a finding, blocker, or accepted risk.
 - Reviewer agents should be leaf validators: read-only, no edits, no commits, no pushes, no nested agents, no user questions.
 
+## Deterministic Helper Automation
+
+- For repetitive, evidence-heavy, or token-heavy work, first consider whether a small deterministic helper could gather, count, validate, redact, diff, inventory, or enforce explicit rules more efficiently than manual inspection.
+- When writing helper code for agent workflow, make it deterministic and contract-driven: explicit inputs, explicit outputs, schemas or fixtures, stable ordering, and privacy-safe output.
+- Helper code must have no hidden heuristics: do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference as evidence.
+- If deterministic helper code cannot answer something from its inputs, report `unknown`, `unreadable`, `unsupported`, or `blocked` instead of guessing.
+- Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
+
 ## Git And Remote State
 
 - Do not commit, push, merge, delete source artifacts, or alter remote state unless explicitly requested and allowed by repository policy.

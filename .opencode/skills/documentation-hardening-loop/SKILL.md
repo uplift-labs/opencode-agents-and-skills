@@ -21,12 +21,19 @@ Do not use it for quick wording edits, single small comments, or normal code rev
 ## Workflow
 
 - Define `Goal`, `Scope`, `Non-goals`, `Success Criteria`, and `Stop Line`.
+- Before large doc/spec review, decide whether a deterministic helper would reduce repeated inventory, block tracking, link checking, duplicate detection, traceability checks, or validation-command effort.
 - Inventory docs in scope and identify canonical sources.
 - For non-trivial scopes, use `documentation-block-ledger` for continuous block coverage.
 - For large doc sets with independent files, sections, or evidence tracks, consider `orchestrator` before ledger assignment; keep single-doc or coupled narrative rewrites serial.
 - Check stale claims, broken navigation, duplicated concepts, oversized docs, missing traceability, and status words like implemented, supported, ready, blocked, planned, or tested.
 - Fix only material risks: incorrect claims, missing evidence, broken links, contradictory specs, duplicated normative text, or navigation that hides critical context.
 - Validate changed docs with available link checks, spec validation, grep/readback, tests, or review gates.
+
+## Deterministic Helper Automation Gate
+
+Good documentation helpers gather explicit evidence: file/block inventories, heading/link/anchor maps, exact duplicate text inventories, requirement-to-spec traceability tables, status-word inventories, schema checks, and validation reports.
+
+Helper code must have explicit inputs, explicit outputs, fixtures or schemas, stable ordering, privacy-safe output where applicable, and no hidden heuristics. Do not encode fuzzy quality scoring, probabilistic classification, model-like summarization, or inferred correctness in code. If the helper cannot prove a claim from its inputs, it reports `unknown`, `unreadable`, `unsupported`, or `blocked`; source-of-truth interpretation remains agent/reviewer work.
 
 ## Output
 
