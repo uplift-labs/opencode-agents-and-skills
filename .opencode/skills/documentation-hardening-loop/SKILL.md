@@ -22,6 +22,7 @@ Do not use it for quick wording edits, single small comments, or normal code rev
 - Define `Goal`, `Scope`, `Non-goals`, `Success Criteria`, and `Stop Line`.
 - Inventory docs in scope and identify canonical sources.
 - For non-trivial scopes, use `documentation-block-ledger` for continuous block coverage.
+- For large doc sets with independent files, sections, or evidence tracks, consider `orchestrator` before ledger assignment; keep single-doc or coupled narrative rewrites serial.
 - Check stale claims, broken navigation, duplicated concepts, oversized docs, missing traceability, and status words like implemented, supported, ready, blocked, planned, or tested.
 - Fix only material risks: incorrect claims, missing evidence, broken links, contradictory specs, duplicated normative text, or navigation that hides critical context.
 - Validate changed docs with available link checks, spec validation, grep/readback, tests, or review gates.

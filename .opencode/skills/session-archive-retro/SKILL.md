@@ -57,8 +57,9 @@ Use read-only inspection for databases and logs. Never run database writes, migr
 
 1. Build an evidence ledger for all sessions in scope.
 2. Sort sessions chronologically, then split into stable batches when the archive is large.
-3. Summarize each session independently before global synthesis.
-4. For each session card, capture:
+3. For large archives with independent batches, consider `orchestrator` read-only fan-out for batch summaries; the main session owns global synthesis, privacy filtering, and recommendations.
+4. Summarize each session independently before global synthesis.
+5. For each session card, capture:
 
 - Session id/title/date/project when available.
 - User goal and constraints.
@@ -71,10 +72,10 @@ Use read-only inspection for databases and logs. Never run database writes, migr
 - Candidate lesson.
 - Evidence confidence: high, medium, or low.
 
-5. Roll up batches from session cards, not raw keyword counts.
-6. Promote a global pattern only when it appears in multiple independent sessions or one severe session with strong evidence.
-7. Preserve successful recurring practices as well as problems.
-8. Reconcile proposed improvements against current source/tests/config/docs/prompts before recommending implementation-sensitive changes.
+6. Roll up batches from session cards, not raw keyword counts.
+7. Promote a global pattern only when it appears in multiple independent sessions or one severe session with strong evidence.
+8. Preserve successful recurring practices as well as problems.
+9. Reconcile proposed improvements against current source/tests/config/docs/prompts before recommending implementation-sensitive changes.
 
 ## Common Pattern Categories
 

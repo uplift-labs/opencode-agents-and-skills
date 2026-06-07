@@ -12,6 +12,7 @@ Use this skill when the user wants to create a new OpenSpec change or turn an ex
 
 - Choose a concise change id using the repository's naming convention.
 - Read existing capabilities and active changes to avoid duplicate or conflicting scope.
+- For broad proposals with independent capability, source, docs, or test evidence tracks, consider `orchestrator` for discovery before drafting; keep small or unstable-scope proposals serial.
 - Define problem, goals, non-goals, risks, rollout/migration, and validation.
 - Write normative requirements as scenarios with observable outcomes.
 - Create tasks that map to requirements, tests, docs, and validation gates.

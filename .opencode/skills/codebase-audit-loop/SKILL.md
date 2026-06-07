@@ -36,6 +36,7 @@ Before deep work, define:
 
 - Use `codebase-audit-ledger` for durable coverage when scope is large enough to risk skipped areas.
 - Inventory files, tests, specs, commands, and critical flows.
+- For broad audits with independent file or subsystem ranges, consider `orchestrator` with read-only workers and ledger-assigned ranges; keep quick or non-shardable audits serial.
 - Delegate independent read-only reviewer agents when useful, but keep the main session responsible for synthesis and edits.
 - Findings require evidence, impact, and a minimal recommendation.
 - If fixes are allowed, fix the smallest behavior-preserving or bug-fixing slice, then validate and re-review.

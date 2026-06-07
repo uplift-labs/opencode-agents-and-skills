@@ -18,6 +18,7 @@ Do not use it for routine single-file changes, simple questions, or tasks where 
 - Include test strategy before implementation strategy.
 - Separate confirmed facts from assumptions and open questions.
 - Do not invent unavailable tools, APIs, or requirements.
+- If the plan exposes independent workstreams with bounded evidence and validation, recommend `orchestrator` for execution; keep tightly coupled or decision-blocked work serial.
 
 ## Plan Shape
 

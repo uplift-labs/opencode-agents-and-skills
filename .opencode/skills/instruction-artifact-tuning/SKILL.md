@@ -27,6 +27,7 @@ Default mode is review-first. Edit only when the user explicitly asks to tune, f
 - For skills, ensure `description` is specific, concrete, and short enough for OpenCode discovery.
 - For agents, ensure frontmatter has a useful `description`, correct `mode`, and least-privilege `permission`.
 - Reviewer agents should be leaf validators unless explicitly designed otherwise: no edits, commits, pushes, nested agents, destructive commands, or user questions.
+- For broad independent artifact inventories, consider `orchestrator` with bounded read-only workers; keep single-artifact or tightly coupled tuning serial.
 - Replace project-specific paths, tools, issue trackers, and product names with placeholders unless the artifact is intentionally project-local.
 - Remove obsolete instructions instead of adding override paragraphs.
 

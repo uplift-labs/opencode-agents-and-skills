@@ -32,9 +32,10 @@ If the repository uses another path, use the path provided by the user or projec
 
 1. Inventory reflection files and scope.
 2. If there are fewer than 3 substantive reflections, say that pattern confidence is low and continue only if the user still wants it or the task explicitly asks for a small retro.
-3. Read all in-scope reflections before drawing cross-session conclusions.
-4. Triage each file: valid, invalid/stub, duplicate, automated noise, or blocked/unreadable.
-5. Extract per-reflection fields:
+3. For large retros with independent batches or target categories, consider `orchestrator` read-only workers; keep small retros serial.
+4. Read all in-scope reflections before drawing cross-session conclusions.
+5. Triage each file: valid, invalid/stub, duplicate, automated noise, or blocked/unreadable.
+6. Extract per-reflection fields:
 
 - `Goal`: what the user or agent tried to accomplish.
 - `Outcome`: accomplished, partial, failed, or unclear.
@@ -42,17 +43,17 @@ If the repository uses another path, use the path provided by the user or projec
 - `Lesson`: stated or inferred learning.
 - `Action Items`: proposed improvements.
 
-6. Find patterns:
+7. Find patterns:
 
 - Repeating mistakes across multiple reflections.
 - Recurring action items that were never applied.
 - Successful practices worth preserving.
 - Tooling or instruction gaps that automation can catch.
 
-7. Produce at most 5 high-value improvements using `Trigger -> Action -> Rationale`.
-8. Apply improvements only when allowed; otherwise return a ready-to-apply plan.
-9. If files were changed, validate and re-read changed ranges.
-10. If cleanup is allowed, remove or archive processed reflection files; otherwise list cleanup candidates.
+8. Produce at most 5 high-value improvements using `Trigger -> Action -> Rationale`.
+9. Apply improvements only when allowed; otherwise return a ready-to-apply plan.
+10. If files were changed, validate and re-read changed ranges.
+11. If cleanup is allowed, remove or archive processed reflection files; otherwise list cleanup candidates.
 
 ## Improvement Targets
 

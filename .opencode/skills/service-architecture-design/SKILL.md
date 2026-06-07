@@ -22,3 +22,5 @@ Use this skill when shaping service architecture, design docs, specs, or impleme
 ## Output
 
 Return decisions, alternatives rejected, risk matrix, validation plan, implementation slices, and reviewer gates needed before acceptance.
+
+If the design yields multiple independent implementation, test, evidence, or reviewer tracks, consider `orchestrator` for execution; keep single-track design decisions in this skill.

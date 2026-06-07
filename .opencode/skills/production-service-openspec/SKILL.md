@@ -14,6 +14,7 @@ Use this skill when creating an OpenSpec change for productionizing a service ba
 - Keep optional future features out unless explicitly accepted.
 - Capture unsupported behavior and future-scope items as explicit non-goals.
 - Requirements must be observable and testable.
+- For multi-area baselines with independent evidence tracks, consider `orchestrator` read-only fan-out before drafting; keep final proposal/spec synthesis in the main session.
 
 ## Baseline Areas
 

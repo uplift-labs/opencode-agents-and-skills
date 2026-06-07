@@ -11,6 +11,7 @@ Use this skill for a focused read-only or fix-enabled consistency pass over Open
 ## Checks
 
 - Proposal, design, spec deltas, tasks, and traceability describe the same scope.
+- For broad read-only consistency reviews across independent artifacts, consider `orchestrator` with exact ranges or tracks; keep focused reviews serial.
 - Every behavior-changing requirement has an acceptance scenario and planned or existing verification.
 - Task completion claims have evidence.
 - Docs do not claim behavior that the spec excludes or leaves future-scope.
