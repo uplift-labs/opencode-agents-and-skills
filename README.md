@@ -126,7 +126,7 @@ After inventory, gather deterministic structured metrics without transcript-cont
 npm run retro:analyze -- --format markdown
 ```
 
-The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, TODO status/priority counts, event types, and session summary counters. Markdown output highlights action-oriented rollups for tool error hotspots, TODO status/priority counts, daily session buckets, and `session_message` types. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets. Use `--db <path>` or `--data-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Use `--out <path>` only for approved generated analysis reports; existing files are refused unless `--overwrite` is passed explicitly.
+The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. Markdown output highlights action-oriented rollups for tool error hotspots, tool error categories, readiness signals, open TODOs, TODO status/priority counts, daily session buckets, and `session_message` types. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets. It may inspect tool `error`/`output`/`message` strings only to set fixed error-category buckets and bash command values only to set explicit validation/git-review proxy categories; it emits category names, booleans, and counts rather than those inspected values. These categories and proxies are mechanical signals, not root-cause or intent findings. Use `--db <path>` or `--data-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Use `--include-session-cards` with `--format json` when a redacted mechanical per-session envelope is needed; for large stores, combine it with an approved `--out <path>` because it emits one JSON card per session. Use `--out <path>` only for approved generated analysis reports; existing files are refused unless `--overwrite` is passed explicitly.
 
 ## Routing Map
 
@@ -173,8 +173,8 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 ### Documentation And Audit
 
-- `documentation-hardening-loop`: docs/spec review-fix-validate loop.
 - `code-quality-audit`: pragmatic code-health review after non-trivial code changes, focusing on maintainability, readability, file navigation, duplication, overengineering, code smells, and minimal refactoring remedies.
+- `documentation-hardening-loop`: docs/spec review-fix-validate loop.
 - `documentation-block-ledger`: helper ledger for full docs block coverage.
 - `codebase-audit-loop`: exhaustive audit workflow for bugs, redundancy, test gaps, performance, and maintainability.
 - `codebase-audit-ledger`: helper ledger for exhaustive audit coverage.
@@ -204,8 +204,8 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 ## Agent Catalog
 
-- `test-coverage-reviewer`: requirement-to-test matrix, missing tests, weak assertions.
 - `code-quality-reviewer`: maintainability/readability reviewer for code smells, file bloat, duplication, boundaries, overengineering, and pragmatic refactoring gates.
+- `test-coverage-reviewer`: requirement-to-test matrix, missing tests, weak assertions.
 - `implementation-readiness-reviewer`: stable scope, decisions, blockers, validation readiness.
 - `openspec-architecture-reviewer`: architecture/OpenSpec consistency and ownership risks.
 - `rust-concurrency-reviewer`: Rust async/concurrency/backpressure/shutdown risks.

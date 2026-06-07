@@ -1176,6 +1176,8 @@ const tests: TestCase[] = [
       const report = asRecord(parseJsonOutput(result), "Retro analyze JSON root should be an object.");
       assertEqual(report.tool, "opencode-session-retro-analyze", "Retro analyze should identify its report contract.");
       assertEqual(report.redacted, true, "Retro analyze should default to redacted output.");
+      const discovery = asRecord(report.discovery, "Retro analyze discovery should be an object.");
+      assertEqual(discovery.includeSessionCards, false, "Retro analyze should omit session cards by default.");
       const coverage = asRecord(report.coverage, "Retro analyze coverage should be an object.");
       assertEqual(coverage.totalSessions, 2, "Retro analyze should count sessions exactly.");
       assertEqual(coverage.messageRows, 3, "Retro analyze should count message rows exactly.");
@@ -1185,6 +1187,9 @@ const tests: TestCase[] = [
       const source = sources[0];
       if ("path" in source) {
         throw new Error(`Retro analyze should omit source path unless --show-paths is used.\nSource:\n${JSON.stringify(source, null, 2)}`);
+      }
+      if ("sessionCards" in source) {
+        throw new Error(`Retro analyze should omit per-session cards unless --include-session-cards is requested.\nSource:\n${JSON.stringify(source, null, 2)}`);
       }
       const counts = asRecord(source.counts, "Retro analyze source counts should be an object.");
       assertEqual(counts.account, 1, "Retro analyze should count account rows without reading token values.");
@@ -1228,6 +1233,276 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "retro analyze reports readiness rollups and redacted session cards",
+    run: () => {
+      const dbPath = newOpenCodeSessionDbFixture("retro-analyze-readiness");
+      const db = new DatabaseSync(dbPath);
+      try {
+        db.prepare("update session set workspace_id = ? where id = ?").run("workspace_secret", "ses_secret_child");
+        db.prepare("insert into todo (session_id, content, status, priority, position, time_created, time_updated) values (?, ?, ?, ?, ?, ?, ?)").run("ses_secret_child", "raw secret pending todo", "pending", "medium", 1, 1700000011000, 1700000012000);
+        db.prepare("insert into todo (session_id, content, status, priority, position, time_created, time_updated) values (?, ?, ?, ?, ?, ?, ?)").run("ses_secret_child", "raw secret in progress todo", "in_progress", "high", 2, 1700000012000, 1700000013000);
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_edit_completed",
+          "msg_1",
+          "ses_secret_root",
+          1700000002000,
+          1700000003000,
+          JSON.stringify({
+            type: "tool",
+            tool: "apply_patch",
+            state: {
+              status: "completed",
+              input: {
+                patchText: "raw secret patch text",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_validation_completed",
+          "msg_1",
+          "ses_secret_root",
+          1700000004000,
+          1700000005000,
+          JSON.stringify({
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: {
+                command: "npm test && git status --short raw secret command",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_edit_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000012000,
+          1700000013000,
+          JSON.stringify({
+            type: "tool",
+            tool: "apply_patch",
+            state: {
+              status: "error",
+              error: "Failed to apply patch: raw secret context mismatch",
+              input: {
+                patchText: "raw secret failed patch",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_read_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000014000,
+          1700000015000,
+          JSON.stringify({
+            type: "tool",
+            tool: "read",
+            state: {
+              status: "error",
+              error: "raw secret file does not exist",
+              input: {
+                filePath: "raw secret file path",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_webfetch_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000016000,
+          1700000017000,
+          JSON.stringify({
+            type: "tool",
+            tool: "webfetch",
+            state: {
+              status: "error",
+              error: "HTTP 500 raw secret response",
+              input: {
+                url: "raw secret url",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_grep_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000018000,
+          1700000019000,
+          JSON.stringify({
+            type: "tool",
+            tool: "grep",
+            state: {
+              status: "error",
+              message: "Invalid regular expression raw secret pattern",
+              input: {
+                pattern: "raw secret regex",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_bash_timeout_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000020000,
+          1700000021000,
+          JSON.stringify({
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "error",
+              error: "Command timed out raw secret command",
+              input: {
+                command: "raw secret timeout command",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_glob_permission_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000022000,
+          1700000023000,
+          JSON.stringify({
+            type: "tool",
+            tool: "glob",
+            state: {
+              status: "error",
+              output: "Permission denied raw secret glob",
+              input: {
+                pattern: "raw secret glob",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_question_no_error_text",
+          "msg_2",
+          "ses_secret_child",
+          1700000024000,
+          1700000025000,
+          JSON.stringify({
+            type: "tool",
+            tool: "question",
+            state: {
+              status: "error",
+              input: {
+                questions: "raw secret question",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_skill_other_error",
+          "msg_2",
+          "ses_secret_child",
+          1700000026000,
+          1700000027000,
+          JSON.stringify({
+            type: "tool",
+            tool: "skill",
+            state: {
+              status: "error",
+              error: "unexpected raw secret failure",
+              input: {
+                name: "raw secret skill",
+              },
+            },
+          }),
+        );
+      } finally {
+        db.close();
+      }
+
+      const result = invokeRetroAnalyze(["--db", dbPath, "--only-explicit", "--format", "json", "--include-session-cards"]);
+      assertSuccess(result, "Retro analyze should accept optional redacted session cards.");
+      const report = asRecord(parseJsonOutput(result), "Retro analyze JSON root should be an object.");
+      const source = asArray(report.sources, "Retro analyze sources should be an array.")[0];
+      const readiness = asRecord(source.readinessRollup, "Retro analyze should report readiness rollups.");
+      assertEqual(readiness.editSessions, 2, "Readiness rollup should count sessions with edit tools.");
+      assertEqual(readiness.validationProxySessions, 1, "Readiness rollup should count validation command proxies.");
+      assertEqual(readiness.gitReviewProxySessions, 1, "Readiness rollup should count git review command proxies.");
+      assertEqual(readiness.editAndValidationSessions, 1, "Readiness rollup should count edit sessions with validation proxies.");
+      assertEqual(readiness.editWithoutValidationProxySessions, 1, "Readiness rollup should count edited sessions without validation proxies.");
+      assertEqual(readiness.editAndGitReviewSessions, 1, "Readiness rollup should count edit sessions with git review proxies.");
+      assertEqual(readiness.editWithoutGitReviewSessions, 1, "Readiness rollup should count edited sessions without git review proxies.");
+      assertEqual(readiness.openTodoSessions, 1, "Readiness rollup should count sessions with open TODOs.");
+      assertEqual(readiness.openTodoRows, 2, "Readiness rollup should count open TODO rows.");
+      assertEqual(readiness.editWithOpenTodoSessions, 1, "Readiness rollup should count edited sessions with open TODOs.");
+      assertEqual(readiness.toolErrorSessions, 1, "Readiness rollup should count sessions with tool errors.");
+      assertEqual(readiness.toolErrorAndValidationSessions, 0, "Readiness rollup should count tool-error sessions that also have validation proxies.");
+      const openTodoCounts = asArray(source.openTodoCounts, "Retro analyze should include openTodoCounts.");
+      const openTodoBucket = findBucket(openTodoCounts, "status", "pending");
+      assertEqual(openTodoBucket.priority, "medium", "Open TODO buckets should include priority.");
+      assertEqual(openTodoBucket.count, 1, "Open TODO buckets should count rows.");
+      assertEqual(openTodoBucket.sessions, 1, "Open TODO buckets should count distinct sessions.");
+      const inProgressTodoBucket = findBucket(openTodoCounts, "status", "in_progress");
+      assertEqual(inProgressTodoBucket.priority, "high", "Open TODO buckets should include in-progress priority.");
+      assertEqual(inProgressTodoBucket.count, 1, "Open TODO buckets should count in-progress rows.");
+      assertEqual(inProgressTodoBucket.sessions, 1, "Open TODO buckets should count in-progress distinct sessions.");
+      const toolEnvelope = asRecord(source.toolEnvelope, "Retro analyze tool envelope should be an object.");
+      const errorCategoryCounts = asArray(toolEnvelope.errorCategoryCounts, "Retro analyze should include errorCategoryCounts.");
+      const expectedCategories = new Set(["patch_context_or_format", "not_found_or_no_match", "network_or_http", "invalid_or_parse", "timeout", "permission_or_access", "no_error_text", "other"]);
+      const actualCategories = new Set(errorCategoryCounts.map((row) => String(row.key)));
+      const totalErrorCategoryRows = errorCategoryCounts.reduce((sum, row) => sum + Number(row.count), 0);
+      if (errorCategoryCounts.length !== expectedCategories.size || totalErrorCategoryRows !== 8 || [...expectedCategories].some((category) => !actualCategories.has(category))) {
+        throw new Error(`Retro analyze should emit the exact deterministic category set for this fixture.\nRows:\n${JSON.stringify(errorCategoryCounts, null, 2)}`);
+      }
+      assertEqual(findBucket(errorCategoryCounts, "key", "patch_context_or_format").count, 1, "Retro analyze should categorize patch/context errors deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "not_found_or_no_match").count, 1, "Retro analyze should categorize not-found errors deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "network_or_http").count, 1, "Retro analyze should categorize network/http errors deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "invalid_or_parse").count, 1, "Retro analyze should categorize invalid/parse errors deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "timeout").count, 1, "Retro analyze should categorize timeout errors deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "permission_or_access").count, 1, "Retro analyze should categorize permission/access errors deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "no_error_text").count, 1, "Retro analyze should categorize errors without emitted text deterministically.");
+      assertEqual(findBucket(errorCategoryCounts, "key", "other").count, 1, "Retro analyze should keep an explicit fallback category.");
+      const toolCategoryCounts = asArray(toolEnvelope.errorToolCategoryCounts, "Retro analyze should include errorToolCategoryCounts.");
+      const patchCategory = toolCategoryCounts.find((row) => row.tool === "apply_patch" && row.category === "patch_context_or_format");
+      if (!patchCategory || patchCategory.count !== 1) {
+        throw new Error(`Retro analyze should keep per-tool error categories.\nRows:\n${JSON.stringify(toolCategoryCounts, null, 2)}`);
+      }
+      const cards = asArray(source.sessionCards, "Retro analyze should include redacted session cards only when requested.");
+      assertEqual(cards.length, 2, "Retro analyze should emit one redacted card per session for explicit small fixtures.");
+      const rootCard = cards.find((card) => card.parentRef == null);
+      if (!rootCard) {
+        throw new Error(`Retro analyze should include a root session card.\nCards:\n${JSON.stringify(cards, null, 2)}`);
+      }
+      assertEqual(rootCard.hasEditTool, true, "Session cards should include edit tool signals.");
+      assertEqual(rootCard.hasValidationProxy, true, "Session cards should include validation proxy signals.");
+      assertEqual(rootCard.hasGitReviewProxy, true, "Session cards should include git review proxy signals.");
+      const childCard = cards.find((card) => card.parentRef != null);
+      if (!childCard) {
+        throw new Error(`Retro analyze should include a child session card.\nCards:\n${JSON.stringify(cards, null, 2)}`);
+      }
+      assertEqual(childCard.openTodoCount, 2, "Session cards should count open TODO rows without content.");
+      assertEqual(childCard.toolErrorCount, 8, "Session cards should count tool errors without raw error text.");
+      const sessionRef = typeof childCard.sessionRef === "string" ? childCard.sessionRef : "";
+      const projectRef = typeof childCard.projectRef === "string" ? childCard.projectRef : "";
+      const workspaceRef = typeof childCard.workspaceRef === "string" ? childCard.workspaceRef : "";
+      const parentRef = typeof childCard.parentRef === "string" ? childCard.parentRef : "";
+      if (!/^session_[a-f0-9]{12}$/.test(sessionRef) || !/^project_[a-f0-9]{12}$/.test(projectRef) || !/^workspace_[a-f0-9]{12}$/.test(workspaceRef) || !/^session_[a-f0-9]{12}$/.test(parentRef)) {
+        throw new Error(`Session cards should emit only hashed refs.\nChild card:\n${JSON.stringify(childCard, null, 2)}`);
+      }
+      const childSignals = Array.isArray(childCard.mechanicalSignals) ? childCard.mechanicalSignals.join("\n") : "";
+      if (!childSignals.includes("has_open_todo") || !childSignals.includes("has_tool_error")) {
+        throw new Error(`Session cards should include bounded mechanical signals.\nChild card:\n${JSON.stringify(childCard, null, 2)}`);
+      }
+      assertOutputExcludes(result, "ses_secret", "Session cards must not expose stable session ids.");
+      assertOutputExcludes(result, "proj_secret", "Session cards must not expose stable project ids.");
+      assertOutputExcludes(result, "workspace_secret", "Session cards must not expose stable workspace ids.");
+      assertOutputExcludes(result, "SensitiveProjectName", "Session cards must not expose project names or paths.");
+      assertOutputExcludes(result, "raw secret", "Session cards must not expose raw prompts, commands, paths, TODOs, or patch data.");
+    },
+  },
+  {
     name: "retro analyze markdown reports action-oriented redacted sections",
     run: () => {
       const dbPath = newOpenCodeSessionDbFixture("retro-analyze-markdown");
@@ -1244,6 +1519,7 @@ const tests: TestCase[] = [
             tool: "bash",
             state: {
               status: "error",
+              error: "Failed to apply patch: raw secret context mismatch",
               input: {
                 command: "raw secret command value",
               },
@@ -1284,6 +1560,41 @@ const tests: TestCase[] = [
             },
           }),
         );
+        db.prepare("insert into todo (session_id, content, status, priority, position, time_created, time_updated) values (?, ?, ?, ?, ?, ?, ?)").run("ses_secret_child", "raw secret pending todo", "pending", "medium", 1, 1700000011000, 1700000012000);
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_tool_validation",
+          "msg_1",
+          "ses_secret_root",
+          1700000008000,
+          1700000009000,
+          JSON.stringify({
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: {
+                command: "npm run validate && git diff raw secret command",
+              },
+            },
+          }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_tool_edit",
+          "msg_1",
+          "ses_secret_root",
+          1700000010000,
+          1700000011000,
+          JSON.stringify({
+            type: "tool",
+            tool: "apply_patch",
+            state: {
+              status: "completed",
+              input: {
+                patchText: "raw secret patch text",
+              },
+            },
+          }),
+        );
       } finally {
         db.close();
       }
@@ -1291,6 +1602,13 @@ const tests: TestCase[] = [
       assertSuccess(result, "Retro analyze markdown should read a minimal OpenCode SQLite fixture.");
       assertOutputContains(result, "### Tool Error Hotspots", "Markdown output should make tool errors visible without JSON inspection.");
       assertOutputContains(result, "| bash | error | 1 |", "Markdown output should include redacted tool error buckets.");
+      assertOutputContains(result, "### Tool Error Categories", "Markdown output should include deterministic tool error category counts.");
+      assertOutputContains(result, "| patch_context_or_format | 1 |", "Markdown output should include redacted error category buckets.");
+      assertOutputContains(result, "### Readiness Rollup", "Markdown output should include edit/validation readiness counts.");
+      assertOutputContains(result, "| Edit sessions | 1 |", "Markdown readiness rollup should count edit sessions.");
+      assertOutputContains(result, "### Open TODO Rollup", "Markdown output should highlight open TODO sessions.");
+      assertOutputContains(result, "| Open TODO sessions | 1 |", "Markdown open TODO rollup should count sessions, not content.");
+      assertOutputContains(result, "| pending | medium | 1 | 1 |", "Markdown open TODO rollup should include status/priority row and distinct sessions.");
       assertOutputContains(result, "### Todo Rollup", "Markdown output should include TODO status and priority counts.");
       assertOutputContains(result, "| completed | high | 1 |", "Markdown output should include redacted TODO rollup rows.");
       assertOutputContains(result, "### Day Buckets", "Markdown output should include chronological session buckets.");
@@ -1301,6 +1619,15 @@ const tests: TestCase[] = [
       assertOutputExcludes(result, "SensitiveProjectName", "Retro analyze markdown must not expose raw project names or paths by default.");
       assertOutputExcludes(result, "ses_secret_root", "Retro analyze markdown must not expose stable session ids by default.");
       assertOutputExcludes(result, "raw secret", "Retro analyze markdown must not expose raw message, part, todo, or command data.");
+    },
+  },
+  {
+    name: "retro analyze rejects markdown session cards",
+    run: () => {
+      const dbPath = newOpenCodeSessionDbFixture("retro-analyze-markdown-cards");
+      const result = invokeRetroAnalyze(["--db", dbPath, "--only-explicit", "--format", "markdown", "--include-session-cards"]);
+      assertFailure(result, "Retro analyze should reject markdown session cards instead of silently omitting them.");
+      assertOutputContains(result, "--include-session-cards requires --format json", "Retro analyze should explain the JSON-only session-card contract.");
     },
   },
   {

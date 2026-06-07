@@ -11,6 +11,7 @@ type Options = {
   dataDirs: string[];
   dbPaths: string[];
   format: OutputFormat;
+  includeSessionCards: boolean;
   maxBuckets: number;
   outPath: string | null;
   overwrite: boolean;
@@ -44,6 +45,12 @@ type ToolStatusBucket = {
   tool: string;
 };
 
+type ToolCategoryBucket = {
+  category: string;
+  count: number;
+  tool: string;
+};
+
 type RedactedBucket = {
   childSessions?: number;
   count: number;
@@ -68,7 +75,9 @@ type StructuredEnvelope = {
 };
 
 type ToolEnvelope = {
+  errorCategoryCounts: CountBucket[];
   errorToolStatusCounts: ToolStatusBucket[];
+  errorToolCategoryCounts: ToolCategoryBucket[];
   errorStatusSessions: number;
   errorStatusToolParts: number;
   inputKeyCounts: CountBucket[];
@@ -76,6 +85,68 @@ type ToolEnvelope = {
   toolCounts: ToolBucket[];
   toolParts: number;
   toolStatusCounts: ToolStatusBucket[];
+};
+
+type OpenTodoBucket = {
+  count: number;
+  priority: string;
+  sessions: number;
+  status: string;
+};
+
+type ReadinessRollup = {
+  editAndGitReviewSessions: number;
+  editAndValidationSessions: number;
+  editSessions: number;
+  editWithOpenTodoSessions: number;
+  editWithoutGitReviewSessions: number;
+  editWithoutValidationProxySessions: number;
+  gitReviewProxySessions: number;
+  openTodoRows: number;
+  openTodoSessions: number;
+  toolErrorAndValidationSessions: number;
+  toolErrorSessions: number;
+  validationProxySessions: number;
+};
+
+type SessionCard = {
+  dateRange: DateRange;
+  hasEditTool: boolean;
+  hasGitReviewProxy: boolean;
+  hasValidationProxy: boolean;
+  mechanicalSignals: string[];
+  messageRows: number;
+  openTodoCount: number;
+  parentRef: string | null;
+  partRows: number;
+  projectRef: string | null;
+  sessionRef: string;
+  sourceRef: string;
+  todoRows: number;
+  toolErrorCount: number;
+  toolNames: string[];
+  workspaceRef: string | null;
+};
+
+type SessionToolSignals = {
+  hasEditTool: boolean;
+  hasGitReviewProxy: boolean;
+  hasValidationProxy: boolean;
+  toolErrorCount: number;
+  toolNames: Set<string>;
+};
+
+type PartAnalysis = {
+  partEnvelope: StructuredEnvelope;
+  sessionToolSignals: Map<string, SessionToolSignals>;
+  toolEnvelope: ToolEnvelope;
+};
+
+type TodoAnalysis = {
+  openTodoBySession: Map<string, number>;
+  openTodoCounts: OpenTodoBucket[];
+  todoCounts: Array<{ count: number; priority: string; status: string }>;
+  todoRowsBySession: Map<string, number>;
 };
 
 type SessionSummary = {
@@ -106,13 +177,16 @@ type SqliteAnalysis = {
   permissionRows: number;
   projectBuckets: RedactedBucket[];
   readable: boolean;
+  readinessRollup: ReadinessRollup;
   schema: Record<string, string[]>;
   schemaTables: string[];
+  sessionCards?: SessionCard[];
   sessionInputDeliveries: CountBucket[];
   sessionMessageTypes: CountBucket[];
   sessionSummary: SessionSummary;
   sourceRef: string;
   status: string;
+  openTodoCounts: OpenTodoBucket[];
   todoCounts: Array<{ count: number; priority: string; status: string }>;
   toolEnvelope: ToolEnvelope;
   type: "sqlite-opencode-analysis";
@@ -134,6 +208,7 @@ type AnalysisReport = {
   discovery: {
     checkedDataDirs: number;
     explicitDbPaths: number;
+    includeSessionCards: boolean;
     showPaths: boolean;
     useDefaultPaths: boolean;
   };
@@ -170,6 +245,27 @@ const KNOWN_SQLITE_TABLES = [
   "migration",
   "__drizzle_migrations",
 ];
+const EDIT_TOOLS = new Set([
+  "apply_patch",
+  "edit",
+  "write",
+  "serena_replace_content",
+  "serena_replace_symbol_body",
+  "serena_insert_after_symbol",
+  "serena_insert_before_symbol",
+  "serena_create_text_file",
+  "serena_rename_symbol",
+  "serena_safe_delete_symbol",
+]);
+const VALIDATION_COMMAND_PATTERNS = [
+  /\b(test|pytest|vitest|cargo test|go test|dotnet test|mvn test|gradle test)\b/i,
+  /\bvalidate\b/i,
+  /\blint\b/i,
+  /\b(typecheck|tsc|clippy|check)\b/i,
+  /\b(build|cargo build|dotnet build)\b/i,
+  /\b(fmt|format|prettier|rustfmt)\b/i,
+];
+const GIT_REVIEW_COMMAND_PATTERN = /\bgit\s+(status|diff|log)\b/i;
 
 function printUsage(): void {
   console.log(`Usage:
@@ -183,6 +279,7 @@ Options:
   --out <path>             Write output to an existing directory path target instead of stdout.
   --overwrite              Allow --out to replace an existing file.
   --show-paths             Include home-redacted source paths. Default hides paths.
+  --include-session-cards  Include one JSON redacted mechanical envelope card per session. Requires --format json.
   --max-buckets <n>        Maximum rows per aggregate bucket list. Default: ${DEFAULT_MAX_BUCKETS}.
   --help                   Show this help.
 `);
@@ -223,6 +320,7 @@ function parseArgs(args: string[]): Options {
     dataDirs: [],
     dbPaths: [],
     format: "markdown",
+    includeSessionCards: false,
     maxBuckets: DEFAULT_MAX_BUCKETS,
     outPath: null,
     overwrite: false,
@@ -261,6 +359,8 @@ function parseArgs(args: string[]): Options {
       options.overwrite = true;
     } else if (arg === "--show-paths") {
       options.showPaths = true;
+    } else if (arg === "--include-session-cards") {
+      options.includeSessionCards = true;
     } else if (arg === "--max-buckets") {
       options.maxBuckets = readPositiveInteger(readOptionValue(args, index, arg), "--max-buckets");
       index++;
@@ -269,6 +369,10 @@ function parseArgs(args: string[]): Options {
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
+  }
+
+  if (options.includeSessionCards && options.format !== "json") {
+    throw new Error("--include-session-cards requires --format json.");
   }
 
   return options;
@@ -440,6 +544,18 @@ function countRows(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, t
   return normalizeCount(row?.count);
 }
 
+function countBySession(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, table: string): Map<string, number> {
+  if (!tables.has(table)) {
+    return new Map();
+  }
+  const columns = tableColumns(db, table);
+  if (!columns.includes("session_id")) {
+    return new Map();
+  }
+  const rows = db.prepare(`select session_id as sessionID, count(*) as count from ${quoteIdent(table)} group by session_id`).all() as Array<{ count: unknown; sessionID: unknown }>;
+  return new Map(rows.map((row) => [String(row.sessionID), normalizeCount(row.count)]));
+}
+
 function hasColumn(schema: Record<string, string[]>, table: string, column: string): boolean {
   return schema[table]?.includes(column) ?? false;
 }
@@ -495,6 +611,16 @@ function sortedToolStatusBuckets(map: Map<string, number>, maxBuckets: number): 
     });
 }
 
+function sortedToolCategoryBuckets(map: Map<string, number>, maxBuckets: number): ToolCategoryBucket[] {
+  return [...map.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, maxBuckets)
+    .map(([key, count]) => {
+      const [tool, category] = key.split("\u0000", 2);
+      return { tool, category, count };
+    });
+}
+
 function safeJsonRecord(value: unknown): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(String(value)) as unknown;
@@ -505,6 +631,59 @@ function safeJsonRecord(value: unknown): Record<string, unknown> | null {
   } catch (_error) {
     return null;
   }
+}
+
+function asRecordOrEmpty(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value != null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function getSessionToolSignals(signals: Map<string, SessionToolSignals>, sessionID: string): SessionToolSignals {
+  const existing = signals.get(sessionID);
+  if (existing) {
+    return existing;
+  }
+  const created: SessionToolSignals = {
+    hasEditTool: false,
+    hasGitReviewProxy: false,
+    hasValidationProxy: false,
+    toolErrorCount: 0,
+    toolNames: new Set<string>(),
+  };
+  signals.set(sessionID, created);
+  return created;
+}
+
+function commandMatchesAny(command: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(command));
+}
+
+function classifyToolError(state: Record<string, unknown>): string {
+  const text = [state.error, state.output, state.message]
+    .filter((value): value is string => typeof value === "string" && value !== "")
+    .join("\n")
+    .toLowerCase();
+  if (text === "") {
+    return "no_error_text";
+  }
+  if (text.includes("no files found") || text.includes("no file") || text.includes("does not exist") || text.includes("not found")) {
+    return "not_found_or_no_match";
+  }
+  if (text.includes("timeout") || text.includes("timed out")) {
+    return "timeout";
+  }
+  if (text.includes("failed to apply") || text.includes("context") || text.includes("patch") || text.includes("hunk")) {
+    return "patch_context_or_format";
+  }
+  if (text.includes("permission") || text.includes("access") || text.includes("denied")) {
+    return "permission_or_access";
+  }
+  if (text.includes("network") || text.includes("fetch") || text.includes("http") || text.includes("dns") || text.includes("tls")) {
+    return "network_or_http";
+  }
+  if (text.includes("invalid") || text.includes("parse") || text.includes("json") || text.includes("schema") || text.includes("regular expression") || text.includes("regex")) {
+    return "invalid_or_parse";
+  }
+  return "other";
 }
 
 function readMessageEnvelope(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, maxBuckets: number): StructuredEnvelope {
@@ -536,15 +715,18 @@ function readMessageEnvelope(db: InstanceType<typeof DatabaseSync>, tables: Set<
   };
 }
 
-function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, maxBuckets: number): { partEnvelope: StructuredEnvelope; toolEnvelope: ToolEnvelope } {
+function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, maxBuckets: number): PartAnalysis {
   const keyCounts = new Map<string, number>();
   const typeCounts = new Map<string, number>();
   const toolCounts = new Map<string, number>();
   const statusCounts = new Map<string, number>();
   const toolStatusCounts = new Map<string, number>();
+  const errorCategoryCounts = new Map<string, number>();
+  const errorToolCategoryCounts = new Map<string, number>();
   const errorToolStatusCounts = new Map<string, number>();
   const inputKeyCounts = new Map<string, number>();
   const errorStatusSessions = new Set<string>();
+  const sessionToolSignals = new Map<string, SessionToolSignals>();
   let parsedRows = 0;
   let unreadableRows = 0;
   let toolParts = 0;
@@ -552,7 +734,8 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
   if (!tables.has("part")) {
     return {
       partEnvelope: { keyCounts: [], parsedRows, typeCounts: [], unreadableRows },
-      toolEnvelope: { errorToolStatusCounts: [], errorStatusSessions: 0, errorStatusToolParts, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts, toolStatusCounts: [] },
+      sessionToolSignals,
+      toolEnvelope: { errorCategoryCounts: [], errorToolCategoryCounts: [], errorToolStatusCounts: [], errorStatusSessions: 0, errorStatusToolParts, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts, toolStatusCounts: [] },
     };
   }
   for (const row of db.prepare("select session_id, data from part").iterate() as Iterable<{ data: unknown; session_id: unknown }>) {
@@ -571,21 +754,37 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
       continue;
     }
     toolParts++;
+    const sessionID = String(row.session_id);
     const tool = typeof parsed.tool === "string" && parsed.tool !== "" ? parsed.tool : "<missing>";
     increment(toolCounts, tool);
-    const state = typeof parsed.state === "object" && parsed.state != null && !Array.isArray(parsed.state) ? parsed.state as Record<string, unknown> : {};
+    const sessionSignals = getSessionToolSignals(sessionToolSignals, sessionID);
+    sessionSignals.toolNames.add(tool);
+    if (EDIT_TOOLS.has(tool)) {
+      sessionSignals.hasEditTool = true;
+    }
+    const state = asRecordOrEmpty(parsed.state);
     const status = typeof state.status === "string" && state.status !== "" ? state.status : "<missing>";
     increment(statusCounts, status);
     increment(toolStatusCounts, `${tool}\u0000${status}`);
     if (status === "error") {
       errorStatusToolParts++;
-      errorStatusSessions.add(String(row.session_id));
+      errorStatusSessions.add(sessionID);
+      sessionSignals.toolErrorCount++;
       increment(errorToolStatusCounts, `${tool}\u0000${status}`);
+      const category = classifyToolError(state);
+      increment(errorCategoryCounts, category);
+      increment(errorToolCategoryCounts, `${tool}\u0000${category}`);
     }
-    const input = typeof state.input === "object" && state.input != null && !Array.isArray(state.input) ? state.input as Record<string, unknown> : null;
-    if (input) {
-      for (const inputKey of Object.keys(input)) {
-        increment(inputKeyCounts, `${tool}.${inputKey}`);
+    const input = asRecordOrEmpty(state.input);
+    for (const inputKey of Object.keys(input)) {
+      increment(inputKeyCounts, `${tool}.${inputKey}`);
+    }
+    if (tool === "bash" && typeof input.command === "string") {
+      if (commandMatchesAny(input.command, VALIDATION_COMMAND_PATTERNS)) {
+        sessionSignals.hasValidationProxy = true;
+      }
+      if (GIT_REVIEW_COMMAND_PATTERN.test(input.command)) {
+        sessionSignals.hasGitReviewProxy = true;
       }
     }
   }
@@ -596,7 +795,10 @@ function readPartEnvelopes(db: InstanceType<typeof DatabaseSync>, tables: Set<st
       typeCounts: sortedCountBuckets(typeCounts, maxBuckets),
       unreadableRows,
     },
+    sessionToolSignals,
     toolEnvelope: {
+      errorCategoryCounts: sortedCountBuckets(errorCategoryCounts, maxBuckets),
+      errorToolCategoryCounts: sortedToolCategoryBuckets(errorToolCategoryCounts, maxBuckets),
       errorToolStatusCounts: sortedToolStatusBuckets(errorToolStatusCounts, maxBuckets),
       errorStatusSessions: errorStatusSessions.size,
       errorStatusToolParts,
@@ -627,6 +829,36 @@ function readTodoCounts(db: InstanceType<typeof DatabaseSync>, tables: Set<strin
     priority: row.priority == null || String(row.priority) === "" ? "<missing>" : String(row.priority),
     status: row.status == null || String(row.status) === "" ? "<missing>" : String(row.status),
   }));
+}
+
+function readOpenTodoCounts(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, schema: Record<string, string[]>, maxBuckets: number): OpenTodoBucket[] {
+  if (!tables.has("todo") || !hasColumn(schema, "todo", "status") || !hasColumn(schema, "todo", "priority") || !hasColumn(schema, "todo", "session_id")) {
+    return [];
+  }
+  const rows = db.prepare("select status, priority, count(*) as count, count(distinct session_id) as sessions from todo where status in ('pending', 'in_progress') group by status, priority order by count desc, status, priority limit ?").all(maxBuckets) as Array<{ count: unknown; priority: unknown; sessions: unknown; status: unknown }>;
+  return rows.map((row) => ({
+    count: normalizeCount(row.count),
+    priority: row.priority == null || String(row.priority) === "" ? "<missing>" : String(row.priority),
+    sessions: normalizeCount(row.sessions),
+    status: row.status == null || String(row.status) === "" ? "<missing>" : String(row.status),
+  }));
+}
+
+function readOpenTodoBySession(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, schema: Record<string, string[]>): Map<string, number> {
+  if (!tables.has("todo") || !hasColumn(schema, "todo", "status") || !hasColumn(schema, "todo", "session_id")) {
+    return new Map();
+  }
+  const rows = db.prepare("select session_id as sessionID, count(*) as count from todo where status in ('pending', 'in_progress') group by session_id").all() as Array<{ count: unknown; sessionID: unknown }>;
+  return new Map(rows.map((row) => [String(row.sessionID), normalizeCount(row.count)]));
+}
+
+function readTodoAnalysis(db: InstanceType<typeof DatabaseSync>, tables: Set<string>, schema: Record<string, string[]>, maxBuckets: number): TodoAnalysis {
+  return {
+    openTodoBySession: readOpenTodoBySession(db, tables, schema),
+    openTodoCounts: readOpenTodoCounts(db, tables, schema, maxBuckets),
+    todoCounts: readTodoCounts(db, tables, schema, maxBuckets),
+    todoRowsBySession: countBySession(db, tables, "todo"),
+  };
 }
 
 function readDayBuckets(db: InstanceType<typeof DatabaseSync>, schema: Record<string, string[]>, maxBuckets: number): DayBucket[] {
@@ -706,6 +938,165 @@ function readSessionSummary(db: InstanceType<typeof DatabaseSync>, tables: Set<s
   };
 }
 
+function emptyReadinessRollup(): ReadinessRollup {
+  return {
+    editAndGitReviewSessions: 0,
+    editAndValidationSessions: 0,
+    editSessions: 0,
+    editWithOpenTodoSessions: 0,
+    editWithoutGitReviewSessions: 0,
+    editWithoutValidationProxySessions: 0,
+    gitReviewProxySessions: 0,
+    openTodoRows: 0,
+    openTodoSessions: 0,
+    toolErrorAndValidationSessions: 0,
+    toolErrorSessions: 0,
+    validationProxySessions: 0,
+  };
+}
+
+function setIntersectionCount(left: Set<string>, right: Set<string>): number {
+  let count = 0;
+  for (const value of left) {
+    if (right.has(value)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function buildReadinessRollup(sessionToolSignals: Map<string, SessionToolSignals>, openTodoBySession: Map<string, number>): ReadinessRollup {
+  const editSessions = new Set<string>();
+  const validationProxySessions = new Set<string>();
+  const gitReviewProxySessions = new Set<string>();
+  const toolErrorSessions = new Set<string>();
+  for (const [sessionID, signals] of sessionToolSignals) {
+    if (signals.hasEditTool) {
+      editSessions.add(sessionID);
+    }
+    if (signals.hasValidationProxy) {
+      validationProxySessions.add(sessionID);
+    }
+    if (signals.hasGitReviewProxy) {
+      gitReviewProxySessions.add(sessionID);
+    }
+    if (signals.toolErrorCount > 0) {
+      toolErrorSessions.add(sessionID);
+    }
+  }
+  const openTodoSessions = new Set(openTodoBySession.keys());
+  const openTodoRows = [...openTodoBySession.values()].reduce((sum, count) => sum + count, 0);
+  const editAndValidationSessions = setIntersectionCount(editSessions, validationProxySessions);
+  const editAndGitReviewSessions = setIntersectionCount(editSessions, gitReviewProxySessions);
+  return {
+    editAndGitReviewSessions,
+    editAndValidationSessions,
+    editSessions: editSessions.size,
+    editWithOpenTodoSessions: setIntersectionCount(editSessions, openTodoSessions),
+    editWithoutGitReviewSessions: Math.max(0, editSessions.size - editAndGitReviewSessions),
+    editWithoutValidationProxySessions: Math.max(0, editSessions.size - editAndValidationSessions),
+    gitReviewProxySessions: gitReviewProxySessions.size,
+    openTodoRows,
+    openTodoSessions: openTodoSessions.size,
+    toolErrorAndValidationSessions: setIntersectionCount(toolErrorSessions, validationProxySessions),
+    toolErrorSessions: toolErrorSessions.size,
+    validationProxySessions: validationProxySessions.size,
+  };
+}
+
+function selectSessionExpression(schema: Record<string, string[]>, column: string, alias: string): string {
+  if (!hasColumn(schema, "session", column)) {
+    return `null as ${quoteIdent(alias)}`;
+  }
+  return `s.${quoteIdent(column)} as ${quoteIdent(alias)}`;
+}
+
+function mechanicalSignals(signals: SessionToolSignals, openTodoCount: number): string[] {
+  const result: string[] = [];
+  if (signals.hasEditTool) {
+    result.push("has_edit_tool");
+  }
+  if (signals.hasValidationProxy) {
+    result.push("has_validation_proxy");
+  }
+  if (signals.hasGitReviewProxy) {
+    result.push("has_git_review_proxy");
+  }
+  if (signals.toolErrorCount > 0) {
+    result.push("has_tool_error");
+  }
+  if (openTodoCount > 0) {
+    result.push("has_open_todo");
+  }
+  if (signals.hasEditTool && !signals.hasValidationProxy) {
+    result.push("edit_without_validation_proxy");
+  }
+  if (signals.hasEditTool && openTodoCount > 0) {
+    result.push("edit_with_open_todo");
+  }
+  return result;
+}
+
+function readSessionCards(
+  db: InstanceType<typeof DatabaseSync>,
+  tables: Set<string>,
+  schema: Record<string, string[]>,
+  sourceRef: string,
+  sessionToolSignals: Map<string, SessionToolSignals>,
+  todoAnalysis: TodoAnalysis,
+  maxBuckets: number,
+): SessionCard[] {
+  if (!tables.has("session") || !hasColumn(schema, "session", "id")) {
+    return [];
+  }
+  const messageRowsBySession = countBySession(db, tables, "message");
+  const partRowsBySession = countBySession(db, tables, "part");
+  const select = [
+    selectSessionExpression(schema, "id", "id"),
+    selectSessionExpression(schema, "project_id", "project_id"),
+    selectSessionExpression(schema, "parent_id", "parent_id"),
+    selectSessionExpression(schema, "workspace_id", "workspace_id"),
+    selectSessionExpression(schema, "time_created", "time_created"),
+    selectSessionExpression(schema, "time_updated", "time_updated"),
+  ];
+  const orderBy = hasColumn(schema, "session", "time_created") ? " order by s.time_created, s.id" : " order by s.id";
+  const rows = db.prepare(`select ${select.join(", ")} from session s${orderBy}`).all() as Array<Record<string, unknown>>;
+  return rows.map((row) => {
+    const id = String(row.id);
+    const parentID = row.parent_id == null ? null : String(row.parent_id);
+    const projectID = row.project_id == null ? null : String(row.project_id);
+    const workspaceID = row.workspace_id == null ? null : String(row.workspace_id);
+    const created = normalizeMillis(row.time_created);
+    const updated = normalizeMillis(row.time_updated);
+    const signals = sessionToolSignals.get(id) ?? {
+      hasEditTool: false,
+      hasGitReviewProxy: false,
+      hasValidationProxy: false,
+      toolErrorCount: 0,
+      toolNames: new Set<string>(),
+    };
+    const openTodoCount = todoAnalysis.openTodoBySession.get(id) ?? 0;
+    return {
+      dateRange: makeDateRange([created, updated]),
+      hasEditTool: signals.hasEditTool,
+      hasGitReviewProxy: signals.hasGitReviewProxy,
+      hasValidationProxy: signals.hasValidationProxy,
+      mechanicalSignals: mechanicalSignals(signals, openTodoCount),
+      messageRows: messageRowsBySession.get(id) ?? 0,
+      openTodoCount,
+      parentRef: parentID ? hashRef("session", parentID) : null,
+      partRows: partRowsBySession.get(id) ?? 0,
+      projectRef: projectID ? hashRef("project", projectID) : null,
+      sessionRef: hashRef("session", id),
+      sourceRef,
+      todoRows: todoAnalysis.todoRowsBySession.get(id) ?? 0,
+      toolErrorCount: signals.toolErrorCount,
+      toolNames: [...signals.toolNames].sort().slice(0, maxBuckets),
+      workspaceRef: workspaceID ? hashRef("workspace", workspaceID) : null,
+    } satisfies SessionCard;
+  });
+}
+
 function newEmptySource(dbPath: string, showPaths: boolean): SqliteAnalysis {
   const source: SqliteAnalysis = {
     agentBuckets: [],
@@ -719,6 +1110,7 @@ function newEmptySource(dbPath: string, showPaths: boolean): SqliteAnalysis {
     permissionRows: 0,
     projectBuckets: [],
     readable: false,
+    readinessRollup: emptyReadinessRollup(),
     schema: {},
     schemaTables: [],
     sessionInputDeliveries: [],
@@ -739,8 +1131,9 @@ function newEmptySource(dbPath: string, showPaths: boolean): SqliteAnalysis {
     },
     sourceRef: hashRef("source", dbPath),
     status: "unreadable",
+    openTodoCounts: [],
     todoCounts: [],
-    toolEnvelope: { errorToolStatusCounts: [], errorStatusSessions: 0, errorStatusToolParts: 0, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts: 0, toolStatusCounts: [] },
+    toolEnvelope: { errorCategoryCounts: [], errorToolCategoryCounts: [], errorToolStatusCounts: [], errorStatusSessions: 0, errorStatusToolParts: 0, inputKeyCounts: [], statusCounts: [], toolCounts: [], toolParts: 0, toolStatusCounts: [] },
     type: "sqlite-opencode-analysis",
     warnings: [],
   };
@@ -751,7 +1144,7 @@ function newEmptySource(dbPath: string, showPaths: boolean): SqliteAnalysis {
   return source;
 }
 
-function readSqliteAnalysis(dbPath: string, showPaths: boolean, maxBuckets: number): SqliteAnalysis {
+function readSqliteAnalysis(dbPath: string, showPaths: boolean, maxBuckets: number, includeSessionCards: boolean): SqliteAnalysis {
   const source = newEmptySource(dbPath, showPaths);
   if (!fs.existsSync(dbPath)) {
     source.status = "missing";
@@ -789,7 +1182,13 @@ function readSqliteAnalysis(dbPath: string, showPaths: boolean, maxBuckets: numb
     const partEnvelopes = readPartEnvelopes(db, tables, maxBuckets);
     source.partEnvelope = partEnvelopes.partEnvelope;
     source.toolEnvelope = partEnvelopes.toolEnvelope;
-    source.todoCounts = readTodoCounts(db, tables, source.schema, maxBuckets);
+    const todoAnalysis = readTodoAnalysis(db, tables, source.schema, maxBuckets);
+    source.todoCounts = todoAnalysis.todoCounts;
+    source.openTodoCounts = todoAnalysis.openTodoCounts;
+    source.readinessRollup = buildReadinessRollup(partEnvelopes.sessionToolSignals, todoAnalysis.openTodoBySession);
+    if (includeSessionCards) {
+      source.sessionCards = readSessionCards(db, tables, source.schema, source.sourceRef, partEnvelopes.sessionToolSignals, todoAnalysis, maxBuckets);
+    }
     source.eventTypeCounts = readCountBuckets(db, tables, source.schema, "event", "type", maxBuckets);
     source.sessionMessageTypes = readCountBuckets(db, tables, source.schema, "session_message", "type", maxBuckets);
     source.sessionInputDeliveries = readCountBuckets(db, tables, source.schema, "session_input", "delivery", maxBuckets);
@@ -822,7 +1221,7 @@ function buildCoverage(sources: SqliteAnalysis[]): Coverage {
 function buildReport(options: Options): AnalysisReport {
   const dataDirs = candidateDataDirs(options);
   const dbPaths = discoverDbPaths(options, dataDirs);
-  const sources = dbPaths.map((dbPath) => readSqliteAnalysis(dbPath, options.showPaths, options.maxBuckets));
+  const sources = dbPaths.map((dbPath) => readSqliteAnalysis(dbPath, options.showPaths, options.maxBuckets, options.includeSessionCards));
   const coverageLimits = sources.flatMap((source) => source.warnings.map((warning) => `${source.sourceRef}: ${warning}`));
   if (sources.length === 0) {
     coverageLimits.push("no OpenCode SQLite sources discovered; pass --db or --data-dir for explicit sources");
@@ -833,6 +1232,7 @@ function buildReport(options: Options): AnalysisReport {
     discovery: {
       checkedDataDirs: dataDirs.length,
       explicitDbPaths: options.dbPaths.length,
+      includeSessionCards: options.includeSessionCards,
       showPaths: options.showPaths,
       useDefaultPaths: options.useDefaultPaths,
     },
@@ -841,7 +1241,8 @@ function buildReport(options: Options): AnalysisReport {
       "Session titles, project names, workspace names, stable ids, message data, part data, todo content, command values, account tokens, and share secrets are not emitted.",
       options.showPaths ? "Raw paths are not emitted; home-redacted source paths are emitted because --show-paths was requested." : "Paths are not emitted by default; use --show-paths only when home-redacted source paths are acceptable.",
       "Agent, model, and project groupings are emitted as rank-local redacted refs only.",
-      "Message and part JSON are inspected only for top-level structured keys, roles, types, tool names, tool statuses, and input key names; content values are not emitted.",
+      "Message and part JSON are inspected for structured keys, roles, types, tool names, tool statuses, input key names, deterministic tool error/message/output categories, and bash validation/git command proxies; content values are not emitted.",
+      options.includeSessionCards ? "JSON redacted session cards include hashed refs, counts, booleans, tool names, and bounded mechanical signals only." : "JSON redacted per-session cards are omitted by default; pass --include-session-cards with --format json only when the additional mechanical envelope is needed.",
     ],
     redacted: true,
     sources,
@@ -928,6 +1329,35 @@ function renderMarkdown(report: AnalysisReport): string {
       String(row.count),
     ]);
     lines.push(...markdownTable(["Tool", "Status", "Count"], toolErrorRows.length > 0 ? toolErrorRows : [["none", "none", "0"]]));
+    lines.push("");
+    lines.push("### Tool Error Categories");
+    lines.push("");
+    const toolErrorCategoryRows = source.toolEnvelope.errorCategoryCounts.map((row) => [row.key, String(row.count)]);
+    lines.push(...markdownTable(["Category", "Count"], toolErrorCategoryRows.length > 0 ? toolErrorCategoryRows : [["none", "0"]]));
+    lines.push("");
+    lines.push("### Readiness Rollup");
+    lines.push("");
+    lines.push(...markdownTable(["Metric", "Count"], [
+      ["Edit sessions", String(source.readinessRollup.editSessions)],
+      ["Validation proxy sessions", String(source.readinessRollup.validationProxySessions)],
+      ["Git review proxy sessions", String(source.readinessRollup.gitReviewProxySessions)],
+      ["Edit and validation sessions", String(source.readinessRollup.editAndValidationSessions)],
+      ["Edit without validation proxy sessions", String(source.readinessRollup.editWithoutValidationProxySessions)],
+      ["Edit and git review sessions", String(source.readinessRollup.editAndGitReviewSessions)],
+      ["Edit with open TODO sessions", String(source.readinessRollup.editWithOpenTodoSessions)],
+      ["Tool error sessions", String(source.readinessRollup.toolErrorSessions)],
+      ["Tool error and validation sessions", String(source.readinessRollup.toolErrorAndValidationSessions)],
+    ]));
+    lines.push("");
+    lines.push("### Open TODO Rollup");
+    lines.push("");
+    lines.push(...markdownTable(["Metric", "Count"], [
+      ["Open TODO sessions", String(source.readinessRollup.openTodoSessions)],
+      ["Open TODO rows", String(source.readinessRollup.openTodoRows)],
+    ]));
+    lines.push("");
+    const openTodoRows = source.openTodoCounts.map((row) => [row.status, row.priority, String(row.count), String(row.sessions)]);
+    lines.push(...markdownTable(["Status", "Priority", "Rows", "Sessions"], openTodoRows.length > 0 ? openTodoRows : [["none", "none", "0", "0"]]));
     lines.push("");
     lines.push("### Todo Rollup");
     lines.push("");
