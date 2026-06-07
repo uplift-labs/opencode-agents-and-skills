@@ -13,7 +13,8 @@ Use this skill when the user asks to implement, continue, or complete tasks from
 - Read the selected change: proposal, design, specs, tasks, traceability, and related docs/source/tests.
 - Confirm the next implementation slice and non-goals.
 - If an accepted change has independent tasks with bounded write scopes, consider `orchestrator`; the master keeps task tracking, integration, validation, and reviewer gates.
-- Prefer TDD: add or update tests before changing behavior.
+- Use TDD by default for behavior-changing slices: add or update the focused failing, acceptance, or characterization test before code. If infeasible, document the blocker and substitute the closest reproducible evidence gate.
+- Keep TDD proportional: stop at the smallest test/gate set that proves the scoped requirement unless the risk profile requires broader coverage.
 - Make the smallest correct code/doc changes that satisfy the scoped requirement.
 - Update tasks and traceability only when evidence exists.
 - Run the closest relevant validation after each meaningful slice.

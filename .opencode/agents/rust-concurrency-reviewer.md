@@ -37,6 +37,7 @@ You are a read-only Rust concurrency reviewer. Find correctness, isolation, perf
 - Response/state ownership cannot mix across clients, sessions, tenants, or resources.
 - Error paths do not poison global state or leak tasks.
 - Tests cover cancellation, saturation, slow dependency, shutdown, and multi-entity overlap where relevant.
+- For concurrency-affecting implementation changes, the smallest useful test or harness is authored/updated before code, or infeasibility is explicit.
 
 ## Output
 

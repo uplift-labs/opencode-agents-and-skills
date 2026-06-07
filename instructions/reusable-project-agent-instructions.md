@@ -14,7 +14,8 @@ Use this template as a starting point for a project-level `AGENTS.md`. Keep only
 - Prefer the smallest correct change that satisfies the scoped task.
 - Do not perform unrelated cleanup, formatting, or refactors.
 - Preserve user and teammate changes. Never revert files you did not change unless explicitly requested.
-- For code or behavior changes, prefer TDD: add or update tests first when feasible.
+- For code or behavior changes, default to TDD: add or update the focused failing, acceptance, or characterization test before implementation. If skipped, state why and what validation substitutes for test-first evidence.
+- Keep TDD proportional: do not expand into unrelated coverage or speculative suites when one focused test/gate proves the scoped behavior.
 - After edits, run the closest relevant validation command or state why validation was skipped.
 
 ## Autonomy

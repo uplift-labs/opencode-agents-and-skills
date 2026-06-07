@@ -17,7 +17,7 @@ For broad or unclear user work where it is not yet known whether OpenSpec is req
 - For broad proposals with independent capability, source, docs, or test evidence tracks, consider `orchestrator` for discovery before drafting; keep small or unstable-scope proposals serial.
 - Define problem, goals, non-goals, risks, rollout/migration, and validation.
 - Write normative requirements as scenarios with observable outcomes.
-- Create tasks that map to requirements, tests, docs, and validation gates.
+- Create tasks that map to requirements, tests, docs, and validation gates; order behavior-changing tasks as test/characterization first, implementation second, validation third.
 - Keep future-scope work out unless explicitly accepted for this change.
 
 ## Output

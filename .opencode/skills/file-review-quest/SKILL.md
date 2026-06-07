@@ -17,7 +17,7 @@ Default mode is read-only unless the user asks for fixes.
 - Review blocks in order and keep a temporary checklist in the response or todo tool.
 - For each block, explain purpose, dependencies, risks, and evidence.
 - Mark findings only when there is a concrete risk and a minimal fix.
-- If edits are requested, fix only the selected findings and re-review changed blocks.
+- If edits are requested and behavior changes, add/update a focused regression or characterization test before the fix unless infeasible; fix only the selected findings and re-review changed blocks.
 
 ## Output
 

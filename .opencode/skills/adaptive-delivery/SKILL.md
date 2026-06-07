@@ -37,7 +37,7 @@ Classify before choosing a process. A quick classification is enough for low-ris
 
 Use the lightest lane that can produce trustworthy evidence.
 
-- `Direct Lane`: use for tiny and small clear tasks. Inspect enough context, make the smallest correct change, run focused validation, and report.
+- `Direct Lane`: use for tiny and small clear tasks. Inspect enough context, add/update the focused test first for behavior changes, make the smallest correct change, run focused validation, and report.
 - `Planned Lane`: use when implementation needs decomposition, risk review, or test strategy but not a formal spec. Load `deep-task-planning` when appropriate.
 - `Explore Lane`: use when the problem, desired behavior, compatibility, or acceptance criteria are unclear. Load `openspec-explore` for spec-shaped product questions; otherwise perform local evidence discovery and ask only blocking questions.
 - `Spec Lane`: use when the change alters observable behavior, API, protocol, data model, compatibility contract, deployment behavior, or another normative requirement. Load `openspec-propose` to create or update the change package before implementation unless the user explicitly requests code-first work.
@@ -67,6 +67,7 @@ For medium or larger work, capture just enough product context to prevent wrong 
 - `Constraints`: compatibility, migration, performance, security, deployment, timeline, policy, or manual gates.
 - `Non-goals`: adjacent work to avoid.
 - `Success Criteria`: tests, commands, reviewer gates, demo/manual checks, or acceptance scenarios.
+- `TDD Gate`: for behavior-changing implementation, identify the failing, acceptance, or characterization test/fixture to add or update before code; if infeasible, record the blocker and substitute evidence.
 
 Keep this analysis compact. Do not invent business requirements; label assumptions and unresolved decisions.
 

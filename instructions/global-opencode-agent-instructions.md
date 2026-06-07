@@ -63,6 +63,8 @@ Use this template as a generic starting point for a global `~/.config/opencode/A
 ## Repository Changes
 
 - When making changes in a repository, complete relevant verification and report ready-to-land status.
+- For behavior-changing code, default to TDD/test-first: add or update the focused failing, acceptance, or characterization test before implementation. If that is impractical, record the blocker and substitute the closest reproducible proof before or alongside the change.
+- Keep TDD proportional: one smallest useful test/gate for the scoped behavior is enough unless risk evidence justifies broader coverage.
 - Commit, push, merge, or push to the default branch only when explicitly requested or clearly allowed by repository-local policy.
 - Always obey repository-specific remote-operation rules, branch rules, issue tracker rules, and validation gates.
 - When creating or updating a PR/MR description, write it for a reviewer who sees the project and change for the first time.

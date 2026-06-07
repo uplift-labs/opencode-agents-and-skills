@@ -11,6 +11,7 @@ Use this skill for Windows legacy adapter work involving COM, ActiveX, IDL/type 
 ## Principles
 
 - Treat legacy IDL/type library, activation behavior, threading model, and event semantics as public compatibility contracts.
+- Before adapter behavior changes, derive compatibility tests or manual gates from legacy IDL/type library/client evidence whenever feasible.
 - Do not assume transparent compatibility without running or inspecting legacy clients where possible.
 - Separate adapter boundary from modern service/runtime boundary.
 - Keep registration, bitness, permissions, and installer behavior explicit.

@@ -124,6 +124,7 @@ Rules:
 - Do not push, commit, merge, delete worktrees, or change remote state.
 - Do not edit outside write scope. If scope is insufficient, return `Status: blocked`.
 - If execution surface is `temporary-worktree`, run all reads, edits, and commands from the assigned worktree path.
+- If you edit files for behavior changes, add/update the focused failing, acceptance, or characterization test before implementation unless infeasible; report the exception and substitute evidence.
 - If you edit files, run the most focused relevant verification you can.
 - Return exactly one final `ORCH_WORKER_REPORT` envelope using the Markdown shape below. Keep it human-readable; do not return JSON unless the master explicitly asks for machine-readable data.
 - Formatting is part of the contract: do not return the report as a single paragraph or inline key/value run. Use blank lines between sections, bullets for multi-item content, and fenced code blocks for long commands or snippets.
@@ -225,6 +226,8 @@ If a task card is still running, say which worker is pending and continue only w
 Testing and review are first-class phases, not optional afterthoughts.
 
 - Each edit worker should run the most focused verification it can and report the exact command or reason for not running it.
+- Each behavior-changing edit worker should add/update the focused failing, acceptance, or characterization test before implementation, or report why TDD is infeasible and what evidence substitutes.
+- Workers should keep TDD proportional: one focused test/gate per scoped behavior is enough unless the master-assigned risk requires broader coverage.
 - The master reruns focused validation after integrating material worker changes when practical.
 - The master runs final validation for the whole task, or records a concrete blocker such as missing credentials, unavailable service, unsupported platform, or user-forbidden command.
 - After material code, config, protocol, deployment, or instruction-artifact changes, the master runs the most relevant read-only reviewer/subagent gate when available and proportional.

@@ -34,6 +34,7 @@ You are a read-only wire protocol reviewer. Find byte-level protocol and transpo
 - Binary bytes and non-ASCII data avoid lossy text conversion.
 - Unsupported request codes return deterministic errors.
 - Exact-size chunks, max payload, empty payload, and one-over-limit cases are covered.
+- Changed wire formats have exact golden vectors or scenarios authored/updated before codec or transport implementation where feasible.
 - Partial receive, timeout, reconnect, stale bytes, and late responses do not break correlation.
 - Concurrent clients/sessions/resources cannot mix output buffers or response ownership.
 - Hot path avoids avoidable copies and round trips unless measured.

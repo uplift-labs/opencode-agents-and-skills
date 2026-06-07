@@ -17,6 +17,7 @@ This is an exploration mode. Do not write code unless the user explicitly pivots
 - Separate confirmed evidence from docs-only claims and assumptions.
 - Identify options with trade-offs, compatibility risk, validation cost, and migration impact.
 - Propose a narrow change boundary and non-goals.
+- If exploration recommends implementation, identify the TDD/test-first acceptance, characterization, or manual gate evidence needed before code.
 
 ## Output
 

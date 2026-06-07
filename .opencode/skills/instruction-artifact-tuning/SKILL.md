@@ -17,6 +17,7 @@ Default mode is review-first. Edit only when the user explicitly asks to tune, f
 - Authority clarity: global, repository, skill, agent, and user instructions do not conflict.
 - Evidence discipline: docs and user claims are hypotheses until checked against source, tests, schemas, or live output.
 - Verification: the artifact names concrete checks, commands, reviewer gates, or eval criteria where possible.
+- TDD discipline: implementation-capable artifacts require test-first behavior for code changes, or an explicit infeasibility path with substitute validation evidence.
 - Tool safety: edit/read-only boundaries, destructive-operation policy, remote-state policy, and permissions are explicit.
 - Context efficiency: remove repeated boilerplate, stale examples, source dumps, and project-specific details that should be local.
 - AI usability: critical routing, permissions, blockers, and output schema are near the top and easy to retrieve.
@@ -27,6 +28,7 @@ Default mode is review-first. Edit only when the user explicitly asks to tune, f
 - For skills, ensure `description` is specific, concrete, and short enough for OpenCode discovery.
 - For agents, ensure frontmatter has a useful `description`, correct `mode`, and least-privilege `permission`.
 - Reviewer agents should be leaf validators unless explicitly designed otherwise: no edits, commits, pushes, nested agents, destructive commands, or user questions.
+- For behavior-changing instruction artifacts, add or update a minimal loader/schema/eval fixture or validation checklist before editing when feasible; document missing harnesses.
 - For broad independent artifact inventories, consider `orchestrator` with bounded read-only workers; keep single-artifact or tightly coupled tuning serial.
 - Replace project-specific paths, tools, issue trackers, and product names with placeholders unless the artifact is intentionally project-local.
 - Remove obsolete instructions instead of adding override paragraphs.

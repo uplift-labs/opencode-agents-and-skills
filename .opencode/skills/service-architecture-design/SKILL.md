@@ -18,6 +18,7 @@ Use this skill when shaping service architecture, design docs, specs, or impleme
 - Deployment model: service/process split, config, secrets, logging, diagnostics, upgrades.
 - Observability: metrics, tracing, logs, health, readiness, auditability.
 - Testability: fake dependencies, integration tests, load tests, manual gates.
+- Implementation slices should begin with contract, acceptance, negative, recovery, or characterization tests before coding behavior.
 
 ## Output
 

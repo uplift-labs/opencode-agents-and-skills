@@ -32,4 +32,5 @@ Use this checklist when moving project-local skills/agents into a global reusabl
 - Are the trigger and non-goals clear enough to avoid accidental overuse?
 - Can a main session verify whether the artifact succeeded?
 - Is any critical rule buried in the middle of a long prompt?
+- If this artifact can drive implementation changes, does it require TDD/test-first or an explicit infeasibility note using project-neutral validation placeholders?
 - Does the artifact ask routine questions instead of continuing with evidence or safe defaults?

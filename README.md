@@ -73,6 +73,8 @@ Run the structural validator after changing library artifacts:
 pwsh -NoProfile -File tools/validate-library.ps1
 ```
 
+The validator also reports warning-level TDD guard findings for Markdown artifacts with implementation-related language that do not mention test-first, TDD, before-code fixtures/gates, or equivalent validation-first language.
+
 For ports from a project-local prompt set, pass anchors that must not remain in reusable Markdown:
 
 ```powershell
@@ -108,7 +110,7 @@ pwsh -NoProfile -File tools/validate-library.ps1 -ForbiddenAnchor "OldProductNam
 
 - `openspec-explore`: explore requirements/options before a change.
 - `openspec-propose`: draft proposal/design/spec/tasks.
-- `openspec-apply-change`: implement accepted OpenSpec changes.
+- `openspec-apply-change`: implement accepted OpenSpec changes with TDD-first task execution.
 - `openspec-consistency-review`: review proposal/design/spec/tasks/docs/tests sync.
 - `openspec-archive-change`: archive completed changes after evidence gates.
 - `production-service-openspec`: production-oriented service baseline change authoring.
@@ -165,6 +167,8 @@ Overly narrow future-scope behavior that depended on one product domain was inte
 
 - Keep artifacts project-neutral unless the artifact name explicitly scopes a reusable domain.
 - Prefer concrete evidence, validation, permissions, and output schemas over vague instructions.
+- Implementation-capable artifacts should require TDD/test-first by default for behavior changes, or require an explicit infeasibility note plus the closest reproducible validation evidence.
+- Keep TDD proportional: require the smallest useful test/gate for the scoped behavior, not unrelated coverage expansion or speculative test suites.
 - Reviewer agents should remain leaf validators.
 - Avoid hardcoded commands and paths. Use placeholders or say to use the repository's configured validation command.
 - If a target repository has stricter local instructions, local instructions win.

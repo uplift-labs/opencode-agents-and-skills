@@ -21,7 +21,7 @@ Use this skill when migrating or replacing legacy software and behavior must be 
 - Map public APIs, commands, configuration, states, error codes, timing assumptions, and compatibility expectations.
 - Extract observed behavior into requirement scenarios.
 - Mark unsupported, intentionally changed, unknown, and future-scope behavior.
-- Add traceability from requirement to legacy evidence and modern validation gate.
+- Add traceability from requirement to legacy evidence and modern validation gate; proposed migration tasks should put characterization/compatibility tests before modern implementation.
 
 ## Output
 

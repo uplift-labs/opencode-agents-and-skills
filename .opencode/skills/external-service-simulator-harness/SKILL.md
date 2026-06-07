@@ -11,6 +11,7 @@ Use this skill when tests need a fake TCP/HTTP/WebSocket/device/upstream service
 ## Principles
 
 - Simulators should be deterministic, scriptable, and easy to assert against.
+- Start harness work with scenario tests against the desired simulator API/behavior before implementing internals.
 - Test the boundary behavior, not implementation internals.
 - Include slow, partial, malformed, disconnect, late-response, and overload scenarios when relevant.
 - Record all received requests and emitted responses for assertions.

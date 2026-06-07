@@ -7,9 +7,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $errors = New-Object System.Collections.Generic.List[string]
+$warnings = New-Object System.Collections.Generic.List[string]
 
 function Add-Error([string]$message) {
     $errors.Add($message) | Out-Null
+}
+
+function Add-Warning([string]$message) {
+    $warnings.Add($message) | Out-Null
 }
 
 function Read-Text([string]$path) {
@@ -92,19 +97,34 @@ $markdownFiles = [System.IO.Directory]::GetFiles($Root, "*.md", [System.IO.Searc
 
 foreach ($file in $markdownFiles) {
     $lines = [System.IO.File]::ReadAllLines($file)
+    $text = [string]::Join("`n", $lines)
     for ($i = 0; $i -lt $lines.Length; $i++) {
         if ($lines[$i] -match '[ \t]+$') {
             Add-Error "Trailing whitespace: ${file}:$($i + 1)"
         }
     }
     if ($ForbiddenAnchor.Count -gt 0) {
-        $text = [string]::Join("`n", $lines)
         foreach ($anchor in $ForbiddenAnchor) {
             if (-not [string]::IsNullOrWhiteSpace($anchor) -and $text.Contains($anchor)) {
                 Add-Error "Forbidden anchor '$anchor' found in $file"
             }
         }
     }
+
+    $relative = [System.IO.Path]::GetRelativePath($Root, $file) -replace '\\', '/'
+    $isInstructionArtifact = $relative -match '^\.opencode/(skills|agents)/' -or
+        $relative -match '^instructions/' -or
+        $relative -in @('AGENTS.md', 'README.md')
+    $mentionsImplementation = $text -match '(?i)\b(implement|implementation|code changes?|behavior-changing|behavior changes?|fixes are allowed|edit workers?|write scope|make the smallest correct change)\b'
+    $mentionsTdd = $text -match '(?is)\b(TDD|test-first|validation-first|tests? before|failing tests?[^\.\n]{0,80}\bbefore\b|(?:tests?|benchmarks?|manual gates?|golden vectors?|fixtures?)[^\.\n]{0,120}\bbefore\b|\bbefore\b[^\.\n]{0,120}(?:tests?|benchmarks?|manual gates?|golden vectors?|fixtures?))\b'
+
+    if ($isInstructionArtifact -and $mentionsImplementation -and -not $mentionsTdd) {
+        Add-Warning "Implementation-related artifact language lacks TDD/test-first language: $file"
+    }
+}
+
+if ($warnings.Count -gt 0) {
+    $warnings | ForEach-Object { "WARN: $_" }
 }
 
 if ($errors.Count -gt 0) {
@@ -112,4 +132,4 @@ if ($errors.Count -gt 0) {
     exit 1
 }
 
-"OK: skills=$skillCount agents=$agentCount markdown=$($markdownFiles.Count)"
+"OK: skills=$skillCount agents=$agentCount markdown=$($markdownFiles.Count) warnings=$($warnings.Count)"

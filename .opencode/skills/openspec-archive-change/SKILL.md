@@ -16,6 +16,7 @@ Do not archive on task checkboxes alone. Archive only when implementation and va
 - Stable specs reflect the accepted behavior.
 - Proposal/design/tasks do not contain unresolved blockers hidden as done.
 - Tests, benchmarks, manual gates, or reviewer evidence cover acceptance criteria.
+- Behavior-changing implementation has test-first/TDD evidence or an explicit exception; do not infer chronology when evidence is unavailable.
 - Docs and README do not contradict the archived behavior.
 - Validation passes or failures are explicitly triaged.
 

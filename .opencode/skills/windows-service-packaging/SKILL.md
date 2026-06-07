@@ -14,6 +14,7 @@ Use this skill when work touches Windows service deployment, tray UI, installer,
 - Services must not depend on an interactive desktop session.
 - Installer behavior must be reversible: install, upgrade, repair, uninstall, rollback.
 - Startup, shutdown, crash recovery, logs, diagnostics, permissions, and firewall rules are part of the production contract.
+- Define automated lifecycle tests or manual gate checklists before service/installer behavior changes.
 - Never assume admin privileges without documenting how they are requested and verified.
 
 ## Checks

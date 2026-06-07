@@ -15,6 +15,7 @@ Use this skill for services that serialize or schedule operations against extern
 - Slow or failed resource A must not starve unrelated resource B unless the design accepts that trade-off.
 - Timeout before send and timeout after send are different states and need different recovery rules.
 - Recovery must account for stale bytes/messages/state from previous operations.
+- Add deterministic scheduler, recovery, cancellation, or simulator tests before scheduler logic changes.
 - Backpressure should fail deterministically rather than allow unbounded memory growth.
 
 ## Checks

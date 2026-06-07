@@ -13,6 +13,7 @@ Use this skill when work touches configuration loading, schema shape, validation
 - Prefer explicit config over hidden defaults for production-critical behavior.
 - Validate early and fail with actionable diagnostics.
 - Keep schema, docs, generated examples, tests, and runtime behavior synchronized.
+- Add accepted/rejected fixtures plus default and boundary tests before schema or runtime config behavior changes.
 - Treat unsafe defaults, duplicate aliases, ambiguous precedence, and silent truncation as material risks.
 - Do not add speculative roles, leases, auth, or dynamic policy fields unless the accepted spec requires them.
 

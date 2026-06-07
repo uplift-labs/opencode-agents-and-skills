@@ -14,6 +14,7 @@ Do not use it for quick wording edits, single small comments, or normal code rev
 
 - Documentation is a map, not proof. Confirm behavior with source, tests, schemas, scripts, live output, standards, or owner decisions.
 - Behavior-changing requirements should live in the project's normative spec system, not only in README prose.
+- When doc/spec hardening creates implementation tasks for behavior changes, require TDD/test-first task order or an explicit blocker before code work.
 - Prefer one canonical source over repeated status tables or duplicated requirement text.
 - Cosmetic wording is out of scope unless it prevents misimplementation.
 

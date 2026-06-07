@@ -23,6 +23,8 @@ Low confidence:
 - State whether important claims are confirmed, docs-only, assumption, or blocked.
 - Do not mark a task complete without evidence.
 - Do not claim production readiness without acceptance tests, validation output, benchmark/manual gates where relevant, and residual risk review.
+- For behavior-changing implementation, use test-first/TDD by default: add or update the focused failing, acceptance, or characterization test before code changes; if infeasible, state why and name the substitute evidence.
+- Keep test-first work proportional: stop at the smallest test/gate set that proves the scoped behavior unless risk evidence requires broader coverage.
 - If validation cannot run, report `Validation skipped` with reason and risk.
 - For performance claims, include measurement, environment, profile, and before/after comparison when relevant.
 
@@ -40,7 +42,7 @@ Use this format for material findings:
 ## Validation Loop
 
 1. Reproduce or prove the current behavior where feasible.
-2. Add/update tests before changing behavior when feasible.
+2. Add/update the focused failing, acceptance, or characterization test before changing behavior; if infeasible, record why and choose the closest reproducible evidence gate.
 3. Make the smallest correct change.
 4. Run targeted validation.
 5. Re-read changed ranges.
