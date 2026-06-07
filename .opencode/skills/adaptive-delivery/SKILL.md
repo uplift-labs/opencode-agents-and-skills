@@ -37,7 +37,7 @@ Classify before choosing a process. A quick classification is enough for low-ris
 
 Use the lightest lane that can produce trustworthy evidence.
 
-- `Direct Lane`: use for tiny and small clear tasks. Inspect enough context, add/update the focused test first for behavior changes, make the smallest correct change, run focused validation, and report.
+- `Direct Lane`: use for tiny and small clear tasks. Inspect enough context, add/update the focused test first for behavior changes, make the smallest correct change, run focused validation, and use `code-quality-audit` or `code-quality-reviewer` when the code edit is non-trivial enough to affect maintainability.
 - `Planned Lane`: use when implementation needs decomposition, risk review, or test strategy but not a formal spec. Load `deep-task-planning` when appropriate.
 - `Explore Lane`: use when the problem, desired behavior, compatibility, or acceptance criteria are unclear. Load `openspec-explore` for spec-shaped product questions; otherwise perform local evidence discovery and ask only blocking questions.
 - `Spec Lane`: use when the change alters observable behavior, API, protocol, data model, compatibility contract, deployment behavior, or another normative requirement. Load `openspec-propose` to create or update the change package before implementation unless the user explicitly requests code-first work.
@@ -87,7 +87,7 @@ Assemble a temporary team only after the lane is chosen.
 - `explore` subagents: broad read-only mapping, codebase discovery, spec inventory, or evidence collection.
 - `general` subagents: bounded implementation or research slices with exact scope.
 - Domain skills: method contracts for specific slices, such as protocol, config, legacy, scheduler, benchmark, packaging, or documentation work.
-- Reviewer agents: read-only gates after planning or material changes, such as implementation readiness, OpenSpec architecture, test coverage, performance/reliability, deployment/config, protocol, wire, legacy evidence, or compatibility.
+- Reviewer agents: read-only gates after planning or material changes, such as implementation readiness, code quality/maintainability, OpenSpec architecture, test coverage, performance/reliability, deployment/config, protocol, wire, legacy evidence, or compatibility.
 - `orchestrator`: execution manager for independent tracks; not a substitute for requirements, spec, architecture, or domain rules.
 
 When fan-out is justified, prefer the smallest useful team. Many tasks need no workers, and material tasks usually need only targeted reviewer gates. Stay serial when reconciliation would cost more than parallelism saves.

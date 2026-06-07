@@ -61,7 +61,7 @@ After approval:
 - Each planning worker receives one high-level workstream, exact OpenSpec artifacts to inspect, write scope `none`, expected planning evidence, relevant OpenSpec skill rules, and an explicit instruction to report `Planning Skill: deep-task-planning loaded` in its final report.
 - Synthesize planning reports into bounded implementation/review/test workers using the `orchestrator` contract.
 - For implementation workers, preserve `openspec-apply-change` TDD-first rule: tests/characterization before behavior-changing code unless a blocker is reported.
-- Continue through normal orchestrator phases: execution, integration, focused validation, final validation, relevant read-only reviewer gates, cleanup, and final user-facing status.
+- Continue through normal orchestrator phases: execution, integration, focused validation, final validation, relevant read-only reviewer gates including `code-quality-reviewer` for non-trivial code changes, cleanup, and final user-facing status.
 - The master session owns task tracking, integration decisions, validation, reviewer gates, residual risks, and final synthesis.
 - Workers must not ask the user questions, launch nested orchestration, commit, push, merge, delete worktrees, or edit outside assigned scope.
 

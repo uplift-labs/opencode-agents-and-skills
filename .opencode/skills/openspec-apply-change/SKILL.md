@@ -18,7 +18,7 @@ Use this skill when the user asks to implement, continue, or complete tasks from
 - Make the smallest correct code/doc changes that satisfy the scoped requirement.
 - Update tasks and traceability only when evidence exists.
 - Run the closest relevant validation after each meaningful slice.
-- Use reviewer agents for material architecture, concurrency, protocol, deployment, or test-coverage risks.
+- Use reviewer agents for material code-quality/maintainability, architecture, concurrency, protocol, deployment, or test-coverage risks.
 
 ## Completion Gate
 

@@ -44,7 +44,7 @@ Ask the user before fan-out only when ambiguity, destructive/remote action, loca
 8. Reconcile reports against scope, blockers, tests, changed files, and acceptance criteria.
 9. Integrate accepted changes serially; send incomplete work back for focused rework or deliberately discard it.
 10. Run focused validation after material integration when practical, then final validation for the whole task.
-11. Run relevant read-only reviewer gates after material changes when available and proportional.
+11. Run relevant read-only reviewer gates after material changes when available and proportional; include `code-quality-reviewer` when integrated code changes affect maintainability, readability, file navigation, or duplication.
 12. Report changed files, validation, review gate, residual risks, blockers, and ready-to-land status.
 
 The master may do only initial splitting, non-overlapping shared context reads, integration fixes, validation, reviewer-gate orchestration, and final synthesis. If the master starts doing substantial worker work, delegate it or exit orchestration with a reason.

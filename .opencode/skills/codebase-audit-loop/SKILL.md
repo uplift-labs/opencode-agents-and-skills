@@ -39,6 +39,7 @@ Before deep work, define:
 - Inventory files, tests, specs, commands, and critical flows.
 - For broad audits with independent file or subsystem ranges, consider `orchestrator` with read-only workers and ledger-assigned ranges; keep quick or non-shardable audits serial.
 - Delegate independent read-only reviewer agents when useful, but keep the main session responsible for synthesis and edits.
+- Use `code-quality-reviewer` for maintainability/readability, file-bloat, duplication, boundary, and overengineering findings that need an independent read-only gate.
 - Findings require evidence, impact, and a minimal recommendation.
 - If fixes are allowed, add/update a focused regression or characterization test before behavior fixes when practical, then make the smallest fix, validate, and re-review.
 - Do not stop while scoped ledger items are unreviewed, fixable, validatable, or need re-review unless blocked by an external dependency.

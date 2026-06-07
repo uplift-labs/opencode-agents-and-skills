@@ -19,6 +19,7 @@ If the user gives a broad or unclear end-to-end delivery task and has not alread
 - Prefer the smallest reversible implementation slice that proves value.
 - Include TDD/test-first strategy before implementation strategy: each behavior-changing slice starts with the focused failing, acceptance, or characterization test, or an explicit infeasibility note plus substitute evidence.
 - Keep the test plan proportional: identify the smallest useful test/gate per slice before adding broader suites.
+- Add a `code-quality-reviewer` gate for slices likely to affect maintainability, file navigation, duplication, module boundaries, or public surface area.
 - Separate confirmed facts from assumptions and open questions.
 - Do not invent unavailable tools, APIs, or requirements.
 - If the plan exposes independent workstreams with bounded evidence and validation, recommend `orchestrator` for execution; keep tightly coupled or decision-blocked work serial.
@@ -31,6 +32,7 @@ Return:
 - `Current Evidence`: what was checked and what remains unverified.
 - `Implementation Slices`: ordered steps with the test/fixture/gate first for each behavior-changing slice, then implementation, then validation.
 - `Test Plan`: unit, integration, acceptance, negative, performance, or manual gates as applicable.
+- `Code Quality Gate`: when to run `code-quality-audit` or `code-quality-reviewer`, or why it is not needed.
 - `Risk Register`: risk, impact, mitigation, owner or blocker.
 - `Decision Points`: choices that need evidence or owner input.
 - `Ready To Start`: yes/no with blockers.

@@ -32,10 +32,10 @@ Do not use it for initial MR/PR title/body drafting with no review state yet; us
 1. Inspect local status, branch, diff, recent commits, base branch assumption, MR/PR identifier, validation evidence, and provider status/comments when accessible.
 2. Classify the current outcome using the outcome model. Keep confirmed evidence separate from assumptions.
 3. Build a feedback resolution matrix: comment/check -> evidence -> category -> action -> owner -> status.
-4. Resolve routine in-scope feedback autonomously when the user asked to address review feedback: test/gate first, smallest fix, focused validation, relevant reviewer gate.
+4. Resolve routine in-scope feedback autonomously when the user asked to address review feedback: test/gate first, smallest fix, focused validation, relevant reviewer gate such as `code-quality-reviewer` for maintainability/readability feedback.
 5. Do not silently widen scope. For out-of-scope, ambiguous, conflicting, product/security/legal, destructive, or remote-state decisions, ask the main-session user with 2-4 self-contained options and `(Recommended)` first.
 6. Draft reviewer responses locally unless remote posting was explicitly requested. Clearly separate resolved, deferred, disagreed, blocked, and out-of-scope feedback.
-7. Re-run focused validation and relevant reviewer gates after local fixes. If checks are unavailable, state the exact missing gate.
+7. Re-run focused validation and relevant reviewer gates after local fixes. Include `code-quality-reviewer` when local fixes change non-trivial code structure, responsibilities, or file navigation. If checks are unavailable, state the exact missing gate.
 8. Finish with the smallest useful next action: update MR/PR remotely, respond to feedback, request re-review, merge after approval, wait for review, or stop with blockers.
 
 ## User Decision Policy
@@ -58,5 +58,3 @@ Return:
 - `Draft Reviewer Response`: concise response text when useful, clearly marked as not posted unless remote posting was requested.
 - `User Decisions Needed`: only high-risk/scope/remote/destructive decisions, or `none`.
 - `Suggested Next Options`: use when `question` is unavailable, forbidden, or not appropriate.
-
-Running OpenCode sessions may need restart before this newly added skill is available in the skill registry.

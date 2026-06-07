@@ -7,7 +7,7 @@ Reusable OpenCode skills, reviewer agents, and instruction templates for agentic
 - `.opencode/skills/`: reusable OpenCode skills.
 - `.opencode/agents/`: reusable read-only reviewer agents.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
-- `tools/`: TypeScript validation, test, install, and OpenCode session-retro inventory/analysis tooling for this library.
+- `tools/`: TypeScript validation, test, install, code-quality inventory, and OpenCode session-retro inventory/analysis tooling for this library.
 
 ## Prerequisites
 
@@ -84,6 +84,12 @@ npm test
 
 The validator checks skill and agent frontmatter shape, README catalog sync, README routing/reviewer gate sections, repo `AGENTS.md` autonomous handoff, TypeScript-only development policy, deterministic helper automation policy, reusable reviewer permission policy, OpenCode config warnings for broad mutation-capable wildcard `allow` permissions, optional project-neutral anchors passed via `--forbidden-anchor`, trailing whitespace, and warning-level TDD guard findings for Markdown artifacts with implementation-related language that do not mention test-first, TDD, before-code fixtures/gates, or equivalent validation-first language.
 
+For code maintainability reviews in this library, gather deterministic file-size/navigation bands with:
+
+```sh
+npm run code-quality:inventory -- --format markdown
+```
+
 For installer changes, also prove the no-write path before using a real config directory:
 
 ```sh
@@ -131,10 +137,12 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 - Broad independent tracks -> `orchestrator` only after bounded workstreams, success criteria, and validation evidence are clear; user approval is required only for ambiguous scope, remote/destructive actions, dirty-state preservation, or other user-owned decisions.
 - Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `session-archive-retro`; all-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `opencode-total-session-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
+- Code maintainability/readability after non-trivial implementation, refactoring, large-file navigation, duplication, DRY/SOLID/YAGNI, or design-pattern trade-off work -> `code-quality-audit`; use `code-quality-reviewer` as the read-only gate.
 
 ## Reviewer Gate Map
 
 - Instruction artifacts, skills, agents, prompts, `AGENTS.md`, and README routing -> `instruction-artifact-reviewer`.
+- Code health, maintainability, readability, file navigation, duplication, boundaries, and pragmatic refactoring -> `code-quality-reviewer`.
 - Implementation readiness, stable scope, blockers, validation path -> `implementation-readiness-reviewer`.
 - OpenSpec/design/architecture ownership and consistency -> `openspec-architecture-reviewer`.
 - Requirements-to-tests, weak assertions, missing gates -> `test-coverage-reviewer`.
@@ -166,6 +174,7 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 ### Documentation And Audit
 
 - `documentation-hardening-loop`: docs/spec review-fix-validate loop.
+- `code-quality-audit`: pragmatic code-health review after non-trivial code changes, focusing on maintainability, readability, file navigation, duplication, overengineering, code smells, and minimal refactoring remedies.
 - `documentation-block-ledger`: helper ledger for full docs block coverage.
 - `codebase-audit-loop`: exhaustive audit workflow for bugs, redundancy, test gaps, performance, and maintainability.
 - `codebase-audit-ledger`: helper ledger for exhaustive audit coverage.
@@ -196,6 +205,7 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 ## Agent Catalog
 
 - `test-coverage-reviewer`: requirement-to-test matrix, missing tests, weak assertions.
+- `code-quality-reviewer`: maintainability/readability reviewer for code smells, file bloat, duplication, boundaries, overengineering, and pragmatic refactoring gates.
 - `implementation-readiness-reviewer`: stable scope, decisions, blockers, validation readiness.
 - `openspec-architecture-reviewer`: architecture/OpenSpec consistency and ownership risks.
 - `rust-concurrency-reviewer`: Rust async/concurrency/backpressure/shutdown risks.

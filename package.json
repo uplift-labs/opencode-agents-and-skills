@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "install:global": "node tools/install-opencode-global.ts",
+    "code-quality:inventory": "node tools/code-quality-inventory.ts",
     "retro:inventory": "node tools/opencode-session-retro-inventory.ts",
     "retro:analyze": "node tools/opencode-session-retro-analyze.ts",
-    "test": "node tools/test-library.ts",
+    "test": "node tools/test-library.ts && node tools/test-code-quality-inventory.ts",
     "validate": "node tools/validate-library.ts"
   },
   "engines": {
