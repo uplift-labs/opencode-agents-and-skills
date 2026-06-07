@@ -21,6 +21,7 @@ const root = parseRoot(process.argv.slice(2));
 const validator = path.join(root, "tools", "validate-library.ts");
 const installer = path.join(root, "tools", "install-opencode-global.ts");
 const retroInventory = path.join(root, "tools", "opencode-session-retro-inventory.ts");
+const retroAnalyze = path.join(root, "tools", "opencode-session-retro-analyze.ts");
 
 function defaultRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -190,6 +191,10 @@ function invokeRetroInventory(args: string[]): ProcessResult {
   return invokeProcessCapture("node", [retroInventory, ...args], root);
 }
 
+function invokeRetroAnalyze(args: string[]): ProcessResult {
+  return invokeProcessCapture("node", [retroAnalyze, ...args], root);
+}
+
 function assertSuccess(result: ProcessResult, message: string): void {
   if (result.exitCode !== 0) {
     throw new Error(`${message}\nExitCode: ${result.exitCode}\nOutput:\n${result.output}`);
@@ -212,6 +217,43 @@ function assertOutputExcludes(result: ProcessResult, needle: string, message: st
   if (result.output.includes(needle)) {
     throw new Error(`${message}\nOutput must not contain: ${needle}\nOutput:\n${result.output}`);
   }
+}
+
+function assertEqual<T>(actual: T, expected: T, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`${message}\nExpected: ${String(expected)}\nActual: ${String(actual)}`);
+  }
+}
+
+function parseJsonOutput(result: ProcessResult): unknown {
+  const start = result.output.indexOf("{");
+  const end = result.output.lastIndexOf("}");
+  if (start < 0 || end < start) {
+    throw new Error(`Expected JSON object output.\nOutput:\n${result.output}`);
+  }
+  return JSON.parse(result.output.slice(start, end + 1)) as unknown;
+}
+
+function asRecord(value: unknown, message: string): Record<string, unknown> {
+  if (typeof value !== "object" || value == null || Array.isArray(value)) {
+    throw new Error(message);
+  }
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown, message: string): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) {
+    throw new Error(message);
+  }
+  return value.map((item) => asRecord(item, message));
+}
+
+function findBucket(rows: Array<Record<string, unknown>>, keyName: string, keyValue: string): Record<string, unknown> {
+  const found = rows.find((row) => row[keyName] === keyValue);
+  if (!found) {
+    throw new Error(`Missing bucket ${keyName}=${keyValue}.\nRows:\n${JSON.stringify(rows, null, 2)}`);
+  }
+  return found;
 }
 
 function anyPathWithBasename(rootPath: string, basename: string): boolean {
@@ -1033,6 +1075,140 @@ const tests: TestCase[] = [
       const result = invokeRetroInventory(["--db", dbPath, "--only-explicit", "--no-desktop", "--format", "json", "--out", outPath]);
       assertFailure(result, "Retro inventory should refuse accidental ledger overwrite.");
       assertOutputContains(result, "already exists", "Overwrite refusal should explain the existing output path.");
+    },
+  },
+  {
+    name: "retro analyze reports redacted structured metrics",
+    run: () => {
+      const dbPath = newOpenCodeSessionDbFixture("retro-analyze");
+      const beforeFiles = fs.readdirSync(path.dirname(dbPath)).sort();
+      const db = new DatabaseSync(dbPath);
+      try {
+        db.exec(lines([
+          "create table account (id text primary key, email text, url text, access_token text, refresh_token text, token_expiry integer, time_created integer, time_updated integer);",
+          "create table session_share (session_id text not null, id text not null, secret text not null, url text not null, time_created integer not null, time_updated integer not null);",
+          "create table event (id text primary key, aggregate_id text not null, seq integer not null, type text not null, data text not null);",
+          "create table session_input (id text primary key, session_id text not null, prompt text not null, delivery text not null, admitted_seq integer, promoted_seq integer, time_created integer not null);",
+        ]));
+        db.prepare("insert into account (id, email, url, access_token, refresh_token, token_expiry, time_created, time_updated) values (?, ?, ?, ?, ?, ?, ?, ?)").run("account_secret", "raw secret email", "raw secret url", "raw secret access token", "raw secret refresh token", 1700000999000, 1700000000000, 1700000000000);
+        db.prepare("insert into session_share (session_id, id, secret, url, time_created, time_updated) values (?, ?, ?, ?, ?, ?)").run("ses_secret_root", "share_secret_id", "raw secret share token", "raw secret share url", 1700000000000, 1700000000000);
+        db.prepare("insert into event (id, aggregate_id, seq, type, data) values (?, ?, ?, ?, ?)").run("evt_secret", "ses_secret_root", 1, "session.created.1", "raw secret event data");
+        db.prepare("insert into session_input (id, session_id, prompt, delivery, admitted_seq, promoted_seq, time_created) values (?, ?, ?, ?, ?, ?, ?)").run("input_secret", "ses_secret_root", "raw secret input prompt", "queued", 1, 1, 1700000000000);
+        db.prepare("insert into message (id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?)").run(
+          "msg_json",
+          "ses_secret_root",
+          1700000002000,
+          1700000003000,
+          JSON.stringify({ role: "user", content: "raw secret json message" }),
+        );
+        db.prepare("insert into part (id, message_id, session_id, time_created, time_updated, data) values (?, ?, ?, ?, ?, ?)").run(
+          "part_tool",
+          "msg_json",
+          "ses_secret_root",
+          1700000002000,
+          1700000003000,
+          JSON.stringify({
+            type: "tool",
+            tool: "bash",
+            state: {
+              status: "error",
+              input: {
+                command: "dangerous secret token command",
+                description: "raw secret description",
+              },
+            },
+          }),
+        );
+      } finally {
+        db.close();
+      }
+      const result = invokeRetroAnalyze(["--db", dbPath, "--only-explicit", "--format", "json"]);
+      assertSuccess(result, "Retro analyze should read a minimal OpenCode SQLite fixture.");
+      const afterFiles = fs.readdirSync(path.dirname(dbPath)).sort();
+      assertEqual(afterFiles.join("\n"), beforeFiles.join("\n"), "Retro analyze should not create SQLite sidecar or output files without --out.");
+      const report = asRecord(parseJsonOutput(result), "Retro analyze JSON root should be an object.");
+      assertEqual(report.tool, "opencode-session-retro-analyze", "Retro analyze should identify its report contract.");
+      assertEqual(report.redacted, true, "Retro analyze should default to redacted output.");
+      const coverage = asRecord(report.coverage, "Retro analyze coverage should be an object.");
+      assertEqual(coverage.totalSessions, 2, "Retro analyze should count sessions exactly.");
+      assertEqual(coverage.messageRows, 3, "Retro analyze should count message rows exactly.");
+      assertEqual(coverage.partRows, 2, "Retro analyze should count part rows exactly.");
+      const sources = asArray(report.sources, "Retro analyze sources should be an array.");
+      assertEqual(sources.length, 1, "Retro analyze should report one explicit source.");
+      const source = sources[0];
+      if ("path" in source) {
+        throw new Error(`Retro analyze should omit source path unless --show-paths is used.\nSource:\n${JSON.stringify(source, null, 2)}`);
+      }
+      const counts = asRecord(source.counts, "Retro analyze source counts should be an object.");
+      assertEqual(counts.account, 1, "Retro analyze should count account rows without reading token values.");
+      assertEqual(counts.session_share, 1, "Retro analyze should count session_share rows without reading secrets.");
+      const sessionSummary = asRecord(source.sessionSummary, "Retro analyze session summary should be an object.");
+      assertEqual(sessionSummary.rootSessions, 1, "Retro analyze should count root sessions exactly.");
+      assertEqual(sessionSummary.childSessions, 1, "Retro analyze should count child sessions exactly.");
+      assertEqual(sessionSummary.sessionShareRows, 1, "Retro analyze should count session_share rows in the session summary.");
+      const messageEnvelope = asRecord(source.messageEnvelope, "Retro analyze message envelope should be an object.");
+      assertEqual(messageEnvelope.parsedRows, 1, "Retro analyze should count parsed message JSON rows exactly.");
+      assertEqual(messageEnvelope.unreadableRows, 2, "Retro analyze should count unreadable message rows exactly.");
+      const roleCounts = asArray(messageEnvelope.roleCounts, "Retro analyze roleCounts should be an array.");
+      assertEqual(findBucket(roleCounts, "key", "user").count, 1, "Retro analyze should count message roles exactly.");
+      const partEnvelope = asRecord(source.partEnvelope, "Retro analyze part envelope should be an object.");
+      assertEqual(partEnvelope.parsedRows, 1, "Retro analyze should count parsed part JSON rows exactly.");
+      assertEqual(partEnvelope.unreadableRows, 1, "Retro analyze should count unreadable part rows exactly.");
+      const partTypeCounts = asArray(partEnvelope.typeCounts, "Retro analyze part type counts should be an array.");
+      assertEqual(findBucket(partTypeCounts, "key", "tool").count, 1, "Retro analyze should count part types exactly.");
+      const toolEnvelope = asRecord(source.toolEnvelope, "Retro analyze tool envelope should be an object.");
+      assertEqual(toolEnvelope.toolParts, 1, "Retro analyze should count tool parts exactly.");
+      assertEqual(toolEnvelope.errorStatusToolParts, 1, "Retro analyze should count structured error status tool parts exactly.");
+      assertEqual(toolEnvelope.errorStatusSessions, 1, "Retro analyze should count sessions with structured tool error status exactly.");
+      assertEqual(findBucket(asArray(toolEnvelope.toolCounts, "Retro analyze toolCounts should be an array."), "tool", "bash").count, 1, "Retro analyze should count structured tool names exactly.");
+      assertEqual(findBucket(asArray(toolEnvelope.statusCounts, "Retro analyze statusCounts should be an array."), "status", "error").count, 1, "Retro analyze should count structured tool statuses exactly.");
+      assertEqual(findBucket(asArray(toolEnvelope.inputKeyCounts, "Retro analyze inputKeyCounts should be an array."), "key", "bash.command").count, 1, "Retro analyze should count input keys without values exactly.");
+      assertEqual(findBucket(asArray(source.todoCounts, "Retro analyze todoCounts should be an array."), "status", "completed").count, 1, "Retro analyze should count todo status/priority rows exactly.");
+      assertEqual(findBucket(asArray(source.eventTypeCounts, "Retro analyze eventTypeCounts should be an array."), "key", "session.created.1").count, 1, "Retro analyze should count event types exactly.");
+      assertEqual(findBucket(asArray(source.sessionInputDeliveries, "Retro analyze sessionInputDeliveries should be an array."), "key", "queued").count, 1, "Retro analyze should count session input deliveries exactly.");
+      const privacyNotes = (report.privacyNotes as unknown[]).join("\n");
+      if (!privacyNotes.includes("Paths are not emitted by default")) {
+        throw new Error(`Retro analyze privacy notes should explain default path omission.\nNotes:\n${privacyNotes}`);
+      }
+      assertOutputExcludes(result, "Secret root title", "Retro analyze must not expose raw session titles.");
+      assertOutputExcludes(result, "SensitiveProjectName", "Retro analyze must not expose raw project names or paths by default.");
+      assertOutputExcludes(result, "ses_secret_root", "Retro analyze must not expose stable session ids by default.");
+      assertOutputExcludes(result, "proj_secret", "Retro analyze must not expose stable project ids by default.");
+      assertOutputExcludes(result, "account_secret", "Retro analyze must not expose raw account ids.");
+      assertOutputExcludes(result, "share_secret_id", "Retro analyze must not expose raw share ids.");
+      assertOutputExcludes(result, "raw secret", "Retro analyze must not expose raw message, part, todo, or command data.");
+      assertOutputExcludes(result, "dangerous secret token command", "Retro analyze must not expose raw command values.");
+    },
+  },
+  {
+    name: "retro analyze documents show-paths privacy mode",
+    run: () => {
+      const dbPath = newOpenCodeSessionDbFixture("retro-analyze-show-paths");
+      const result = invokeRetroAnalyze(["--db", dbPath, "--only-explicit", "--format", "json", "--show-paths"]);
+      assertSuccess(result, "Retro analyze --show-paths should succeed for an explicit source.");
+      const report = asRecord(parseJsonOutput(result), "Retro analyze JSON root should be an object.");
+      const sources = asArray(report.sources, "Retro analyze sources should be an array.");
+      const sourcePath = typeof sources[0].path === "string" ? sources[0].path : "";
+      if (!(sourcePath.startsWith("~/") && sourcePath.endsWith("/opencode.db")) && !sourcePath.endsWith(":opencode.db")) {
+        throw new Error(`Retro analyze --show-paths should emit only a redacted source path for this fixture.\nSource:\n${JSON.stringify(sources[0], null, 2)}`);
+      }
+      const privacyNotes = (report.privacyNotes as unknown[]).join("\n");
+      if (!privacyNotes.includes("home-redacted source paths are emitted because --show-paths was requested")) {
+        throw new Error(`Retro analyze privacy notes should explain --show-paths mode.\nNotes:\n${privacyNotes}`);
+      }
+      assertOutputExcludes(result, "SensitiveProjectName", "Retro analyze --show-paths must still avoid project names.");
+      assertOutputExcludes(result, "raw secret", "Retro analyze --show-paths must still avoid content values.");
+    },
+  },
+  {
+    name: "retro analyze refuses to overwrite output files",
+    run: () => {
+      const dbPath = newOpenCodeSessionDbFixture("retro-analyze-overwrite");
+      const outPath = path.join(newTempDir("retro-analyze-output"), "analysis.json");
+      writeText(outPath, "existing analysis");
+      const result = invokeRetroAnalyze(["--db", dbPath, "--only-explicit", "--format", "json", "--out", outPath]);
+      assertFailure(result, "Retro analyze should refuse accidental generated report overwrite.");
+      assertOutputContains(result, "already exists", "Retro analyze overwrite refusal should explain the existing output path.");
     },
   },
 ];

@@ -5,6 +5,7 @@
   "scripts": {
     "install:global": "node tools/install-opencode-global.ts",
     "retro:inventory": "node tools/opencode-session-retro-inventory.ts",
+    "retro:analyze": "node tools/opencode-session-retro-analyze.ts",
     "test": "node tools/test-library.ts",
     "validate": "node tools/validate-library.ts"
   },

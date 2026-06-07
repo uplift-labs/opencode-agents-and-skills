@@ -7,12 +7,12 @@ Reusable OpenCode skills, reviewer agents, and instruction templates for agentic
 - `.opencode/skills/`: reusable OpenCode skills.
 - `.opencode/agents/`: reusable read-only reviewer agents.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
-- `tools/`: TypeScript validation, test, install, and OpenCode session-retro inventory tooling for this library.
+- `tools/`: TypeScript validation, test, install, and OpenCode session-retro inventory/analysis tooling for this library.
 
 ## Prerequisites
 
 - Node `>=24` is required because repository tooling runs TypeScript entrypoints directly.
-- `npm test` and `npm run retro:inventory` use Node's `node:sqlite`; Node may print an `ExperimentalWarning` while the API remains experimental.
+- `npm test`, `npm run retro:inventory`, and `npm run retro:analyze` use Node's `node:sqlite`; Node may print an `ExperimentalWarning` while the API remains experimental.
 
 ## Install
 
@@ -98,7 +98,7 @@ npm run validate -- --forbidden-anchor "OldProductName" "D:/old/project/path"
 
 For broad instruction-artifact audits, use `instructions/instruction-artifact-audit-runbook.md` to prove repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes. Capture before/after metrics such as global rules line count, top heavy skill line counts, installed-copy drift, validator test count, and reviewer findings.
 
-## Session Retro Inventory
+## Session Retro Inventory And Analysis
 
 Before running `opencode-total-session-retro`, generate a redacted coverage and batching ledger for locally reachable OpenCode session stores:
 
@@ -113,6 +113,14 @@ npm run retro:inventory -- --format json --out <ledger-path>
 ```
 
 The inventory tool reads OpenCode SQLite stores in read-only mode, classifies Desktop state files without emitting raw prompts, redacts session IDs/project names/paths by default, and suggests stable batches for later evidence review. Use `--db <path>`, `--data-dir <path>`, or `--desktop-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Existing `--out` files are refused unless `--overwrite` is passed explicitly.
+
+After inventory, gather deterministic structured metrics without transcript-content heuristics:
+
+```sh
+npm run retro:analyze -- --format markdown
+```
+
+The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, TODO status/priority counts, event types, and session summary counters. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets. Use `--db <path>` or `--data-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Use `--out <path>` only for approved generated analysis reports; existing files are refused unless `--overwrite` is passed explicitly.
 
 ## Routing Map
 

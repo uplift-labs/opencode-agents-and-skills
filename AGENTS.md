@@ -15,7 +15,7 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 
 - Use TypeScript for all repository automation and implementation code.
 - Do not add or keep PowerShell, Python, or JavaScript source/tooling files; rewrite any such code to TypeScript instead.
-- Run library tooling through `npm run validate`, `npm test`, `npm run install:global -- ...`, and `npm run retro:inventory -- ...`; do not introduce `.ps1`, `.py`, or `.js` entrypoints.
+- Run library tooling through `npm run validate`, `npm test`, `npm run install:global -- ...`, `npm run retro:inventory -- ...`, and `npm run retro:analyze -- ...`; do not introduce `.ps1`, `.py`, or `.js` entrypoints.
 - JSON, Markdown, YAML, and other config/data files are allowed when they are not implementation code.
 
 ## Deterministic Helper Automation
@@ -25,6 +25,7 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Helper code must have no hidden heuristics: do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference as evidence.
 - If deterministic helper code cannot answer something from its inputs, report `unknown`, `unreadable`, `unsupported`, or `blocked` instead of guessing.
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
+- For OpenCode retro analytics in this repository, durable TypeScript helper scripts are allowed when they materially reduce analysis work; add or update a focused test first, expose reusable helpers through `package.json`, and update the relevant retro skill to call them.
 
 ## Autonomous Work Contract
 

@@ -62,9 +62,19 @@ When this library's TypeScript tools are available, start the inventory phase wi
 npm run retro:inventory -- --format markdown
 ```
 
+Then run the structured analysis helper to gather deterministic, redacted envelope metrics before any transcript interpretation:
+
+```sh
+npm run retro:analyze -- --format markdown
+```
+
 Use `npm run retro:inventory -- --format json --out <path>` only when the user approved writing a generated ledger or manifest. The tool refuses to replace existing output files unless `--overwrite` is supplied explicitly. Use `--db <path>`, `--data-dir <path>`, and `--desktop-dir <path>` to add explicitly discovered sources. Use `--only-explicit` for controlled runs that must ignore default discovery. Use `--show-paths` only when home-redacted source paths are acceptable for the report audience.
 
 The inventory tool is a coverage and batching aid, not a substitute for retro findings. Treat its counts, source refs, duplicate detection, Desktop state classification, and suggested batches as the initial ledger; still inspect source sessions read-only and verify implementation-sensitive recommendations against current artifacts, docs, schemas, tests, or live output.
+
+The analysis tool is a structured aggregation aid, not a judgment engine. It reads OpenCode SQLite stores in read-only mode and emits schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names, tool statuses, input key names, TODO status/priority counts, event types, and session summary counters. It must not scan transcript content for fuzzy patterns, emit raw prompts, emit command values, or infer intent from arbitrary text.
+
+Use `npm run retro:analyze -- --format json --out <path>` only when the user approved writing a generated analysis report. Existing output files are refused unless `--overwrite` is supplied explicitly. Use `--show-paths` only when home-redacted source paths are acceptable for the report audience; otherwise paths are omitted.
 
 ## Deterministic Helper Automation Gate
 
@@ -72,15 +82,18 @@ After the initial source inventory, explicitly decide and record whether a small
 
 Only write or recommend helper code when its contract can be explicit: inputs, outputs, schema or fixture, ordering, redaction rules, failure states, and validation command. Do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference in helper code. If the helper cannot determine something from its inputs, it must report `unknown`, `unreadable`, `unsupported`, or `blocked`; the agent owns judgment-heavy synthesis.
 
+When repository write scope for retro analytics helpers is explicitly granted, prefer turning repeated ad hoc analysis into a reusable TypeScript tool under `tools/`, add the smallest fixture-backed test or validation gate first, expose it through `package.json`, update this skill to call it, and run the relevant validation. Do not leave useful analytics as one-off shell snippets when a deterministic helper would be safer and reusable.
+
 ## Total-Corpus Algorithm
 
 1. Discover candidate sources from current OpenCode docs/source/live output, then from OS-specific config/data locations, repository artifacts, exported archives, and user-provided paths.
 2. Build a redacted coverage ledger before interpreting content. Include source id, redacted path or stable reference, type, readability, session count, message count when available, date range, redacted project/workspace, and confidence.
-3. Dedupe sessions across stores, exports, summaries, shared copies, and restored backups using stable ids first, then title/date/project/message fingerprints.
-4. Sort sessions chronologically and group them into batches by date, project, or artifact type. Keep child/background sessions linked to their parent when evidence exists.
-5. For very large archives, use read-only `orchestrator` fan-out only after stable batch boundaries and output contracts are clear. The main session owns privacy filtering, cross-batch synthesis, and final recommendations.
-6. Summarize every substantive session or sampled batch before global synthesis. If full per-session coverage is infeasible in the current turn, mark the run as partial and preserve the unprocessed ledger in the final output or a user-approved file.
-7. For each session card or batch card, capture:
+3. Run deterministic structured analysis where available to capture counts and tool/status envelopes without exposing transcript content or using fuzzy text classification.
+4. Dedupe sessions across stores, exports, summaries, shared copies, and restored backups using stable ids first, then title/date/project/message fingerprints.
+5. Sort sessions chronologically and group them into batches by date, project, or artifact type. Keep child/background sessions linked to their parent when evidence exists.
+6. For very large archives, use read-only `orchestrator` fan-out only after stable batch boundaries and output contracts are clear. The main session owns privacy filtering, cross-batch synthesis, and final recommendations.
+7. Summarize every substantive session or sampled batch before global synthesis. If full per-session coverage is infeasible in the current turn, mark the run as partial and preserve the unprocessed ledger in the final output or a user-approved file.
+8. For each session card or batch card, capture:
 
 - Session id/title/date/project/workspace and parent id when available.
 - User goal and constraints.
@@ -93,10 +106,10 @@ Only write or recommend helper code when its contract can be explicit: inputs, o
 - Outcome: success, partial, failed, blocked, or unclear.
 - Candidate global lesson and confidence: high, medium, or low.
 
-8. Promote a pattern only when it appears across multiple independent sessions, across multiple projects, or in one severe/high-confidence session with clear global impact.
-9. Separate global reusable improvements from project-specific lessons. Do not generalize local tool names, paths, services, issue trackers, or private workflows into global artifacts.
-10. Prefer executable automation over prose when the improvement can be checked mechanically.
-11. Reconcile every proposed skill/agent/rule/validator change against current repository artifacts, installed artifacts when in scope, and OpenCode docs/schema/source/live behavior before recommending or applying it.
+9. Promote a pattern only when it appears across multiple independent sessions, across multiple projects, or in one severe/high-confidence session with clear global impact.
+10. Separate global reusable improvements from project-specific lessons. Do not generalize local tool names, paths, services, issue trackers, or private workflows into global artifacts.
+11. Prefer executable automation over prose when the improvement can be checked mechanically.
+12. Reconcile every proposed skill/agent/rule/validator change against current repository artifacts, installed artifacts when in scope, and OpenCode docs/schema/source/live behavior before recommending or applying it.
 
 ## Pattern Categories
 
