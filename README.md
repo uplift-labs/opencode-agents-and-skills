@@ -87,7 +87,7 @@ pwsh -NoProfile -File tools/validate-library.ps1 -ForbiddenAnchor "OldProductNam
 - `next-step`: choose the next concrete spec/doc/code/validation step.
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
-- `orchestrator`: coordinate broad OpenCode work with clear independent tracks through concise task fan-out, report synthesis, and temporary worktrees only when isolation is worth the overhead.
+- `orchestrator`: auto-enter master-orchestrator posture for broad independent work, coordinating concise task fan-out, report reconciliation, tests/review gates, and isolation only when worth the overhead.
 - `reflection-retro`: turn accumulated reflection files into workflow improvements.
 - `session-archive-retro`: analyze session history/transcripts/logs for recurring workflow improvements.
 

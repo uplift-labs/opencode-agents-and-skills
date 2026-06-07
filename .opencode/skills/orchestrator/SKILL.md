@@ -6,11 +6,26 @@ license: MIT
 
 # Orchestrator
 
-Use this skill only to accelerate broad work when independent tracks are visible and coordination overhead is worth it. The master session splits the work, launches bounded `task` workers concurrently, decides whether each worker needs isolation, integrates reports, and owns final verification.
+Use this skill only to accelerate broad work when independent tracks are visible and coordination overhead is worth it. The current main session becomes the master-orchestrator for that work: it splits scope, launches bounded `task` workers concurrently, decides whether each worker needs isolation, integrates reports, and owns final verification.
 
 Do not use it for one small task, vague goals, serial dependency chains, or routine exploration a single assistant can finish. `task` creates child sessions and native task cards; `todowrite` is only the master's checklist.
 
 Default posture: stay serial unless fan-out clearly improves coverage, speed, or isolation. A quick fan-out check is enough; if value is marginal, scope is unstable, or worker coordination would add noise, do not use this skill.
+
+## Auto Master-Orchestrator Gate
+
+The main session may enter master-orchestrator posture on the fly without an explicit user command when all of these are true:
+
+- The user asked for broad implementation, audit, migration, documentation hardening, multi-area review, or another task that naturally splits into independent tracks.
+- At least two worker tracks can be named with bounded read/write scope, success criteria, and verification evidence.
+- Fan-out, independent review, or edit isolation is likely to improve speed, coverage, safety, or reviewer confidence enough to justify coordination overhead.
+- The main session can still own integration, tests, review gates, final validation, and user-facing decisions.
+
+Do not enter master-orchestrator posture for small tasks, single-file changes, tightly coupled reasoning, unclear goals, serial dependency chains, missing acceptance criteria, or work where worker outputs would be harder to reconcile than doing the task directly.
+
+When entering this posture, send one concise progress update before dispatch, for example: `Entering master-orchestrator mode: 3 independent tracks, read-only discovery plus focused implementation and review gates.` Do not announce this mode for routine parallel tool calls.
+
+Exit the posture and continue serially if discovery shows the tracks are dependent, write scopes overlap unsafely, acceptance criteria are unstable, or the remaining work is smaller than the orchestration overhead. State the exit reason briefly.
 
 ## Decision Gate
 
@@ -32,18 +47,35 @@ Include relevant domain-skill rules in each worker prompt. Workers must not laun
 
 The master owns decomposition, worker launch, synthesis, integration, verification, and cleanup.
 
-1. Freeze the objective, constraints, risk level, and final validation command or evidence target.
-2. Create a short internal `runID`, for example `orch-20260607-auth-ui`. Do not put it in user-visible task titles.
-3. Define 2-6 workers with stable IDs (`w01`, `w02`). Prefer 3-5 workers; use more only when the repository naturally shards.
-4. Give each worker one bounded mission, exact read scope, exact write scope or `none`, forbidden paths/actions, expected evidence, and success criteria.
-5. Choose an execution surface for each worker: `current-checkout` or `temporary-worktree`. Base the choice on interference risk, not on a fixed example list.
-6. If a worker needs a temporary worktree, create it in the master session before launch and pass the exact path and branch to the worker.
-7. Launch independent workers as separate built-in `task` calls in the same assistant turn. Do not serialize workers that can run concurrently.
-8. While workers run, do only non-overlapping master work. Do not duplicate a worker's assignment.
-9. Accept only final report envelopes whose `Run` and `Worker` fields match the launch plan.
-10. After each edit worker report, choose one path: accept and integrate, send the work back for focused rework, or deliberately discard it and clean up its temporary worktree.
+1. Intake: freeze the objective, constraints, risk level, non-goals, and final validation command or evidence target.
+2. Suitability gate: decide whether to stay serial, use simple subagents, or enter master-orchestrator posture. Record the reason in one line when entering or declining orchestration for broad work.
+3. Work package plan: create a short internal `runID`, for example `orch-20260607-auth-ui`. Do not put it in user-visible task titles.
+4. Define 2-6 workers with stable IDs (`w01`, `w02`). Prefer 3-5 workers; use more only when the repository naturally shards.
+5. Give each worker one bounded mission, exact read scope, exact write scope or `none`, forbidden paths/actions, expected evidence, and success criteria.
+6. Choose an execution surface for each worker: `current-checkout` or `temporary-worktree`. Base the choice on interference risk, not on a fixed example list.
+7. If a worker needs a temporary worktree, create it in the master session before launch and pass the exact path and branch to the worker.
+8. Dispatch: launch independent workers as separate built-in `task` calls in the same assistant turn. Do not serialize workers that can run concurrently.
+9. Supervise: while workers run, do only non-overlapping master work such as integration prep, validation planning, or reading shared context. Do not duplicate a worker's assignment.
+10. Collect: accept only final report envelopes whose `Run` and `Worker` fields match the launch plan.
+11. Reconcile: compare worker outputs against scope, conflicts, tests, findings, blockers, and acceptance criteria. Send incomplete work back for focused rework when useful.
+12. Integrate: after each edit worker report, choose one path: accept and integrate, send the work back for focused rework, or deliberately discard it and clean up its temporary worktree.
+13. Verify: run focused tests after each material integration when practical, then final validation for the whole task.
+14. Review gate: run relevant read-only reviewer/subagent gates after material changes when available and proportional; otherwise record why the review gate was skipped.
+15. Cleanup and final answer: clean up accepted/discarded worktrees only after integration decisions, then report status, validation, review gate, residual risks, and changed files.
 
 Use the narrowest useful worker type: `explore` for codebase mapping, `general` for implementation/research, and available reviewer agents for read-only validation gates.
+
+## Master Work Boundaries
+
+In master-orchestrator posture, the main session should not perform worker-assigned implementation or review directly. The master may directly do only:
+
+- Initial context gathering needed to split work safely.
+- Worker dispatch, status synthesis, conflict resolution, patch integration, and cleanup.
+- Tiny integration fixes that are faster and safer than another worker round.
+- Final validation, reviewer gate orchestration, and user-facing decisions.
+- Serial fallback after explicitly exiting orchestration.
+
+If the master starts doing substantial worker work, either delegate it as a new bounded worker or exit master-orchestrator posture with a reason.
 
 ## Task Launch Shape
 
@@ -166,12 +198,39 @@ Integration
 
 If a task card is still running, say which worker is pending and continue only with non-overlapping work.
 
+## Test And Review Gates
+
+Testing and review are first-class phases, not optional afterthoughts.
+
+- Each edit worker should run the most focused verification it can and report the exact command or reason for not running it.
+- The master reruns focused validation after integrating material worker changes when practical.
+- The master runs final validation for the whole task, or records a concrete blocker such as missing credentials, unavailable service, unsupported platform, or user-forbidden command.
+- After material code, config, protocol, deployment, or instruction-artifact changes, the master runs the most relevant read-only reviewer/subagent gate when available and proportional.
+- If no suitable reviewer is available, the task is too small, or the user mode forbids subagents, record `Review gate: skipped` with the reason.
+- A failed test or material reviewer finding reopens integration/rework; do not move to final answer until it is fixed, intentionally deferred with rationale, or blocked.
+
+## Anti-Rush Completion Gate
+
+Before final response, verify all items below are closed or explicitly skipped with reasons:
+
+- `Scope`: objective, constraints, and non-goals stayed stable, or changes were reported.
+- `Workers`: every launched worker has a matching report envelope or is explicitly cancelled/discarded.
+- `Reconciliation`: findings, blockers, changed files, and merge notes were reviewed by the master.
+- `Integration`: accepted changes were integrated serially with conflicts resolved; rejected changes were not silently used.
+- `Tests`: focused and final validation were run, or skipped with concrete blockers.
+- `Review`: reviewer/subagent gate was run when material and available, or skipped with rationale.
+- `Cleanup`: temporary worktrees were cleaned up after integration/discard, or retained with reason.
+- `Final`: residual risks and next actions are clear to the user.
+
 ## Hard Rules
 
 - Never auto-merge worker changes.
+- Never commit, push, merge, delete source artifacts, or change remote state unless the user explicitly requested it and repository policy allows it.
 - Never claim a worker finished without a matching report envelope.
 - Never widen worker scope silently.
 - Never put run IDs, worker IDs, or bracketed orchestration tags in task descriptions; use `command` and the worker prompt for metadata.
+- Never finish a master-orchestrator run before the Anti-Rush Completion Gate is satisfied.
+- Never let the master silently do substantial worker-assigned implementation while still claiming to orchestrate.
 - Never let two workers edit the same target in the same checkout. If independent workers need the same files, isolate them in separate worktrees and integrate serially.
 - Never run parallel edits against lockfiles, generated artifacts, migrations, or global config unless each worker is isolated and the master has a clear serial integration plan.
 - Never ask workers to create or delete their own temporary worktrees for code changes.
