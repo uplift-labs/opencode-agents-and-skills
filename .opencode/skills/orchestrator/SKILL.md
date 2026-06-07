@@ -45,6 +45,8 @@ If the task still needs business/requirements intake, lane selection, OpenSpec c
 
 Include relevant domain-skill rules in each worker prompt. Workers must not launch nested orchestration.
 
+Planning workers are a special case: any worker whose mission is planning, detailed planning, execution planning, or plan-first discovery MUST load/use `deep-task-planning` before producing the plan. Treat `deep-task-planning` as the selected planning contract; planning workers must not re-route to `adaptive-delivery` or nested orchestration. The master must put that requirement in the worker prompt and must require the final report to state `Planning Skill: deep-task-planning loaded`. If a planning worker reports that the skill was unavailable or scope is too unstable, treat the report as `needs-review` or `blocked`, not as a completed normal plan.
+
 ## Master Algorithm
 
 The master owns decomposition, worker launch, synthesis, integration, verification, and cleanup.
@@ -124,26 +126,44 @@ Rules:
 - If execution surface is `temporary-worktree`, run all reads, edits, and commands from the assigned worktree path.
 - If you edit files, run the most focused relevant verification you can.
 - Return exactly one final `ORCH_WORKER_REPORT` envelope using the Markdown shape below. Keep it human-readable; do not return JSON unless the master explicitly asks for machine-readable data.
+- Formatting is part of the contract: do not return the report as a single paragraph or inline key/value run. Use blank lines between sections, bullets for multi-item content, and fenced code blocks for long commands or snippets.
+- If this is a planning worker, load/use `deep-task-planning` before planning. Include a `Planning Skill` field with one of: `deep-task-planning loaded`, `deep-task-planning unavailable`, `not applicable`. If unavailable, set `Status: blocked` or `Status: needs-review` and explain why.
 ```
 
 Workers must return:
 
-```text
+```markdown
 <ORCH_WORKER_REPORT>
 Run: orch-20260607-auth-ui
 Worker: w01
 Status: done
 Surface: current-checkout
-Summary: Inspected auth tests and found no blocker.
-Changed files: none
-Verification: not run; read-only inspection
-Findings: none
-Blockers: none
-Handoff: No merge action needed.
+Planning Skill: deep-task-planning loaded
+
+**Summary**
+Inspected auth tests and found no blocker.
+
+**Changed Files**
+- none
+
+**Verification**
+- Not run; read-only inspection.
+
+**Findings**
+- none
+
+**Blockers**
+- none
+
+**Handoff**
+- No merge action needed.
+
 </ORCH_WORKER_REPORT>
 ```
 
 Use `Status: blocked` for missing scope, permissions, setup, or unsafe ambiguity. Use `Status: needs-review` when the result is useful but needs master judgment.
+
+The master should reject or request focused rework for malformed reports that collapse sections into one line, omit required planning-skill status for planning workers, or make findings unreadable for the user-facing synthesis.
 
 ## Execution Surface Decision
 

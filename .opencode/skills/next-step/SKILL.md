@@ -57,7 +57,8 @@ After approval:
 - Load/use `orchestrator` and keep this skill's OpenSpec inventory as the master intake evidence.
 - Carry the approved mode into the handoff. If the user chose plan-first only, run read-only planning workers, synthesize their reports, and stop before implementation until the user explicitly approves execution.
 - Start with parallel detailed planning workers, one per approved workstream, unless two streams are too coupled to plan independently.
-- Each planning worker receives one high-level workstream, exact OpenSpec artifacts to inspect, write scope `none`, expected planning evidence, and relevant OpenSpec skill rules.
+- Each planning worker MUST load/use `deep-task-planning` before doing planning work. If the worker cannot load that skill because the tool is unavailable, the worker MUST report `Status: blocked` or `Status: needs-review` with `Planning Skill: deep-task-planning unavailable`; the master MUST NOT silently accept that as a normal planning report.
+- Each planning worker receives one high-level workstream, exact OpenSpec artifacts to inspect, write scope `none`, expected planning evidence, relevant OpenSpec skill rules, and an explicit instruction to report `Planning Skill: deep-task-planning loaded` in its final report.
 - Synthesize planning reports into bounded implementation/review/test workers using the `orchestrator` contract.
 - Continue through normal orchestrator phases: execution, integration, focused validation, final validation, relevant read-only reviewer gates, cleanup, and final user-facing status.
 - The master session owns task tracking, integration decisions, validation, reviewer gates, residual risks, and final synthesis.

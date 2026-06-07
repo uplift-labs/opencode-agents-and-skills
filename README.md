@@ -85,10 +85,10 @@ pwsh -NoProfile -File tools/validate-library.ps1 -ForbiddenAnchor "OldProductNam
 
 - `adaptive-delivery`: adaptive entrypoint for broad, unclear, high-risk, or process-sensitive work; chooses the smallest useful lane across direct execution, planning, OpenSpec, architecture, orchestration, and reviewer gates.
 - `deep-task-planning`: execution-grade plans for complex work.
-- `next-step`: discover OpenSpec-backed workstreams, request approval for orchestrator fan-out, or choose one concrete serial next step.
+- `next-step`: discover OpenSpec-backed workstreams, request approval for orchestrator fan-out, require `deep-task-planning` for approved planning workers, or choose one concrete serial next step.
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
-- `orchestrator`: auto-enter master-orchestrator posture for broad independent work, coordinating concise task fan-out, report reconciliation, tests/review gates, and isolation only when worth the overhead.
+- `orchestrator`: auto-enter master-orchestrator posture for broad independent work, coordinating concise task fan-out, readable Markdown worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead.
 - `reflection-retro`: turn accumulated reflection files into workflow improvements.
 - `session-archive-retro`: analyze session history/transcripts/logs for recurring workflow improvements.
 
