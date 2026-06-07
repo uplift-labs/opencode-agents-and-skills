@@ -1,16 +1,16 @@
 ---
 name: orchestrator
-description: Use when a broad OpenCode task has 2+ independent tracks: split scope into bounded workers, launch task fan-out concurrently, synthesize reports, and use master-created temporary git worktrees when workers could interfere.
+description: Use ONLY for broad OpenCode work with clear independent tracks that need coordinated task fan-out, report synthesis, or edit isolation; skip small, serial, or unclear tasks.
 license: MIT
 ---
 
 # Orchestrator
 
-Use this skill to accelerate a large task when the scope is broad and independent tracks are visible. The master session splits the work, launches bounded `task` workers concurrently, decides whether each worker needs isolation, integrates reports, and owns final verification.
+Use this skill only to accelerate broad work when independent tracks are visible and coordination overhead is worth it. The master session splits the work, launches bounded `task` workers concurrently, decides whether each worker needs isolation, integrates reports, and owns final verification.
 
 Do not use it for one small task, vague goals, serial dependency chains, or routine exploration a single assistant can finish. `task` creates child sessions and native task cards; `todowrite` is only the master's checklist.
 
-Default bias: before doing broad work serially, run a quick fan-out check. If at least two tracks can progress independently with bounded scope and evidence, use this skill unless orchestration overhead or integration risk is higher than the expected speedup.
+Default posture: stay serial unless fan-out clearly improves coverage, speed, or isolation. A quick fan-out check is enough; if value is marginal, scope is unstable, or worker coordination would add noise, do not use this skill.
 
 ## Decision Gate
 
@@ -24,7 +24,7 @@ Parallelize only when workers can make progress without waiting on each other.
 
 ## Cross-Skill Routing
 
-Orchestrator wraps other skills; it does not replace their domain contracts. When another loaded skill exposes independent implementation, evidence, documentation, audit, or reviewer tracks, keep that skill's invariants in the master plan and delegate bounded slices through `orchestrator` workers.
+Orchestrator wraps other skills only when their work naturally splits into independent bounded tracks. It does not replace domain contracts; keep the loaded skill's invariants in the master plan and delegate only slices that benefit from coordinated fan-out.
 
 Include relevant domain-skill rules in each worker prompt. Workers must not launch nested orchestration.
 
@@ -33,26 +33,31 @@ Include relevant domain-skill rules in each worker prompt. Workers must not laun
 The master owns decomposition, worker launch, synthesis, integration, verification, and cleanup.
 
 1. Freeze the objective, constraints, risk level, and final validation command or evidence target.
-2. Create a short `runID`, for example `orch-20260607-auth-ui`.
+2. Create a short internal `runID`, for example `orch-20260607-auth-ui`. Do not put it in user-visible task titles.
 3. Define 2-6 workers with stable IDs (`w01`, `w02`). Prefer 3-5 workers; use more only when the repository naturally shards.
 4. Give each worker one bounded mission, exact read scope, exact write scope or `none`, forbidden paths/actions, expected evidence, and success criteria.
 5. Choose an execution surface for each worker: `current-checkout` or `temporary-worktree`. Base the choice on interference risk, not on a fixed example list.
 6. If a worker needs a temporary worktree, create it in the master session before launch and pass the exact path and branch to the worker.
 7. Launch independent workers as separate built-in `task` calls in the same assistant turn. Do not serialize workers that can run concurrently.
 8. While workers run, do only non-overlapping master work. Do not duplicate a worker's assignment.
-9. Accept only final report envelopes whose `runID` and `workerID` match the launch plan.
+9. Accept only final report envelopes whose `Run` and `Worker` fields match the launch plan.
 10. After each edit worker report, choose one path: accept and integrate, send the work back for focused rework, or deliberately discard it and clean up its temporary worktree.
 
 Use the narrowest useful worker type: `explore` for codebase mapping, `general` for implementation/research, and available reviewer agents for read-only validation gates.
 
 ## Task Launch Shape
 
-Put the namespace marker in both `description` and `command`:
+The `description` is the human task-card title. Keep it short and clean:
+
+- Use 2-6 words.
+- Do not include brackets, `runID`, `workerID`, mode names, or orchestration tags.
+- Start with the work, for example `Inspect auth tests`, not the routing metadata.
+- Put orchestration metadata in `command` and the worker prompt.
 
 ```json
 {
-  "description": "[orch orch-20260607-auth-ui w01] inspect auth tests",
-  "command": "orchestrator orch-20260607-auth-ui w01 read-only",
+  "description": "Inspect auth tests",
+  "command": "orch orch-20260607-auth-ui w01",
   "subagent_type": "general",
   "prompt": "<worker prompt>"
 }
@@ -79,36 +84,32 @@ Verification: <commands or evidence expected>
 
 Rules:
 - Do not start recursive orchestrator runs or unrelated tasks.
-- Do not ask the user questions. Return `status: "blocked"` or `status: "needs-review"` with the exact decision needed.
+- Do not ask the user questions. Return `Status: blocked` or `Status: needs-review` with the exact decision needed.
 - Do not push, commit, merge, delete worktrees, or change remote state.
-- Do not edit outside write scope. If scope is insufficient, return `status: "blocked"`.
+- Do not edit outside write scope. If scope is insufficient, return `Status: blocked`.
 - If execution surface is `temporary-worktree`, run all reads, edits, and commands from the assigned worktree path.
 - If you edit files, run the most focused relevant verification you can.
-- Return exactly one final ORCH_WORKER_REPORT envelope and no extra prose after it.
+- Return exactly one final `ORCH_WORKER_REPORT` envelope using the Markdown shape below. Keep it human-readable; do not return JSON unless the master explicitly asks for machine-readable data.
 ```
 
 Workers must return:
 
 ```text
-<ORCH_WORKER_REPORT version="1">
-{
-  "runID": "orch-20260607-auth-ui",
-  "workerID": "w01",
-  "status": "done",
-  "executionSurface": "current-checkout",
-  "summary": "Inspected auth tests and found no blocker.",
-  "filesChanged": [],
-  "testsRun": ["not run: read-only inspection"],
-  "findings": [],
-  "blockers": [],
-  "worktree": null,
-  "branch": null,
-  "mergeNotes": "No merge action needed."
-}
+<ORCH_WORKER_REPORT>
+Run: orch-20260607-auth-ui
+Worker: w01
+Status: done
+Surface: current-checkout
+Summary: Inspected auth tests and found no blocker.
+Changed files: none
+Verification: not run; read-only inspection
+Findings: none
+Blockers: none
+Handoff: No merge action needed.
 </ORCH_WORKER_REPORT>
 ```
 
-Use `status: "blocked"` for missing scope, permissions, setup, or unsafe ambiguity. Use `status: "needs-review"` when the result is useful but needs master judgment.
+Use `Status: blocked` for missing scope, permissions, setup, or unsafe ambiguity. Use `Status: needs-review` when the result is useful but needs master judgment.
 
 ## Execution Surface Decision
 
@@ -170,8 +171,9 @@ If a task card is still running, say which worker is pending and continue only w
 - Never auto-merge worker changes.
 - Never claim a worker finished without a matching report envelope.
 - Never widen worker scope silently.
+- Never put run IDs, worker IDs, or bracketed orchestration tags in task descriptions; use `command` and the worker prompt for metadata.
 - Never let two workers edit the same target in the same checkout. If independent workers need the same files, isolate them in separate worktrees and integrate serially.
 - Never run parallel edits against lockfiles, generated artifacts, migrations, or global config unless each worker is isolated and the master has a clear serial integration plan.
 - Never ask workers to create or delete their own temporary worktrees for code changes.
 - Never delete a worktree that may need rework or still contains useful unintegrated evidence.
-- Prefer fewer workers over unsafe parallel writes; prefer more workers over serial work when scopes are independent.
+- Prefer fewer workers over unsafe or noisy fan-out; stay serial when independence, evidence value, or integration path is weak.

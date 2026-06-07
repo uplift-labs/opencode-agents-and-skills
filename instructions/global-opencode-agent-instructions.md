@@ -44,8 +44,9 @@ Use this template as a generic starting point for a global `~/.config/opencode/A
 ## Parallel Work And Delegation
 
 - Run independent read/search/tool calls in parallel whenever there is no data dependency.
-- For independent investigations, launch read-only subagents with narrow scope, exact expected output, and explicit no-edit/no-commit constraints unless the user asked for implementation delegation.
-- Keep the main session as orchestrator: it owns user decisions, edits, validation status, and final synthesis.
+- Use subagents only when the work is broad enough to benefit from separate context, parallel coverage, or independent review; keep simple searches, single-file reads, and tightly coupled reasoning in the main session.
+- Use an `orchestrator` skill/workflow only for broad work with multiple independent bounded tracks where coordinated fan-out, fan-in, or isolation is worth the overhead.
+- When using subagents or orchestration, keep the main session in control: it owns user decisions, edits, validation status, and final synthesis.
 - Load relevant skills when a task clearly matches them; do not load skills speculatively.
 - When multiple skills apply, load only the directly relevant skills, deduplicate overlapping steps, apply the strictest safety guard, and report unresolved conflicts as blockers or assumptions.
 - Use reviewer/subagent groups for material cross-domain work, but keep them bounded. Default to 1-3 reviewers and normally one reviewer wave.
