@@ -18,6 +18,12 @@ permission:
   task: deny
   question: deny
   skill: deny
+  webfetch: deny
+  websearch: deny
+  todowrite: deny
+  external_directory: deny
+  lsp: deny
+  doom_loop: deny
 ---
 ```
 

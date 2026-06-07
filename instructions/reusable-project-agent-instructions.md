@@ -21,7 +21,7 @@ Use this template as a starting point for a project-level `AGENTS.md`. Keep only
 ## Autonomy
 
 - Continue autonomously within the selected goal while safe, useful work remains.
-- Stop for serious blockers only: missing credentials, hardware/manual gate, destructive permission, product-owner decision, legal/security approval, unavailable required artifact, or explicit user mode that forbids needed action.
+- Ask the user only for serious blockers: missing credentials, hardware/manual gate, destructive permission, remote-state action, product-owner decision, legal/security approval, unavailable required artifact, or explicit user mode that forbids needed action.
 - Do not ask routine questions when evidence can be gathered locally or a safe reversible default exists.
 - Avoid scope creep. New tasks must directly advance the current goal or be recorded as future work.
 

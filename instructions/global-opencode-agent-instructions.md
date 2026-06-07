@@ -1,7 +1,5 @@
 # Global OpenCode Agent Instructions
 
-Use this template as a generic starting point for a global `~/.config/opencode/AGENTS.md`. Keep only preferences that should apply across many repositories.
-
 ## Remembering User Preferences
 
 - When the user asks to remember something, decide whether it is durable and general enough to apply across future OpenCode sessions, projects, or repositories.
@@ -24,15 +22,23 @@ Use this template as a generic starting point for a global `~/.config/opencode/A
 - Use prose instructions for judgment-heavy work that cannot be safely algorithmized, such as code review priorities, architectural trade-offs, communication style, and safety boundaries.
 - Do not create false confidence by over-automating human judgment. Use automation to gather evidence and make failures visible, then keep explicit reviewer judgment where needed.
 
+## Autonomous Work Contract
+
+- The main session owns skill selection, decomposition, validation, reviewer gates, MR/PR-ready handoff, and final synthesis.
+- Ask the user only for real blockers: scope or risk decisions, credentials/provider access, missing owner/product/security/legal decisions, destructive operations, remote-state actions, and MR/PR review outcomes.
+- Continue autonomously when local evidence, repository policy, or a safe reversible default is enough; do not ask routine preference or progress questions.
+- Subagents and read-only reviewer gates never ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
+
 ## Interactive Next-Step Handoff
 
-- After a non-trivial user-visible work cycle, offer 2-4 concrete next actions before stopping unless the user explicitly disabled follow-up, the task is trivial, the tool is unavailable, or the question would add noise.
+- When a real blocker or user-owned decision remains, offer 2-4 concrete next actions via `question` when available unless the user explicitly disabled questions.
 - Put the recommended action first and end its label with `(Recommended)`.
 - Make options self-contained so the agent can continue without asking the user to restate context.
 - Treat `(Recommended)` as presentation-only when interpreting the selected option.
 - If the user selects an actionable option, continue immediately in the current context.
 - Read-only reviewer subagents must not call `question` or ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
-- If the question tool is unavailable, include a short `Next Steps` fallback with the same recommended-first ordering.
+- If no real blocker remains, report completed work, validation, residual risks, and ready-to-land status without an interactive handoff.
+- If a blocker remains and the question tool is unavailable, include a short `Next Steps` fallback with the same recommended-first ordering.
 
 ## OpenCode Feature Work
 
@@ -70,13 +76,3 @@ Use this template as a generic starting point for a global `~/.config/opencode/A
 - When creating or updating a PR/MR description, write it for a reviewer who sees the project and change for the first time.
 - Start PR/MR descriptions with plain-language context, problem/purpose, scope, non-goals, main changes, validation, risks, and review focus.
 - Avoid unexplained internal jargon, file-list-only summaries, and latest-commit changelogs unless the user explicitly asks for commit-focused text.
-
-## Local Customization Slots
-
-Keep local personal or organization-specific preferences in a short final section, for example:
-
-- Preferred response language: `<language>`.
-- Preferred issue tracker or PR/MR provider: `<provider>`.
-- Local OpenCode docs mirror: `<path-or-none>`.
-- Organization-specific remote operation policy: `<policy-link-or-summary>`.
-- Required global validation commands: `<commands-or-none>`.

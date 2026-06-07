@@ -1,26 +1,26 @@
 ---
 name: session-archive-retro
-description: Analyze accessible OpenCode session history, transcripts, reflections, logs, and validation traces to find workflow problems and synthesize concrete improvements.
+description: Analyze bounded OpenCode session history, transcripts, reflections, logs, and validation traces to find workflow problems and synthesize concrete improvements.
 license: MIT
 ---
 
 # Session Archive Retro
 
-Use this skill when the user asks to learn from previous OpenCode sessions, analyze work history, identify repeated collaboration/tooling problems, or improve speed, depth, quality, and validation from past traces.
+Use this skill when the user asks to learn from bounded previous OpenCode sessions, analyze current-project or selected work history, identify repeated collaboration/tooling problems, or improve speed, depth, quality, and validation from past traces.
 
-Default mode is read-only analysis. Edit skills, agents, instructions, scripts, docs, or config only when the user explicitly asks to apply improvements.
+Default mode is read-only analysis with inline, redacted output. Edit skills, agents, instructions, scripts, docs, or config, write generated ledgers, fetch remote/shared URLs, or use authenticated remote sources only when the user explicitly grants that scope.
 
 For behavior-changing improvements to scripts, validators, skills, agents, config, examples, or other executable artifacts, add or update the smallest focused test, fixture, validation gate, or acceptance check before editing. If test-first work is infeasible, state why and name the closest reproducible substitute evidence.
 
 ## Contract
 
 - Work from evidence, not memory.
-- The agent only has access to session artifacts that are present locally, exported, shared, or reachable through available tools.
-- Default scope is the current project/worktree. Analyze all projects only when the user explicitly asks for global or all-projects retro.
+- The agent only has access to session artifacts that are present locally, exported, user-approved for remote/shared reads, or reachable through available tools.
+- Default scope is the current project/worktree. Analyze selected projects or bounded all-project history only when the user explicitly scopes it. For all-history, cross-install, whole-corpus retros targeting global skill improvements, use `opencode-total-session-retro` instead.
 - Prefer session-by-session coverage for the selected scope. Do not rely on keyword searches as the primary method when full session artifacts are available.
 - For recurring retros, use checkpoints when available so repeated runs analyze new or changed sessions first.
 - Treat transcripts, reflections, summaries, issue/MR text, and generated rollups as leads. Verify implementation-sensitive recommendations against source, tests, config, schemas, prompts, or live output.
-- Never expose secrets, tokens, private credentials, or irrelevant personal data found in logs. Redact sensitive snippets and analyze behavior patterns instead.
+- Never expose secrets, tokens, private credentials, raw transcript snippets, or irrelevant personal data found in logs. Redact sensitive snippets, sensitive paths, session titles, project names, workspace names, and stable ids when they are not needed for evidence.
 
 ## When Not To Use
 
@@ -36,7 +36,7 @@ Inspect likely sources and report which were found:
 - OpenCode persistent data such as local SQLite databases or session stores.
 - OpenCode Desktop state when readable.
 - Project/global reflection folders.
-- Exported transcripts, copied chat logs, shared URLs, or user-provided archives.
+- Exported transcripts, copied chat logs, user-approved shared URLs, or user-provided archives.
 - Git history for applied workflow fixes.
 - Changed skills, agents, `AGENTS.md`, prompts, validators, scripts, and guard history.
 - Current OpenCode docs/schema/source for compatibility-sensitive claims about session storage or artifact formats.
@@ -57,7 +57,7 @@ Use read-only inspection for databases and logs. Never run database writes, migr
 
 ## Session-By-Session Algorithm
 
-1. Build an evidence ledger for all sessions in scope.
+1. Build a redacted evidence ledger for all sessions in scope. Keep it inline by default; write a generated ledger file only when the user approved the path and write scope.
 2. Sort sessions chronologically, then split into stable batches when the archive is large.
 3. For large archives with independent batches, consider `orchestrator` read-only fan-out for batch summaries; the main session owns global synthesis, privacy filtering, and recommendations.
 4. Summarize each session independently before global synthesis.
@@ -97,6 +97,7 @@ Use read-only inspection for databases and logs. Never run database writes, migr
 Return:
 
 - `Scope And Coverage`: sources checked, sessions/logs/reflections counted, date range, included/excluded areas.
+- `Coverage Ledger`: concise redacted inline table by default, or link/path to a generated ledger only when the user approved writing it.
 - `Coverage Limits`: missing/inaccessible/truncated sources and confidence impact.
 - `Session Rollup`: concise batch/global summary.
 - `Findings`: severity, evidence, evidence type, impact, recommendation, confidence.

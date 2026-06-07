@@ -47,6 +47,12 @@ permission:
   task: deny
   question: deny
   skill: deny
+  webfetch: deny
+  websearch: deny
+  todowrite: deny
+  external_directory: deny
+  lsp: deny
+  doom_loop: deny
 ---
 
 You are a read-only demo reviewer.
@@ -57,9 +63,14 @@ You are a read-only demo reviewer.
 
 ## Completion Handoff
 
-- After non-trivial user-visible work, the main session offers 2-4 self-contained next actions via ``question`` when available.
+- Ask the user only for real blockers, remote/destructive actions, scope or risk decisions, credentials, and MR/PR outcomes.
+- When asking, offer 2-4 self-contained next actions via ``question`` when available.
 - Put the recommended option first and end its label with ``(Recommended)``.
 - In read-only, no-question, or subagent contexts, return ``Suggested Next Options`` or ``Actionable Continuation Items`` instead of asking the user directly.
+
+## Autonomous Work Contract
+
+- The main session owns skill selection, decomposition, validation, reviewer gates, and ready-to-land handoff.
 "@
     Write-Text (Join-Path $dir "README.md") @"
 # Fixture
@@ -67,6 +78,7 @@ You are a read-only demo reviewer.
 ## Routing Map
 
 - Default broad work -> ``adaptive-delivery``.
+- Instruction artifacts -> ``instruction-artifact-tuning``; broad audits -> ``instruction-artifact-audit-runbook.md``.
 
 ## Reviewer Gate Map
 
@@ -213,6 +225,33 @@ You are a read-only demo reviewer.
         }
     },
     @{
+        Name = "validator rejects incomplete reviewer permissions"
+        Run = {
+            $fixture = New-LibraryFixture "incomplete-reviewer-permissions"
+            Write-Text (Join-Path $fixture ".opencode/agents/demo-reviewer.md") @"
+---
+description: Reviews demo fixture behavior.
+mode: subagent
+permission:
+  read: allow
+  glob: allow
+  grep: allow
+  list: allow
+  bash: deny
+  edit: deny
+  task: deny
+  question: deny
+  skill: deny
+---
+
+You are a read-only demo reviewer.
+"@
+            $result = Invoke-Validator $fixture
+            Assert-Failure $result "Incomplete reviewer permissions should fail validation."
+            Assert-OutputContains $result "webfetch: deny" "Incomplete reviewer permissions should name the missing deny key."
+        }
+    },
+    @{
         Name = "validator rejects catalog drift"
         Run = {
             $fixture = New-LibraryFixture "catalog-drift"
@@ -305,6 +344,40 @@ You are a read-only demo reviewer.
         }
     },
     @{
+        Name = "validator rejects missing instruction audit route"
+        Run = {
+            $fixture = New-LibraryFixture "missing-instruction-audit-route"
+            Write-Text (Join-Path $fixture "README.md") @"
+# Fixture
+
+## Routing Map
+
+- Default broad work -> ``adaptive-delivery``.
+
+## Reviewer Gate Map
+
+- Instruction artifacts -> ``instruction-artifact-reviewer``.
+
+## Skill Catalog
+
+- ``demo-skill``: Demo skill.
+
+## Agent Catalog
+
+- ``demo-reviewer``: Demo reviewer.
+
+## Instruction Templates
+
+- ``example.md``: Demo instruction.
+
+## Porting Notes
+"@
+            $result = Invoke-Validator $fixture
+            Assert-Failure $result "Missing instruction audit route should fail validation."
+            Assert-OutputContains $result "instruction-artifact-audit-runbook.md" "Missing instruction audit route should explain the route gap."
+        }
+    },
+    @{
         Name = "validator rejects missing completion handoff"
         Run = {
             $fixture = New-LibraryFixture "missing-completion-handoff"
@@ -317,11 +390,151 @@ You are a read-only demo reviewer.
         }
     },
     @{
+        Name = "validator rejects routine question handoff"
+        Run = {
+            $fixture = New-LibraryFixture "routine-question-handoff"
+            Write-Text (Join-Path $fixture "AGENTS.md") @"
+# Repository Instructions
+
+## Completion Handoff
+
+- After non-trivial user-visible work, the main session offers 2-4 self-contained next actions via ``question`` when available.
+- Put the recommended option first and end its label with ``(Recommended)``.
+- In read-only, no-question, or subagent contexts, return ``Suggested Next Options`` or ``Actionable Continuation Items`` instead of asking the user directly.
+
+## Autonomous Work Contract
+
+- Ask the user only for real blockers, remote/destructive actions, scope or risk decisions, credentials, and MR/PR outcomes.
+"@
+            $result = Invoke-Validator $fixture
+            Assert-Failure $result "Routine question handoff should fail validation."
+            Assert-OutputContains $result "routine post-task question handoff" "Routine question handoff should explain the autonomy regression."
+        }
+    },
+    @{
+        Name = "validator rejects self-improvement loops"
+        Run = {
+            $fixture = New-LibraryFixture "self-improvement-loop"
+            Write-Text (Join-Path $fixture ".opencode/skills/demo-skill/SKILL.md") @"
+---
+name: demo-skill
+description: Use when testing a demo reusable skill.
+---
+
+# Demo Skill
+
+### Step 4 - Self-Improvement
+
+> Core principle - do not remove.
+
+Update this skill after every run.
+"@
+            $result = Invoke-Validator $fixture
+            Assert-Failure $result "Self-improvement loops should fail validation."
+            Assert-OutputContains $result "automatic self-improvement/self-edit loops" "Self-improvement loop should explain the autonomy regression."
+        }
+    },
+    @{
         Name = "validator ignores local serena markdown"
         Run = {
             $fixture = New-LibraryFixture "ignored-serena"
             Write-Text (Join-Path $fixture ".serena/memory.md") "# Local Memory   `n"
             Assert-Success (Invoke-Validator $fixture) "Ignored .serena markdown should not affect validation."
+        }
+    },
+    @{
+        Name = "validator warns on implementation language without TDD"
+        Run = {
+            $fixture = New-LibraryFixture "tdd-warning"
+            Write-Text (Join-Path $fixture ".opencode/skills/demo-skill/SKILL.md") @"
+---
+name: demo-skill
+description: Use when testing a demo reusable skill.
+---
+
+# Demo Skill
+
+This skill can implement code changes.
+"@
+            $result = Invoke-Validator $fixture
+            Assert-Success $result "TDD warning should not fail validation."
+            Assert-OutputContains $result "WARN:" "TDD warning should be visible."
+        }
+    },
+    @{
+        Name = "validator rejects retro shared-url and ledger ambiguity"
+        Run = {
+            $fixture = New-LibraryFixture "retro-privacy-boundary"
+            Write-Text (Join-Path $fixture ".opencode/skills/demo-skill/SKILL.md") @"
+---
+name: demo-skill
+description: Analyze bounded OpenCode session history for workflow improvements.
+---
+
+# Demo Skill
+
+Use this skill for session retros.
+
+- Exported transcripts, copied chat logs, shared URLs, or user-provided archives.
+
+1. Build an evidence ledger for all sessions in scope.
+"@
+            $result = Invoke-Validator $fixture
+            Assert-Failure $result "Retro skills with shared URLs and ledgers need explicit privacy boundaries."
+            Assert-OutputContains $result "remote/shared URL access" "Shared URL ambiguity should explain the approval requirement."
+            Assert-OutputContains $result "session ledger" "Session ledger ambiguity should explain redaction and write approval."
+        }
+    },
+    @{
+        Name = "validator accepts retro approved privacy boundaries"
+        Run = {
+            $fixture = New-LibraryFixture "retro-approved-privacy"
+            Write-Text (Join-Path $fixture ".opencode/skills/demo-skill/SKILL.md") @"
+---
+name: demo-skill
+description: Analyze bounded OpenCode session history for workflow improvements.
+---
+
+# Demo Skill
+
+Default mode is read-only analysis. Write generated ledgers, fetch remote/shared URLs, or use authenticated remote sources only when the user explicitly grants that scope.
+
+- Exported transcripts, copied chat logs, user-approved shared URLs, or user-provided archives.
+
+1. Build a redacted evidence ledger for all sessions in scope. Keep it inline by default; write a generated ledger file only when the user approved the path and write scope.
+"@
+            Assert-Success (Invoke-Validator $fixture) "Approved retro privacy boundaries should pass validation."
+        }
+    },
+    @{
+        Name = "validator accepts retro prohibition privacy boundaries"
+        Run = {
+            $fixture = New-LibraryFixture "retro-prohibition-privacy"
+            Write-Text (Join-Path $fixture ".opencode/skills/demo-skill/SKILL.md") @"
+---
+name: demo-skill
+description: Analyze bounded OpenCode session history for workflow improvements.
+---
+
+# Demo Skill
+
+This skill reviews session history.
+
+Shared URLs are out of scope.
+
+Do not build a ledger for session history.
+"@
+            Assert-Success (Invoke-Validator $fixture) "Explicitly prohibited shared URLs and ledgers should pass validation."
+        }
+    },
+    @{
+        Name = "validator rejects forbidden anchors"
+        Run = {
+            $fixture = New-LibraryFixture "forbidden-anchor"
+            Write-Text (Join-Path $fixture "instructions/example.md") "# Example`nOldProductName`n"
+            $result = Invoke-ProcessCapture "pwsh" @("-NoProfile", "-File", $validator, "-Root", $fixture, "-ForbiddenAnchor", "OldProductName") $Root
+            Assert-Failure $result "Forbidden anchors should fail validation."
+            Assert-OutputContains $result "Forbidden anchor 'OldProductName'" "Forbidden anchor failure should name the anchor."
         }
     },
     @{

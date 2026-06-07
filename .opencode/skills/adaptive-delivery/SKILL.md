@@ -58,10 +58,11 @@ Ask the user only for decisions that cannot be safely inferred from repository e
 
 ## Completion Handoff
 
-- After non-trivial user-visible work, the main session offers 2-4 self-contained next actions with the recommended option first and labeled `(Recommended)`.
-- Use `question` when available unless the user forbids questions or the mode is read-only/no-question.
+- Ask the user only when a real blocker or user-owned decision remains: scope/risk, credentials/provider access, owner/product/security/legal decisions, destructive operations, remote-state actions, or MR/PR outcomes.
+- When asking, use `question` when available and offer 2-4 self-contained next actions with the recommended option first and labeled `(Recommended)`.
 - In read-only/no-question mode, return `Suggested Next Options`; workers and reviewer agents return `Actionable Continuation Items` instead of asking the user directly.
 - Continue immediately when the user selects an actionable option that is within the current scope and safety boundaries.
+- If no real blocker remains, report status, validation, changed files, and residual risks without interactive handoff.
 
 ## Business And Requirement Analysis
 

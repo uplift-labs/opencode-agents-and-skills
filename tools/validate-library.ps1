@@ -215,7 +215,13 @@ if ([System.IO.Directory]::Exists($agentsDir)) {
         if ($mode -ne "subagent") {
             Add-Error "Reusable reviewer agent must use mode: subagent: $file"
         }
-        foreach ($permission in @("edit", "task", "question", "bash", "skill")) {
+        foreach ($permission in @("read", "glob", "grep", "list")) {
+            $key = "permission.$permission"
+            if ($frontmatter[$key] -ne "allow") {
+                Add-Error "Agent permission must set ${permission}: allow: $file"
+            }
+        }
+        foreach ($permission in @("bash", "edit", "task", "question", "skill", "webfetch", "websearch", "todowrite", "external_directory", "lsp", "doom_loop")) {
             $key = "permission.$permission"
             if ($frontmatter[$key] -ne "deny") {
                 Add-Error "Agent permission must set ${permission}: deny: $file"
@@ -234,8 +240,13 @@ if ([System.IO.Directory]::Exists($instructionsDir)) {
 $readmePath = Join-Path $Root "README.md"
 if ([System.IO.File]::Exists($readmePath)) {
     $readmeText = Read-Text $readmePath
-    Require-BulletedSection (Get-RequiredHeadingSection $readmeText "Routing Map" $readmePath) "README routing map" $readmePath
-    Require-BulletedSection (Get-RequiredHeadingSection $readmeText "Reviewer Gate Map" $readmePath) "README reviewer gate map" $readmePath
+    $routingMap = Get-RequiredHeadingSection $readmeText "Routing Map" $readmePath
+    $reviewerGateMap = Get-RequiredHeadingSection $readmeText "Reviewer Gate Map" $readmePath
+    Require-BulletedSection $routingMap "README routing map" $readmePath
+    Require-BulletedSection $reviewerGateMap "README reviewer gate map" $readmePath
+    Require-TextContains $routingMap "instruction-artifact-tuning" "README instruction-artifact route" $readmePath
+    Require-TextContains $routingMap "instruction-artifact-audit-runbook.md" "README instruction-artifact route" $readmePath
+    Require-TextContains $reviewerGateMap "instruction-artifact-reviewer" "README reviewer gate map" $readmePath
     Compare-Catalog "Skill" @($skillNames) (Get-CatalogEntries $readmeText "Skill Catalog" "Agent Catalog" $readmePath) $readmePath
     Compare-Catalog "Agent" @($agentNames) (Get-CatalogEntries $readmeText "Agent Catalog" "Instruction Templates" $readmePath) $readmePath
     Compare-Catalog "Instruction template" @($instructionNames) (Get-CatalogEntries $readmeText "Instruction Templates" "Porting Notes" $readmePath) $readmePath
@@ -246,11 +257,16 @@ if ([System.IO.File]::Exists($readmePath)) {
 $agentsPath = Join-Path $Root "AGENTS.md"
 if ([System.IO.File]::Exists($agentsPath)) {
     $agentsText = Read-Text $agentsPath
+    Require-TextContains $agentsText "## Autonomous Work Contract" "AGENTS.md autonomous work contract" $agentsPath
+    Require-TextContains $agentsText "Ask the user only" "AGENTS.md autonomous work contract" $agentsPath
     Require-TextContains $agentsText "## Completion Handoff" "AGENTS.md completion handoff contract" $agentsPath
     Require-TextContains $agentsText '`question`' "AGENTS.md completion handoff contract" $agentsPath
     Require-TextContains $agentsText "(Recommended)" "AGENTS.md completion handoff contract" $agentsPath
     Require-TextContains $agentsText "Suggested Next Options" "AGENTS.md completion handoff contract" $agentsPath
     Require-TextContains $agentsText "Actionable Continuation Items" "AGENTS.md completion handoff contract" $agentsPath
+    if ($agentsText -match '(?i)after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)') {
+        Add-Error "AGENTS.md must not require routine post-task question handoff: $agentsPath"
+    }
 } else {
     Add-Error "Missing AGENTS.md: $agentsPath"
 }
@@ -282,6 +298,36 @@ foreach ($file in $markdownFiles) {
 
     if ($isInstructionArtifact -and $mentionsImplementation -and -not $mentionsTdd) {
         Add-Warning "Implementation-related artifact language lacks TDD/test-first language: $file"
+    }
+    if ($isInstructionArtifact -and $text -match '(?i)after (a )?non-trivial user-visible work( cycle)?,? (the main session offers|offer|use the built-in `?question`?|before stopping)') {
+        Add-Error "Instruction artifact must not require routine post-task question handoff: $file"
+    }
+    if ($isInstructionArtifact -and $text -match '(?im)(^#{2,4}\s+.*Self-Improvement\s*$|Self-improvement while context is hot|Core principle\s+[-—]\s+do not remove)') {
+        Add-Error "Instruction artifact must not include automatic self-improvement/self-edit loops: $file"
+    }
+    if ($isInstructionArtifact -and $text -match '(?i)\bshared URLs?\b') {
+        $hasSharedUrlApproval = $text -match '(?i)user-approved shared URLs?' -or
+            $text -match '(?is)fetch remote/shared URLs?.{0,160}(explicitly grants|explicit permission|user approved|user-approved|approved)'
+        $hasSharedUrlProhibition = $text -match '(?is)(never|do not|must not|out of scope|exclude|excluded|not in scope).{0,120}shared URLs?' -or
+            $text -match '(?is)shared URLs?.{0,120}(out of scope|excluded|not in scope|must not|never)'
+        if (-not $hasSharedUrlApproval -and -not $hasSharedUrlProhibition) {
+            Add-Error "Instruction artifact mentioning shared URLs must require user-approved remote/shared URL access: $file"
+        }
+    }
+    $isSkillArtifact = $relative -match '^\.opencode/skills/[^/]+/SKILL\.md$'
+    $isSessionRetroArtifact = $isSkillArtifact -and (
+        $relative -match '^\.opencode/skills/[^/]*(session|retro)[^/]*/SKILL\.md$' -or
+        $text -match '(?i)\b(OpenCode sessions?|session (archive|history|retros?|artifacts?|transcripts?))\b'
+    )
+    if ($isSessionRetroArtifact -and $text -match '(?i)\bledger\b') {
+        $hasRedactedLedger = $text -match '(?i)redacted.{0,80}ledger|ledger.{0,80}redacted'
+        $hasLedgerWriteApproval = $text -match '(?is)(write generated ledgers|write a generated ledger file|generated ledger|ledger file).{0,200}(explicitly grants|explicit permission|user approved|user-approved|approved|approval)' -or
+            $text -match '(?is)(explicitly grants|explicit permission|user approved|user-approved|approved|approval).{0,200}(write generated ledgers|write a generated ledger file|generated ledger|ledger file)'
+        $hasLedgerProhibition = $text -match '(?is)(never|do not|must not|out of scope|exclude|excluded|not in scope).{0,120}ledger' -or
+            $text -match '(?is)ledger.{0,120}(out of scope|excluded|not in scope|must not|never)'
+        if (-not $hasLedgerProhibition -and (-not $hasRedactedLedger -or -not $hasLedgerWriteApproval)) {
+            Add-Error "Session retro artifact with a session ledger must require redaction and user-approved generated ledger writes: $file"
+        }
     }
 }
 

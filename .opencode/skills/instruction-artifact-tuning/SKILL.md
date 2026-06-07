@@ -10,6 +10,8 @@ Use this skill when the target artifact is an OpenCode skill, subagent, `AGENTS.
 
 Default mode is review-first. Edit only when the user explicitly asks to tune, fix, create, or port artifacts, or when the request clearly implies artifact creation.
 
+For broad audits that include multiple skills/agents, global config, installed copies, or runtime loading policy, use `instructions/instruction-artifact-audit-runbook.md` as the coverage contract before concluding.
+
 ## What To Optimize
 
 - Trigger accuracy: the description says when to load the artifact and when it should stay quiet.
@@ -21,6 +23,7 @@ Default mode is review-first. Edit only when the user explicitly asks to tune, f
 - Tool safety: edit/read-only boundaries, destructive-operation policy, remote-state policy, and permissions are explicit.
 - Context efficiency: remove repeated boilerplate, stale examples, source dumps, and project-specific details that should be local.
 - AI usability: critical routing, permissions, blockers, and output schema are near the top and easy to retrieve.
+- Runtime realism: distinguish startup rules, discovered skill/agent catalogs, on-demand skill content, installed copies, active config, and live loader behavior.
 
 ## Checks
 
@@ -29,6 +32,7 @@ Default mode is review-first. Edit only when the user explicitly asks to tune, f
 - For agents, ensure frontmatter has a useful `description`, correct `mode`, and least-privilege `permission`.
 - Reviewer agents should be leaf validators unless explicitly designed otherwise: no edits, commits, pushes, nested agents, destructive commands, or user questions.
 - For behavior-changing instruction artifacts, add or update a minimal loader/schema/eval fixture or validation checklist before editing when feasible; document missing harnesses.
+- For broad audits, cover repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes using the audit runbook.
 - For broad independent artifact inventories, consider `orchestrator` with bounded read-only workers; keep single-artifact or tightly coupled tuning serial.
 - Replace project-specific paths, tools, issue trackers, and product names with placeholders unless the artifact is intentionally project-local.
 - Remove obsolete instructions instead of adding override paragraphs.
@@ -42,6 +46,7 @@ For review-only work, return:
 - `Findings`: severity, evidence, impact, recommendation, confidence.
 - `Tuning Opportunities`: minimal edits or split/move suggestions.
 - `Validation`: checks run or explicitly skipped with reason.
+- `Runtime/Installed Evidence`: installed drift, active config, loader docs/source/live checks, or explicit gaps when in scope.
 - `Residual Risks`: missing evals, unverified loader behavior, or model-version sensitivity.
 - `Actionable Continuation Items`: concrete follow-up tasks or `none`.
 

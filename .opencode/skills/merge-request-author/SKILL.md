@@ -23,10 +23,11 @@ Do not commit, push, create remote state, or merge unless the user explicitly re
 
 ## Completion Handoff
 
-- If no remote operation was requested, finish with local artifacts plus 2-4 self-contained next options via `question` when available.
+- If creating/updating remote state, merge actions, scope changes, high-risk follow-up, or MR/PR review outcomes need user ownership, offer 2-4 self-contained next options via `question` when available.
 - Put the recommended option first and end its label with `(Recommended)`.
 - Reserve user decisions for creating/updating remote state, merge actions, scope changes, high-risk follow-up, and MR/PR review outcomes.
 - In read-only or no-question mode, return `Suggested Next Options` instead of asking directly.
+- If no user-owned decision remains, finish with local artifacts, validation evidence, blockers, and exact next step without interactive handoff.
 
 ## MR/PR Body Template
 

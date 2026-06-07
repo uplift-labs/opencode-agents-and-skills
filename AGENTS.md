@@ -11,12 +11,19 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Keep each artifact cohesive. Split artifacts when triggers, permissions, or output contracts differ materially.
 - Preserve OpenCode compatibility: skill folders must match `name` in `SKILL.md`; agent files must use valid frontmatter and least-privilege permissions.
 
+## Autonomous Work Contract
+
+- The main session owns skill selection, decomposition, validation, reviewer gates, MR/PR-ready handoff, and final synthesis.
+- Ask the user only for real blockers: scope or risk decisions, credentials/provider access, missing owner/product/security/legal decisions, destructive operations, remote-state actions, and MR/PR review outcomes.
+- Continue autonomously when local evidence, repository policy, or a safe reversible default is enough; do not ask routine preference or progress questions.
+- Subagents and read-only reviewer gates never ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
+
 ## Completion Handoff
 
-- After non-trivial user-visible work, the main session offers 2-4 self-contained next actions via `question` when available.
+- When a real blocker or user-owned decision remains, the main session offers 2-4 self-contained next actions via `question` when available.
 - Put the recommended option first and end its label with `(Recommended)`.
 - In read-only, no-question, reviewer-agent, or subagent contexts, do not ask the user directly; return `Suggested Next Options` or `Actionable Continuation Items` for the main session instead.
 - If the user selects an actionable option, continue immediately in the current context instead of asking them to restate the task.
-- Prefer automation, validation, reviewer gates, and MR/PR-ready handoff so user input is reserved for scope direction, high-risk decisions, remote/destructive approvals, and MR/PR review outcomes.
+- If no real blocker remains, report the completed work, validation, residual risks, and ready-to-land status without an interactive handoff.
 
 After changing skills or agents, review `README.md` and the relevant artifact frontmatter so the library remains discoverable.
