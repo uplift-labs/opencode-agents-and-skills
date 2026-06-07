@@ -1,6 +1,6 @@
 ---
 name: service-architecture-design
-description: Architecture design gate for services: boundaries, ownership, concurrency, failure model, deployment, observability, compatibility, and implementation-ready decisions.
+description: "Architecture design gate for services: boundaries, ownership, concurrency, failure model, deployment, observability, compatibility, and implementation-ready decisions."
 license: MIT
 ---
 

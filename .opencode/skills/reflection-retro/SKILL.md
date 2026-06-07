@@ -10,6 +10,8 @@ Use this skill when the user asks to process accumulated reflections, lessons le
 
 Default mode is review-first. Apply edits only when the user asks to apply improvements or repository policy clearly allows it. Cleanup, deletes, commits, and remote changes require explicit permission or applicable local policy.
 
+For behavior-changing improvements to scripts, validators, skills, agents, config, examples, or other executable artifacts, add or update the smallest focused test, fixture, validation gate, or acceptance check before editing. If test-first work is infeasible, state why and name the closest reproducible substitute evidence.
+
 ## Evidence Invariant
 
 - Reflection prose is a lead, not proof.

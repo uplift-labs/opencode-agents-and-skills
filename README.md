@@ -67,13 +67,20 @@ Copy selected files from `instructions/` into a global or project `AGENTS.md` or
 
 ## Validate
 
-Run the structural validator after changing library artifacts:
+Run the structural validator and fixture-based acceptance checks after changing library artifacts:
 
 ```powershell
 pwsh -NoProfile -File tools/validate-library.ps1
+pwsh -NoProfile -File tools/test-library.ps1
 ```
 
-The validator also reports warning-level TDD guard findings for Markdown artifacts with implementation-related language that do not mention test-first, TDD, before-code fixtures/gates, or equivalent validation-first language.
+The validator checks skill and agent frontmatter shape, README catalog sync, reusable reviewer permission policy, project-neutral anchors, trailing whitespace, and warning-level TDD guard findings for Markdown artifacts with implementation-related language that do not mention test-first, TDD, before-code fixtures/gates, or equivalent validation-first language.
+
+For installer changes, also prove the no-write path before using a real config directory:
+
+```powershell
+node tools/install-opencode-global.js --dry-run --config-dir <temp-config-dir>
+```
 
 For ports from a project-local prompt set, pass anchors that must not remain in reusable Markdown:
 
@@ -169,6 +176,6 @@ Overly narrow future-scope behavior that depended on one product domain was inte
 - Prefer concrete evidence, validation, permissions, and output schemas over vague instructions.
 - Implementation-capable artifacts should require TDD/test-first by default for behavior changes, or require an explicit infeasibility note plus the closest reproducible validation evidence.
 - Keep TDD proportional: require the smallest useful test/gate for the scoped behavior, not unrelated coverage expansion or speculative test suites.
-- Reviewer agents should remain leaf validators.
+- Reviewer agents should remain leaf validators with `bash`, `edit`, `task`, `question`, and `skill` denied unless a separate validation-enabled profile is intentionally created.
 - Avoid hardcoded commands and paths. Use placeholders or say to use the repository's configured validation command.
 - If a target repository has stricter local instructions, local instructions win.

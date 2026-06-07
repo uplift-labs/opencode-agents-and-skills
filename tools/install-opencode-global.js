@@ -196,14 +196,37 @@ function toPosixRelative(relativePath) {
   return relativePath.split(path.sep).join("/");
 }
 
-function listRelativeFiles(root, current = root, result = []) {
+function normalizePathForContainment(target) {
+  let resolved = path.resolve(target);
+  try {
+    resolved = fs.realpathSync.native(resolved);
+  } catch (_error) {
+    // The destination may not exist yet. Resolved absolute paths still catch unsafe self-installs.
+  }
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInsideOrEqual(candidate, parent) {
+  const relative = path.relative(normalizePathForContainment(parent), normalizePathForContainment(candidate));
+  return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function assertNoSourceOverlap(target, source, label) {
+  if (isPathInsideOrEqual(target, source) || isPathInsideOrEqual(source, target)) {
+    throw new Error(`${label} must not overlap source artifact directory: ${target} conflicts with ${source}`);
+  }
+}
+
+function listRelativeEntries(root, current = root, result = []) {
   const entries = fs.readdirSync(current, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const entryPath = path.join(current, entry.name);
     if (entry.isDirectory()) {
-      listRelativeFiles(root, entryPath, result);
+      listRelativeEntries(root, entryPath, result);
     } else if (entry.isFile()) {
-      result.push(toPosixRelative(path.relative(root, entryPath)));
+      result.push({ relative: toPosixRelative(path.relative(root, entryPath)), type: "file" });
+    } else if (entry.isSymbolicLink()) {
+      result.push({ relative: toPosixRelative(path.relative(root, entryPath)), target: fs.readlinkSync(entryPath), type: "symlink" });
     } else {
       throw new Error(`Unsupported filesystem entry: ${entryPath}`);
     }
@@ -228,16 +251,21 @@ function isSameDirectory(source, destination) {
   if (!fs.existsSync(destination) || !fs.statSync(destination).isDirectory()) {
     return false;
   }
-  const sourceFiles = listRelativeFiles(source);
-  const destinationFiles = listRelativeFiles(destination);
-  if (sourceFiles.length !== destinationFiles.length) {
+  const sourceEntries = listRelativeEntries(source);
+  const destinationEntries = listRelativeEntries(destination);
+  if (sourceEntries.length !== destinationEntries.length) {
     return false;
   }
-  for (let i = 0; i < sourceFiles.length; i++) {
-    if (sourceFiles[i] !== destinationFiles[i]) {
+  for (let i = 0; i < sourceEntries.length; i++) {
+    const sourceEntry = sourceEntries[i];
+    const destinationEntry = destinationEntries[i];
+    if (sourceEntry.relative !== destinationEntry.relative || sourceEntry.type !== destinationEntry.type) {
       return false;
     }
-    if (!isSameFile(path.join(source, sourceFiles[i]), path.join(destination, destinationFiles[i]))) {
+    if (sourceEntry.type === "file" && !isSameFile(path.join(source, sourceEntry.relative), path.join(destination, destinationEntry.relative))) {
+      return false;
+    }
+    if (sourceEntry.type === "symlink" && sourceEntry.target !== destinationEntry.target) {
       return false;
     }
   }
@@ -338,6 +366,31 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function countOccurrences(text, needle) {
+  let count = 0;
+  let index = 0;
+  while ((index = text.indexOf(needle, index)) !== -1) {
+    count++;
+    index += needle.length;
+  }
+  return count;
+}
+
+function validateAgentsMdMarkers(existing, destination) {
+  const pattern = new RegExp(`${escapeRegExp(BEGIN_MARKER)}[\\s\\S]*?${escapeRegExp(END_MARKER)}\\r?\\n?`);
+  const beginCount = countOccurrences(existing, BEGIN_MARKER);
+  const endCount = countOccurrences(existing, END_MARKER);
+  if (beginCount !== endCount) {
+    throw new Error(`Malformed AGENTS.md managed block markers in ${destination}: begin=${beginCount} end=${endCount}`);
+  }
+  if (beginCount > 1) {
+    throw new Error(`Multiple AGENTS.md managed blocks found in ${destination}; keep exactly one managed block before reinstalling.`);
+  }
+  if (beginCount === 1 && !pattern.test(existing)) {
+    throw new Error(`Malformed AGENTS.md managed block markers in ${destination}: begin marker must precede end marker.`);
+  }
+}
+
 function detectNewline(text) {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }
@@ -366,6 +419,7 @@ function readExistingAgentsMd(destination) {
 
 function installAgentsMd(source, destination, context) {
   const existing = readExistingAgentsMd(destination);
+  validateAgentsMdMarkers(existing, destination);
   const newline = existing ? detectNewline(existing) : "\n";
   const block = agentsMdBlock(source, newline);
   const pattern = new RegExp(`${escapeRegExp(BEGIN_MARKER)}[\\s\\S]*?${escapeRegExp(END_MARKER)}\\r?\\n?`);
@@ -429,6 +483,14 @@ function run() {
   const destinationSkillsDir = path.join(configDir, "skills");
   const destinationAgentsDir = path.join(configDir, "agents");
   const destinationAgentsMd = path.join(configDir, "AGENTS.md");
+
+  assertNoSourceOverlap(configDir, sourceSkillsDir, "--config-dir");
+  assertNoSourceOverlap(configDir, sourceAgentsDir, "--config-dir");
+  assertNoSourceOverlap(destinationSkillsDir, sourceSkillsDir, "destination skills directory");
+  assertNoSourceOverlap(destinationAgentsDir, sourceAgentsDir, "destination agents directory");
+  if (sourceAgentsMd) {
+    validateAgentsMdMarkers(readExistingAgentsMd(destinationAgentsMd), destinationAgentsMd);
+  }
 
   console.log(`OpenCode global config: ${configDir}`);
   console.log(sourceAgentsMd ? `AGENTS.md source: ${sourceAgentsMd}` : "AGENTS.md source: skipped");

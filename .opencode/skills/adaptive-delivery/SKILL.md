@@ -1,6 +1,6 @@
 ---
 name: adaptive-delivery
-description: Adaptively triage broad, unclear, high-risk, or process-sensitive user work into the smallest useful process: direct execution, planning, OpenSpec, architecture, orchestrator fan-out, and reviewer gates.
+description: "Adaptively triage broad, unclear, high-risk, or process-sensitive user work into the smallest useful process: direct execution, planning, OpenSpec, architecture, orchestrator fan-out, and reviewer gates."
 license: MIT
 ---
 

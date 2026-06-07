@@ -21,13 +21,116 @@ function Read-Text([string]$path) {
     return [System.IO.File]::ReadAllText($path)
 }
 
-function Get-FrontmatterValue([string]$text, [string]$key) {
-    $pattern = "(?m)^$([regex]::Escape($key)):\s*(.+?)\s*$"
-    $match = [regex]::Match($text, $pattern)
+function ConvertFrom-FrontmatterScalar([string]$value, [string]$file, [int]$lineNumber) {
+    $trimmed = $value.Trim()
+    $doubleQuoted = $trimmed.StartsWith('"') -or $trimmed.EndsWith('"')
+    $singleQuoted = $trimmed.StartsWith("'") -or $trimmed.EndsWith("'")
+    if (($doubleQuoted -and -not ($trimmed.StartsWith('"') -and $trimmed.EndsWith('"'))) -or
+        ($singleQuoted -and -not ($trimmed.StartsWith("'") -and $trimmed.EndsWith("'")))) {
+        Add-Error "Invalid frontmatter quoting: ${file}:$lineNumber"
+        return $trimmed
+    }
+    if (-not $doubleQuoted -and -not $singleQuoted -and $trimmed -match ':\s') {
+        Add-Error "Invalid unquoted frontmatter scalar containing ': ': ${file}:$lineNumber"
+    }
+    if (($trimmed.StartsWith('"') -and $trimmed.EndsWith('"')) -or
+        ($trimmed.StartsWith("'") -and $trimmed.EndsWith("'"))) {
+        return $trimmed.Substring(1, $trimmed.Length - 2)
+    }
+    return $trimmed
+}
+
+function Get-FrontmatterMap([string]$text, [string]$file) {
+    $match = [regex]::Match($text, "\A---\r?\n(?<body>[\s\S]*?)\r?\n---(?:\r?\n|\z)")
+    $values = @{}
     if (-not $match.Success) {
+        Add-Error "Missing leading frontmatter block: $file"
+        return $values
+    }
+
+    $currentMap = $null
+    $lines = $match.Groups['body'].Value -split "\r?\n"
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        $lineNumber = $i + 2
+        $line = $lines[$i]
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.TrimStart().StartsWith('#')) {
+            continue
+        }
+        if ($line -match '^([A-Za-z_][A-Za-z0-9_-]*):\s*$') {
+            $currentMap = $matches[1]
+            $values[$currentMap] = @{}
+        } elseif ($line -match '^([A-Za-z_][A-Za-z0-9_-]*):\s*(.+?)\s*$') {
+            $currentMap = $null
+            $values[$matches[1]] = ConvertFrom-FrontmatterScalar $matches[2] $file $lineNumber
+        } elseif ($line -match '^\s{2,}([A-Za-z_][A-Za-z0-9_-]*):\s*(.+?)\s*$') {
+            if ([string]::IsNullOrWhiteSpace($currentMap)) {
+                Add-Error "Nested frontmatter value without parent map: ${file}:$lineNumber"
+            } else {
+                $values["$currentMap.$($matches[1])"] = ConvertFrom-FrontmatterScalar $matches[2] $file $lineNumber
+            }
+        } else {
+            Add-Error "Unsupported frontmatter syntax: ${file}:$lineNumber"
+        }
+    }
+    return $values
+}
+
+function Get-MarkdownFiles([string]$root) {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    $gitDir = Join-Path $root ".git"
+    if ($git -and ([System.IO.Directory]::Exists($gitDir) -or [System.IO.File]::Exists($gitDir))) {
+        $relativeFiles = & git -C $root ls-files --cached --others --exclude-standard "*.md" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return @($relativeFiles |
+                Where-Object { $_ -and ($_ -replace '\\', '/') -notmatch '(^|/)\.serena/' } |
+                ForEach-Object { Join-Path $root $_ })
+        }
+    }
+
+    return @([System.IO.Directory]::GetFiles($root, "*.md", [System.IO.SearchOption]::AllDirectories) |
+        Where-Object { $_ -notmatch "[\\/]\.git[\\/]" -and $_ -notmatch "[\\/]\.serena[\\/]" })
+}
+
+function Get-CatalogEntries([string]$readmeText, [string]$startHeading, [string]$endHeading, [string]$readmePath) {
+    $pattern = '(?ms)^##\s+' + [regex]::Escape($startHeading) + '\s*$\r?\n(?<body>.*?)^##\s+' + [regex]::Escape($endHeading) + '\s*$'
+    $match = [regex]::Match($readmeText, $pattern)
+    if (-not $match.Success) {
+        Add-Error "Missing README catalog section '$startHeading': $readmePath"
+        return @()
+    }
+
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in [regex]::Matches($match.Groups['body'].Value, '(?m)^-\s+`([^`]+)`:')) {
+        $entries.Add($entry.Groups[1].Value) | Out-Null
+    }
+    return @($entries)
+}
+
+function Compare-Catalog([string]$label, [string[]]$expected, [string[]]$actual, [string]$readmePath) {
+    $expectedSorted = @($expected | Sort-Object)
+    $actualSorted = @($actual | Sort-Object)
+    foreach ($name in $expectedSorted) {
+        if ($actualSorted -notcontains $name) {
+            Add-Error "$label catalog missing '$name': $readmePath"
+        }
+    }
+    foreach ($name in $actualSorted) {
+        if ($expectedSorted -notcontains $name) {
+            Add-Error "$label catalog references missing artifact '$name': $readmePath"
+        }
+    }
+}
+
+function Get-RequiredScalar([hashtable]$frontmatter, [string]$key, [string]$file) {
+    if (-not $frontmatter.ContainsKey($key)) {
         return $null
     }
-    return $match.Groups[1].Value.Trim().Trim('"')
+    $value = $frontmatter[$key]
+    if ($value -is [System.Collections.IDictionary]) {
+        Add-Error "Frontmatter field must be a scalar: ${file}:$key"
+        return $null
+    }
+    return [string]$value
 }
 
 $skillsDir = Join-Path $Root ".opencode/skills"
@@ -42,19 +145,22 @@ if (-not [System.IO.Directory]::Exists($agentsDir)) {
 }
 
 $skillCount = 0
+$skillNames = New-Object System.Collections.Generic.List[string]
 if ([System.IO.Directory]::Exists($skillsDir)) {
     $skillDirs = [System.IO.Directory]::GetDirectories($skillsDir)
     foreach ($dir in $skillDirs) {
         $skillCount++
         $folderName = [System.IO.Path]::GetFileName($dir)
+        $skillNames.Add($folderName) | Out-Null
         $file = Join-Path $dir "SKILL.md"
         if (-not [System.IO.File]::Exists($file)) {
             Add-Error "Missing SKILL.md for skill folder: $folderName"
             continue
         }
         $text = Read-Text $file
-        $name = Get-FrontmatterValue $text "name"
-        $description = Get-FrontmatterValue $text "description"
+        $frontmatter = Get-FrontmatterMap $text $file
+        $name = Get-RequiredScalar $frontmatter "name" $file
+        $description = Get-RequiredScalar $frontmatter "description" $file
         if ([string]::IsNullOrWhiteSpace($name)) {
             Add-Error "Missing skill name: $file"
         } elseif ($name -ne $folderName) {
@@ -71,29 +177,49 @@ if ([System.IO.Directory]::Exists($skillsDir)) {
 }
 
 $agentCount = 0
+$agentNames = New-Object System.Collections.Generic.List[string]
 if ([System.IO.Directory]::Exists($agentsDir)) {
     $agentFiles = [System.IO.Directory]::GetFiles($agentsDir, "*.md")
     foreach ($file in $agentFiles) {
         $agentCount++
+        $agentNames.Add([System.IO.Path]::GetFileNameWithoutExtension($file)) | Out-Null
         $text = Read-Text $file
-        $description = Get-FrontmatterValue $text "description"
-        $mode = Get-FrontmatterValue $text "mode"
+        $frontmatter = Get-FrontmatterMap $text $file
+        $description = Get-RequiredScalar $frontmatter "description" $file
+        $mode = Get-RequiredScalar $frontmatter "mode" $file
         if ([string]::IsNullOrWhiteSpace($description)) {
             Add-Error "Missing agent description: $file"
         }
         if ($mode -ne "subagent") {
             Add-Error "Reusable reviewer agent must use mode: subagent: $file"
         }
-        foreach ($required in @("(?m)^permission:\s*$", "(?m)^\s*edit:\s*deny\s*$", "(?m)^\s*task:\s*deny\s*$", "(?m)^\s*question:\s*deny\s*$")) {
-            if (-not [regex]::IsMatch($text, $required)) {
-                Add-Error "Agent missing read-only permission guard '$required': $file"
+        foreach ($permission in @("edit", "task", "question", "bash", "skill")) {
+            $key = "permission.$permission"
+            if ($frontmatter[$key] -ne "deny") {
+                Add-Error "Agent permission must set ${permission}: deny: $file"
             }
         }
     }
 }
 
-$markdownFiles = [System.IO.Directory]::GetFiles($Root, "*.md", [System.IO.SearchOption]::AllDirectories) |
-    Where-Object { $_ -notmatch "[\\/]\.git[\\/]" }
+$instructionsDir = Join-Path $Root "instructions"
+$instructionNames = @()
+if ([System.IO.Directory]::Exists($instructionsDir)) {
+    $instructionNames = @([System.IO.Directory]::GetFiles($instructionsDir, "*.md") |
+        ForEach-Object { [System.IO.Path]::GetFileName($_) })
+}
+
+$readmePath = Join-Path $Root "README.md"
+if ([System.IO.File]::Exists($readmePath)) {
+    $readmeText = Read-Text $readmePath
+    Compare-Catalog "Skill" @($skillNames) (Get-CatalogEntries $readmeText "Skill Catalog" "Agent Catalog" $readmePath) $readmePath
+    Compare-Catalog "Agent" @($agentNames) (Get-CatalogEntries $readmeText "Agent Catalog" "Instruction Templates" $readmePath) $readmePath
+    Compare-Catalog "Instruction template" @($instructionNames) (Get-CatalogEntries $readmeText "Instruction Templates" "Porting Notes" $readmePath) $readmePath
+} else {
+    Add-Error "Missing README.md: $readmePath"
+}
+
+$markdownFiles = Get-MarkdownFiles $Root
 
 foreach ($file in $markdownFiles) {
     $lines = [System.IO.File]::ReadAllLines($file)

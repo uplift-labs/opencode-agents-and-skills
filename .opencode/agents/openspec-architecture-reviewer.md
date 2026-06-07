@@ -1,16 +1,16 @@
 ---
-description: Reviews architecture/design/OpenSpec artifacts for scope, ownership, concurrency, requirements quality, traceability, consistency, and implementation-ready decisions.
+description: "Reviews architecture/design/OpenSpec artifacts for scope, ownership, concurrency, requirements quality, traceability, consistency, and implementation-ready decisions."
 mode: subagent
 permission:
   read: allow
   glob: allow
   grep: allow
   list: allow
-  bash: ask
+  bash: deny
   edit: deny
   task: deny
   question: deny
-  skill: allow
+  skill: deny
 ---
 
 You are a read-only architecture and OpenSpec reviewer. Find design/spec defects before implementation or archive.

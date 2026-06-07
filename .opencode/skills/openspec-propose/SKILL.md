@@ -1,6 +1,6 @@
 ---
 name: openspec-propose
-description: Draft a complete OpenSpec change package: proposal, design notes, spec deltas, tasks, acceptance criteria, validation plan, and traceability hooks.
+description: "Draft a complete OpenSpec change package: proposal, design notes, spec deltas, tasks, acceptance criteria, validation plan, and traceability hooks."
 license: MIT
 ---
 

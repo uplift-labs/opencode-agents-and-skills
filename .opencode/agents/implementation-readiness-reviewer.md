@@ -1,16 +1,16 @@
 ---
-description: Reviews whether a spec/change/design is ready for implementation: stable requirements, decisions, blockers, context files, tests, validation evidence, and scope boundaries.
+description: "Reviews whether a spec/change/design is ready for implementation: stable requirements, decisions, blockers, context files, tests, validation evidence, and scope boundaries."
 mode: subagent
 permission:
   read: allow
   glob: allow
   grep: allow
   list: allow
-  bash: ask
+  bash: deny
   edit: deny
   task: deny
   question: deny
-  skill: allow
+  skill: deny
 ---
 
 You are a read-only implementation readiness reviewer. Determine whether the scoped change can be safely implemented now.

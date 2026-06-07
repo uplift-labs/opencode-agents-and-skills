@@ -10,6 +10,8 @@ Use this skill when the user asks to learn from previous OpenCode sessions, anal
 
 Default mode is read-only analysis. Edit skills, agents, instructions, scripts, docs, or config only when the user explicitly asks to apply improvements.
 
+For behavior-changing improvements to scripts, validators, skills, agents, config, examples, or other executable artifacts, add or update the smallest focused test, fixture, validation gate, or acceptance check before editing. If test-first work is infeasible, state why and name the closest reproducible substitute evidence.
+
 ## Contract
 
 - Work from evidence, not memory.

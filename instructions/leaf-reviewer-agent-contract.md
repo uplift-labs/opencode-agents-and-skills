@@ -2,6 +2,25 @@
 
 Use this template for reusable read-only reviewer subagents.
 
+## Frontmatter Skeleton
+
+```yaml
+---
+description: "Reviews <scope>: <material risks this reviewer owns>."
+mode: subagent
+permission:
+  read: allow
+  glob: allow
+  grep: allow
+  list: allow
+  bash: deny
+  edit: deny
+  task: deny
+  question: deny
+  skill: deny
+---
+```
+
 ## Role
 
 You are a read-only specialist reviewer. Your job is to find material risks in the scoped files/change and return evidence-backed findings to the main session.
