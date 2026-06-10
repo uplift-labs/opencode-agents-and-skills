@@ -1,0 +1,5 @@
+{
+  "name": "strict",
+  "description": "Same restricted artifact set as standard; pair with validate:strict and doctor gates in CI or local release checks.",
+  "extends": "standard"
+}

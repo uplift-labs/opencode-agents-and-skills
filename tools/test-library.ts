@@ -20,6 +20,10 @@ type TestCase = {
 const root = parseRoot(process.argv.slice(2));
 const validator = path.join(root, "tools", "validate-library.ts");
 const installer = path.join(root, "tools", "install-opencode-global.ts");
+const initProject = path.join(root, "tools", "init-project.ts");
+const doctor = path.join(root, "tools", "doctor.ts");
+const projectInventory = path.join(root, "tools", "project-inventory.ts");
+const instructionInventory = path.join(root, "tools", "instruction-artifacts-inventory.ts");
 const retroInventory = path.join(root, "tools", "opencode-session-retro-inventory.ts");
 const retroAnalyze = path.join(root, "tools", "opencode-session-retro-analyze.ts");
 
@@ -105,6 +109,92 @@ function newLibraryFixture(name: string): string {
     "",
   ]));
   writeText(path.join(dir, "instructions", "example.md"), lines(["# Example", ""]));
+  writeText(path.join(dir, "instructions", "universal-development-loop.md"), lines([
+    "# Universal Development Loop",
+    "",
+    "## Contract",
+    "",
+    "1. Intake",
+    "2. Evidence",
+    "3. Baseline Proof",
+    "4. Small Slice",
+    "5. Test First",
+    "6. Focused Validation",
+    "7. Review Gate",
+    "8. Handoff",
+    "9. Process Improvement",
+    "",
+  ]));
+  writeText(path.join(dir, "templates", "project", "AGENTS.md"), lines([
+    "# Project Agent Instructions",
+    "",
+    "## Universal Development Loop",
+    "",
+    "- Use Intake, Evidence, Baseline Proof, Small Slice, Test First, Focused Validation, Review Gate, Handoff, and Process Improvement.",
+    "- For behavior changes, write tests before implementation.",
+    "",
+  ]));
+  writeText(path.join(dir, "templates", "project", "opencode.json"), lines(["{", "  \"$schema\": \"https://opencode.ai/config.json\"", "}", ""]));
+  writeText(path.join(dir, "templates", "project", "validation.md"), lines(["# Project Validation", "", "- Tests before implementation when behavior changes.", ""]));
+  writeText(path.join(dir, "templates", "project", "adapter.json"), lines([
+    "{",
+    "  \"schemaVersion\": 1,",
+    "  \"validation\": {",
+    "    \"focusedTest\": \"unknown\",",
+    "    \"test\": \"unknown\"",
+    "  }",
+    "}",
+    "",
+  ]));
+  writeText(path.join(dir, "templates", "ci", "github-actions.yml"), lines(["name: validate", "", "jobs:", "  validate:", "    steps:", "      - run: <validation-command>", ""]));
+  writeText(path.join(dir, "profiles", "standard.json"), lines([
+    "{",
+    "  \"name\": \"standard\",",
+    "  \"description\": \"Fixture standard profile.\",",
+    "  \"skills\": [\"demo-skill\"],",
+    "  \"agents\": [\"demo-reviewer\"]",
+    "}",
+    "",
+  ]));
+  writeText(path.join(dir, "profiles", "strict.json"), lines([
+    "{",
+    "  \"name\": \"strict\",",
+    "  \"description\": \"Fixture strict profile.\",",
+    "  \"extends\": \"standard\"",
+    "}",
+    "",
+  ]));
+  writeText(path.join(dir, "profiles", "advanced.json"), lines([
+    "{",
+    "  \"name\": \"advanced\",",
+    "  \"description\": \"Fixture advanced profile.\",",
+    "  \"skills\": [\"demo-skill\"],",
+    "  \"agents\": [\"demo-reviewer\"]",
+    "}",
+    "",
+  ]));
+  for (const tool of ["init-project.ts", "doctor.ts", "project-inventory.ts", "instruction-artifacts-inventory.ts"]) {
+    writeText(path.join(dir, "tools", tool), lines(["#!/usr/bin/env node", "", ""]));
+  }
+  writeText(path.join(dir, "package.json"), lines([
+    "{",
+    "  \"name\": \"opencode-dev-kit-fixture\",",
+    "  \"private\": true,",
+    "  \"type\": \"module\",",
+    "  \"scripts\": {",
+    "    \"install:global\": \"node tools/install-opencode-global.ts\",",
+    "    \"init:project\": \"node tools/init-project.ts\",",
+    "    \"doctor\": \"node tools/doctor.ts\",",
+    "    \"project:inventory\": \"node tools/project-inventory.ts\",",
+    "    \"instruction:inventory\": \"node tools/instruction-artifacts-inventory.ts\",",
+    "    \"code-quality:inventory\": \"node tools/code-quality-inventory.ts\",",
+    "    \"validate\": \"node tools/validate-library.ts\",",
+    "    \"validate:strict\": \"node tools/validate-library.ts --fail-on-warnings\",",
+    "    \"test\": \"node tools/test-library.ts\"",
+    "  }",
+    "}",
+    "",
+  ]));
   writeText(path.join(dir, "AGENTS.md"), lines([
     "# Repository Instructions",
     "",
@@ -137,6 +227,30 @@ function newLibraryFixture(name: string): string {
   writeText(path.join(dir, "README.md"), lines([
     "# Fixture",
     "",
+    "## What This Is",
+    "",
+    "This is an opencode-dev-kit fixture.",
+    "",
+    "## Universal Development Loop",
+    "",
+    "Use one canonical development process.",
+    "",
+    "## Install",
+    "",
+    "Install with npm scripts.",
+    "",
+    "## Bootstrap A Project",
+    "",
+    "Run init:project.",
+    "",
+    "## Token Economy",
+    "",
+    "Use deterministic inventories before broad reads.",
+    "",
+    "## Validate",
+    "",
+    "Run validate and test.",
+    "",
     "## Routing Map",
     "",
     "- Default broad work -> `adaptive-delivery`.",
@@ -157,6 +271,7 @@ function newLibraryFixture(name: string): string {
     "## Instruction Templates",
     "",
     "- `example.md`: Demo instruction.",
+    "- `universal-development-loop.md`: Universal loop.",
     "",
     "## Porting Notes",
     "",
@@ -185,6 +300,22 @@ function invokeValidator(fixtureRoot: string): ProcessResult {
 
 function invokeInstaller(args: string[]): ProcessResult {
   return invokeProcessCapture("node", [installer, ...args], root);
+}
+
+function invokeInitProject(args: string[]): ProcessResult {
+  return invokeProcessCapture("node", [initProject, ...args], root);
+}
+
+function invokeDoctor(args: string[]): ProcessResult {
+  return invokeProcessCapture("node", [doctor, ...args], root);
+}
+
+function invokeProjectInventory(args: string[]): ProcessResult {
+  return invokeProcessCapture("node", [projectInventory, ...args], root);
+}
+
+function invokeInstructionInventory(args: string[]): ProcessResult {
+  return invokeProcessCapture("node", [instructionInventory, ...args], root);
 }
 
 function invokeRetroInventory(args: string[]): ProcessResult {
@@ -270,6 +401,25 @@ function anyPathWithBasename(rootPath: string, basename: string): boolean {
     }
   }
   return false;
+}
+
+function findPathWithBasename(rootPath: string, basename: string): string | null {
+  if (!fs.existsSync(rootPath)) {
+    return null;
+  }
+  for (const entry of fs.readdirSync(rootPath, { withFileTypes: true })) {
+    const entryPath = path.join(rootPath, entry.name);
+    if (entry.name === basename) {
+      return entryPath;
+    }
+    if (entry.isDirectory()) {
+      const nested = findPathWithBasename(entryPath, basename);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return null;
 }
 
 function newOpenCodeSessionDbFixture(name: string): string {
@@ -895,14 +1045,209 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validator strict mode rejects warnings",
+    run: () => {
+      const fixture = newLibraryFixture("strict-warning");
+      writeText(path.join(fixture, ".opencode", "skills", "demo-skill", "SKILL.md"), lines([
+        "---",
+        "name: demo-skill",
+        "description: Use when testing a demo reusable skill.",
+        "---",
+        "",
+        "# Demo Skill",
+        "",
+        "This skill can implement code changes.",
+        "",
+      ]));
+      const result = invokeProcessCapture("node", [validator, "--root", fixture, "--fail-on-warnings"], root);
+      assertFailure(result, "Strict validation should reject warning-level drift.");
+      assertOutputContains(result, "Warnings are not allowed", "Strict validation should explain warning failures.");
+    },
+  },
+  {
+    name: "validator rejects invalid profile contracts",
+    run: () => {
+      const fixture = newLibraryFixture("invalid-profile-contract");
+      writeText(path.join(fixture, "profiles", "standard.json"), lines([
+        "{",
+        "  \"name\": \"standard\",",
+        "  \"description\": \"Broken profile.\",",
+        "  \"skills\": [\"missing-skill\"],",
+        "  \"agents\": [\"demo-reviewer\"],",
+        "  \"validation\": { \"failOnWarnings\": true }",
+        "}",
+        "",
+      ]));
+      const result = invokeValidator(fixture);
+      assertFailure(result, "Invalid profile references and unsupported fields should fail validation.");
+      assertOutputContains(result, "Unsupported profile field 'validation'", "Profile validation should reject unsupported semantic fields.");
+      assertOutputContains(result, "Profile references missing skill 'missing-skill'", "Profile validation should reject missing skill refs.");
+    },
+  },
+  {
+    name: "init project previews and writes universal loop bootstrap",
+    run: () => {
+      const project = newTempDir("init-project-target");
+      const preview = invokeInitProject(["--target", project]);
+      assertSuccess(preview, "Project bootstrap preview should succeed.");
+      assertOutputContains(preview, "would create: AGENTS.md", "Preview should show AGENTS.md creation.");
+      if (fs.existsSync(path.join(project, "AGENTS.md"))) {
+        throw new Error("Project bootstrap preview must not write files.");
+      }
+
+      const write = invokeInitProject(["--target", project, "--mode", "write"]);
+      assertSuccess(write, "Project bootstrap write should succeed for an empty project.");
+      assertOutputContains(write, "created: AGENTS.md", "Write should create AGENTS.md.");
+      assertOutputContains(write, "created: opencode-dev-kit/adapter.json", "Write should create the adapter file.");
+      const agentsText = fs.readFileSync(path.join(project, "AGENTS.md"), "utf8");
+      if (!agentsText.includes("Universal Development Loop")) {
+        throw new Error("Project AGENTS.md should install the Universal Development Loop template.");
+      }
+    },
+  },
+  {
+    name: "init project refuses overwrite without explicit flag",
+    run: () => {
+      const project = newTempDir("init-project-overwrite");
+      const agentsPath = path.join(project, "AGENTS.md");
+      writeText(agentsPath, "existing rules\n");
+      const result = invokeInitProject(["--target", project, "--mode", "write"]);
+      assertFailure(result, "Project bootstrap should refuse overwriting existing files without --overwrite.");
+      assertOutputContains(result, "Refusing to overwrite", "Overwrite refusal should explain the safety boundary.");
+      assertEqual(fs.readFileSync(agentsPath, "utf8"), "existing rules\n".replace(/\n/g, os.EOL), "Overwrite refusal should preserve existing AGENTS.md.");
+    },
+  },
+  {
+    name: "init project overwrite backs up and replaces existing files",
+    run: () => {
+      const project = newTempDir("init-project-overwrite-backup");
+      const agentsPath = path.join(project, "AGENTS.md");
+      writeText(agentsPath, "existing rules\n");
+      const result = invokeInitProject(["--target", project, "--mode", "write", "--overwrite"]);
+      assertSuccess(result, "Project bootstrap should overwrite only with explicit --overwrite.");
+      assertOutputContains(result, "replaced: AGENTS.md", "Overwrite should report replaced AGENTS.md.");
+      assertOutputContains(result, "backup:", "Overwrite should report backup path.");
+      const backup = findPathWithBasename(path.join(project, ".backups", "opencode-dev-kit"), "AGENTS.md");
+      if (!backup) {
+        throw new Error("Overwrite should create an AGENTS.md backup.");
+      }
+      if (!fs.readFileSync(backup, "utf8").includes("existing rules")) {
+        throw new Error(`Backup should preserve original AGENTS.md content.\nBackup: ${backup}`);
+      }
+      const expected = fs.readFileSync(path.join(root, "templates", "project", "AGENTS.md"), "utf8");
+      assertEqual(fs.readFileSync(agentsPath, "utf8"), expected, "Overwrite should copy the project AGENTS.md template exactly.");
+    },
+  },
+  {
+    name: "doctor reports bootstrapped project readiness",
+    run: () => {
+      const project = newTempDir("doctor-project");
+      assertSuccess(invokeInitProject(["--target", project, "--mode", "write"]), "Bootstrap should prepare the doctor fixture.");
+      const result = invokeDoctor(["--project", project, "--format", "json"]);
+      assertSuccess(result, "Doctor should pass for a bootstrapped project.");
+      const report = asRecord(parseJsonOutput(result), "Doctor JSON root should be an object.");
+      assertEqual(report.status, "pass", "Doctor should report pass for a bootstrapped project.");
+      assertEqual(report.project, "<redacted>", "Doctor should redact project paths by default.");
+    },
+  },
+  {
+    name: "doctor reports warnings for unbootstrapped project",
+    run: () => {
+      const project = newTempDir("doctor-warning-project");
+      const result = invokeDoctor(["--project", project, "--format", "json"]);
+      assertSuccess(result, "Doctor warning status should remain machine-readable with exit 0.");
+      const report = asRecord(parseJsonOutput(result), "Doctor JSON root should be an object.");
+      assertEqual(report.status, "warn", "Doctor should report warn for a project missing bootstrap files.");
+      const checks = asArray(report.checks, "Doctor checks should be an array.");
+      const agentsCheck = findBucket(checks, "name", "project AGENTS.md");
+      assertEqual(agentsCheck.status, "warn", "Doctor should warn when project AGENTS.md is missing the loop.");
+      const adapterCheck = findBucket(checks, "name", "project adapter");
+      assertEqual(adapterCheck.status, "warn", "Doctor should warn when project adapter is missing.");
+    },
+  },
+  {
+    name: "project inventory reports deterministic project signals",
+    run: () => {
+      const project = newTempDir("project-inventory");
+      writeText(path.join(project, "package.json"), lines([
+        "{",
+        "  \"scripts\": {",
+        "    \"test\": \"npm test -- --runInBand\",",
+        "    \"build\": \"tsc -p tsconfig.json\"",
+        "  }",
+        "}",
+      ]));
+      writeText(path.join(project, "src", "index.ts"), "export const value = 1;\n");
+      writeText(path.join(project, "tests", "index.test.ts"), "test('value', () => {});\n");
+      writeText(path.join(project, "tsconfig.json"), "{}\n");
+      const result = invokeProjectInventory(["--root", project, "--format", "json"]);
+      assertSuccess(result, "Project inventory should read a small fixture project.");
+      const report = asRecord(parseJsonOutput(result), "Project inventory JSON root should be an object.");
+      assertEqual(report.root, "<redacted>", "Project inventory should redact root by default.");
+      const scripts = asArray(report.packageScripts, "Project inventory scripts should be an array.");
+      findBucket(scripts, "name", "test");
+      const buildFiles = asArray(report.buildFiles, "Project inventory build files should be an array.");
+      findBucket(buildFiles, "path", "package.json");
+      const sourceRoots = asArray(report.sourceRoots, "Project inventory source roots should be an array.");
+      findBucket(sourceRoots, "path", "src");
+    },
+  },
+  {
+    name: "instruction inventory reports token-cost artifact metrics",
+    run: () => {
+      const result = invokeInstructionInventory(["--format", "json"]);
+      assertSuccess(result, "Instruction inventory should scan repository artifacts.");
+      const report = asRecord(parseJsonOutput(result), "Instruction inventory JSON root should be an object.");
+      assertEqual(report.root, "<redacted>", "Instruction inventory should redact root by default.");
+      const totals = asRecord(report.totals, "Instruction inventory totals should be an object.");
+      if (typeof totals.artifacts !== "number" || totals.artifacts < 1) {
+        throw new Error(`Instruction inventory should count artifacts.\nTotals:\n${JSON.stringify(totals, null, 2)}`);
+      }
+      const artifacts = asArray(report.artifacts, "Instruction inventory artifacts should be an array.");
+      findBucket(artifacts, "path", "instructions/universal-development-loop.md");
+    },
+  },
+  {
     name: "installer dry-run writes nothing",
     run: () => {
       const configDir = path.join(newTempDir("installer-dry-run"), "config");
       const result = invokeInstaller(["--dry-run", "--config-dir", configDir]);
       assertSuccess(result, "Installer dry-run should succeed.");
+      assertOutputContains(result, "Install profile: all", "Default installer run should install all repo artifacts without profile selection.");
+      assertOutputContains(result, "skill opencode-total-session-retro", "Default installer run should include advanced skills.");
+      assertOutputContains(result, "agent deployment-config-reviewer", "Default installer run should include advanced reviewers.");
       if (fs.existsSync(configDir)) {
         throw new Error(`Installer dry-run created config directory: ${configDir}`);
       }
+    },
+  },
+  {
+    name: "installer supports standard strict and advanced profiles",
+    run: () => {
+      for (const profile of ["standard", "strict", "advanced"]) {
+        const configDir = path.join(newTempDir(`installer-profile-${profile}`), "config");
+        const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--profile", profile]);
+        assertSuccess(result, `Installer dry-run should support profile ${profile}.`);
+        assertOutputContains(result, `Install profile: ${profile}`, `Installer output should name profile ${profile}.`);
+        assertOutputContains(result, "skill adaptive-delivery", `${profile} should include the Universal Development Loop entrypoint.`);
+        assertOutputContains(result, "agent code-quality-reviewer", `${profile} should include the core code-quality reviewer.`);
+        if (profile === "advanced") {
+          assertOutputContains(result, "skill opencode-total-session-retro", "Advanced profile should include heavyweight retro skills.");
+          assertOutputContains(result, "agent deployment-config-reviewer", "Advanced profile should include advanced reviewers.");
+        } else {
+          assertOutputExcludes(result, "skill opencode-total-session-retro", `${profile} should exclude heavyweight retro skills.`);
+          assertOutputExcludes(result, "agent deployment-config-reviewer", `${profile} should exclude advanced reviewers.`);
+        }
+      }
+    },
+  },
+  {
+    name: "installer rejects missing profile",
+    run: () => {
+      const configDir = path.join(newTempDir("installer-missing-profile"), "config");
+      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--profile", "missing-profile"]);
+      assertFailure(result, "Installer should reject unknown profiles.");
+      assertOutputContains(result, "Missing install profile", "Missing profile error should explain the profile lookup failure.");
     },
   },
   {

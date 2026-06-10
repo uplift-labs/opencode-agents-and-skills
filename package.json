@@ -1,14 +1,19 @@
 {
-  "name": "agents-and-skills",
+  "name": "opencode-dev-kit",
   "private": true,
   "type": "module",
   "scripts": {
     "install:global": "node tools/install-opencode-global.ts",
+    "init:project": "node tools/init-project.ts",
+    "doctor": "node tools/doctor.ts",
+    "project:inventory": "node tools/project-inventory.ts",
+    "instruction:inventory": "node tools/instruction-artifacts-inventory.ts",
     "code-quality:inventory": "node tools/code-quality-inventory.ts",
     "retro:inventory": "node tools/opencode-session-retro-inventory.ts",
     "retro:analyze": "node tools/opencode-session-retro-analyze.ts",
     "test": "node tools/test-library.ts && node tools/test-code-quality-inventory.ts",
-    "validate": "node tools/validate-library.ts"
+    "validate": "node tools/validate-library.ts",
+    "validate:strict": "node tools/validate-library.ts --fail-on-warnings"
   },
   "engines": {
     "node": ">=24.0.0"

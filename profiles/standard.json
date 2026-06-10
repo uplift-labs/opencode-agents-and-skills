@@ -1,0 +1,20 @@
+{
+  "name": "standard",
+  "description": "Default opencode-dev-kit install: one universal development loop, core skills, and core read-only reviewers.",
+  "skills": [
+    "adaptive-delivery",
+    "deep-task-planning",
+    "code-quality-audit",
+    "instruction-artifact-tuning",
+    "merge-request-author",
+    "merge-request-review-loop",
+    "file-review-quest",
+    "documentation-hardening-loop"
+  ],
+  "agents": [
+    "code-quality-reviewer",
+    "test-coverage-reviewer",
+    "implementation-readiness-reviewer",
+    "instruction-artifact-reviewer"
+  ]
+}

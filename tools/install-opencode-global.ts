@@ -11,7 +11,15 @@ type Options = {
   dryRun: boolean;
   noPrune: boolean;
   noBackup: boolean;
+  profile: string;
   skipAgentsMd: boolean;
+};
+
+type InstallProfile = {
+  agents?: string[];
+  extends?: string;
+  name?: string;
+  skills?: string[];
 };
 
 type InstallContext = {
@@ -37,6 +45,7 @@ Options:
   --config-dir <path>         OpenCode config directory. Default: ~/.config/opencode
   --agents-md-source <path>   Source file to install into global AGENTS.md block.
                               Default: instructions/global-opencode-agent-instructions.md
+  --profile <name>            Restrict install to profiles/<name>.json. Default: all repo skills/agents.
   --skip-agents-md           Install only skills and agents.
   --no-prune                 Keep destination skills/agents not present in this repository.
   --no-backup                Replace changed or pruned artifacts without backup copies.
@@ -67,6 +76,7 @@ function parseArgs(args: string[]): Options {
     dryRun: false,
     noPrune: false,
     noBackup: false,
+    profile: "all",
     skipAgentsMd: false,
   };
 
@@ -85,6 +95,11 @@ function parseArgs(args: string[]): Options {
       i++;
     } else if (arg.startsWith("--agents-md-source=")) {
       options.agentsMdSource = readInlineOptionValue(arg.slice("--agents-md-source=".length), "--agents-md-source");
+    } else if (arg === "--profile") {
+      options.profile = readOptionValue(args, i, arg);
+      i++;
+    } else if (arg.startsWith("--profile=")) {
+      options.profile = readInlineOptionValue(arg.slice("--profile=".length), "--profile");
     } else if (arg === "--skip-agents-md" || arg === "-SkipAgentsMd") {
       options.skipAgentsMd = true;
     } else if (arg === "--no-prune" || arg === "-NoPrune") {
@@ -225,6 +240,61 @@ function listFiles(root: string, extension: string): string[] {
     .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
     .map((entry) => path.join(root, entry.name))
     .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+}
+
+function readJsonFile(file: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid JSON file ${file}: ${message}`);
+  }
+}
+
+function asStringArray(value: unknown, label: string): string[] | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${label} must be an array of strings.`);
+  }
+  return value;
+}
+
+function loadProfile(repoRoot: string, name: string, seen = new Set<string>()): Required<Pick<InstallProfile, "agents" | "skills">> {
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) {
+    throw new Error(`Invalid profile name: ${name}`);
+  }
+  if (seen.has(name)) {
+    throw new Error(`Profile inheritance cycle: ${[...seen, name].join(" -> ")}`);
+  }
+  seen.add(name);
+  const profilePath = path.join(repoRoot, "profiles", `${name}.json`);
+  if (!fs.existsSync(profilePath) || !fs.statSync(profilePath).isFile()) {
+    throw new Error(`Missing install profile: ${profilePath}`);
+  }
+  const raw = readJsonFile(profilePath);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`Install profile must be a JSON object: ${profilePath}`);
+  }
+  const profile = raw as InstallProfile;
+  const base = typeof profile.extends === "string" ? loadProfile(repoRoot, profile.extends, seen) : { agents: [], skills: [] };
+  return {
+    agents: asStringArray(profile.agents, `${profilePath}: agents`) ?? base.agents,
+    skills: asStringArray(profile.skills, `${profilePath}: skills`) ?? base.skills,
+  };
+}
+
+function filterByProfile<T>(items: T[], getName: (item: T) => string, allowed: string[], label: string): T[] {
+  const allowedSet = new Set(allowed);
+  const filtered = items.filter((item) => allowedSet.has(getName(item)));
+  const available = new Set(items.map(getName));
+  for (const name of allowedSet) {
+    if (!available.has(name)) {
+      throw new Error(`Install profile references missing ${label}: ${name}`);
+    }
+  }
+  return filtered;
 }
 
 function toPosixRelative(relativePath: string): string {
@@ -586,8 +656,11 @@ function run(): void {
     assertFileExists(sourceAgentsMd, "source AGENTS.md");
   }
 
-  const skillDirs = listDirectories(sourceSkillsDir);
-  const agentFiles = listFiles(sourceAgentsDir, ".md");
+  const allSkillDirs = listDirectories(sourceSkillsDir);
+  const allAgentFiles = listFiles(sourceAgentsDir, ".md");
+  const profile = options.profile === "all" ? null : loadProfile(repoRoot, options.profile);
+  const skillDirs = profile == null ? allSkillDirs : filterByProfile(allSkillDirs, (dir) => path.basename(dir), profile.skills, "skill");
+  const agentFiles = profile == null ? allAgentFiles : filterByProfile(allAgentFiles, (file) => path.basename(file, ".md"), profile.agents, "agent");
   const destinationSkillsDir = path.join(configDir, "skills");
   const destinationAgentsDir = path.join(configDir, "agents");
   const destinationAgentsMd = path.join(configDir, "AGENTS.md");
@@ -602,6 +675,7 @@ function run(): void {
   }
 
   console.log(`OpenCode global config: ${configDir}`);
+  console.log(`Install profile: ${options.profile}`);
   console.log(sourceAgentsMd ? `AGENTS.md source: ${sourceAgentsMd}` : "AGENTS.md source: skipped");
   console.log(`Installing skills: ${skillDirs.length}`);
   for (const skillDir of skillDirs) {

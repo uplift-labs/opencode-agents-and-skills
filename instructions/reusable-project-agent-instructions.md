@@ -2,6 +2,16 @@
 
 Use this template as a starting point for a project-level `AGENTS.md`. Keep only rules that are durable for the repository.
 
+## Universal Development Loop
+
+Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> Small Slice -> Test First -> Implement -> Focused Validation -> Review Gate -> Final Validation -> Handoff -> Process Improvement`.
+
+- Technology-specific commands and constraints adapt the loop; they do not create separate workflows.
+- Start broad work with a deterministic project inventory, targeted search, or repository-native command before reading large file sets.
+- For behavior-changing work, prove current behavior and add/update the smallest useful failing, acceptance, or characterization test before implementation unless infeasible.
+- Run focused validation first, then broaden validation when boundaries, APIs, data, deployment, or compatibility are affected.
+- Use read-only reviewer gates only when the risk justifies them, and report skipped gates with the reason.
+
 ## Sources Of Truth
 
 - Treat source code, tests, schemas, scripts, generated artifacts, and live command output as primary evidence.

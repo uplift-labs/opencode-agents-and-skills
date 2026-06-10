@@ -8,6 +8,7 @@ type FrontmatterValue = string | Record<string, never>;
 type FrontmatterMap = Map<string, FrontmatterValue>;
 
 type Options = {
+  failOnWarnings: boolean;
   forbiddenAnchors: string[];
   root: string;
 };
@@ -52,6 +53,7 @@ function splitForbiddenAnchorValues(values: string[]): string[] {
 
 function parseArgs(args: string[]): Options {
   let root = defaultRoot();
+  let failOnWarnings = false;
   const forbiddenAnchors: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -77,12 +79,14 @@ function parseArgs(args: string[]): Options {
       forbiddenAnchors.push(...splitForbiddenAnchorValues([arg.slice("--forbidden-anchor=".length)]));
     } else if (arg.startsWith("--ForbiddenAnchor=")) {
       forbiddenAnchors.push(...splitForbiddenAnchorValues([arg.slice("--ForbiddenAnchor=".length)]));
+    } else if (arg === "--fail-on-warnings") {
+      failOnWarnings = true;
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
   }
 
-  return { forbiddenAnchors, root: path.resolve(root) };
+  return { failOnWarnings, forbiddenAnchors, root: path.resolve(root) };
 }
 
 function readText(filePath: string): string {
@@ -274,6 +278,20 @@ function compareCatalog(label: string, expected: string[], actual: string[], rea
 function requireTextContains(text: string, needle: string, label: string, file: string): void {
   if (!text.includes(needle)) {
     addError(`${label} must include '${needle}': ${file}`);
+  }
+}
+
+function requireFile(root: string, relativePath: string, label: string): void {
+  const target = path.join(root, ...relativePath.split("/"));
+  if (!fileExists(target)) {
+    addError(`Missing ${label}: ${relativePath}`);
+  }
+}
+
+function requireDirectory(root: string, relativePath: string, label: string): void {
+  const target = path.join(root, ...relativePath.split("/"));
+  if (!directoryExists(target)) {
+    addError(`Missing ${label}: ${relativePath}`);
   }
 }
 
@@ -483,6 +501,194 @@ function validatePackageScripts(root: string): void {
     }
     if (/(^|\s)(pwsh|powershell)(\s|$)|\.(ps1|psd1|psm1|py|pyw|js|cjs|mjs)\b/i.test(value)) {
       addError(`Package script '${name}' must use TypeScript tooling, not PowerShell, Python, or JavaScript entrypoints: ${packagePath}`);
+    }
+  }
+}
+
+function readPackageScripts(root: string): Record<string, string> {
+  const packagePath = path.join(root, "package.json");
+  if (!fileExists(packagePath)) {
+    addError(`Missing package.json for opencode-dev-kit tooling: ${packagePath}`);
+    return {};
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readText(packagePath));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    addError(`Invalid package.json: ${packagePath}: ${message}`);
+    return {};
+  }
+  if (!isPlainRecord(parsed) || !isPlainRecord(parsed.scripts)) {
+    addError(`package.json must define scripts for opencode-dev-kit tooling: ${packagePath}`);
+    return {};
+  }
+  const scripts: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parsed.scripts)) {
+    if (typeof value === "string") {
+      scripts[name] = value;
+    }
+  }
+  return scripts;
+}
+
+function validateDevKitContract(root: string): void {
+  requireFile(root, "instructions/universal-development-loop.md", "Universal Development Loop instruction");
+  requireFile(root, "templates/project/AGENTS.md", "project AGENTS.md template");
+  requireFile(root, "templates/project/opencode.json", "project opencode.json template");
+  requireFile(root, "templates/project/validation.md", "project validation template");
+  requireFile(root, "templates/project/adapter.json", "project adapter template");
+  requireFile(root, "templates/ci/github-actions.yml", "CI template");
+  requireDirectory(root, "profiles", "install profiles directory");
+  requireFile(root, "profiles/standard.json", "standard profile");
+  requireFile(root, "profiles/strict.json", "strict profile");
+  requireFile(root, "profiles/advanced.json", "advanced profile");
+  requireFile(root, "tools/init-project.ts", "project bootstrap tool");
+  requireFile(root, "tools/doctor.ts", "doctor tool");
+  requireFile(root, "tools/project-inventory.ts", "project inventory tool");
+  requireFile(root, "tools/instruction-artifacts-inventory.ts", "instruction inventory tool");
+
+  const universalLoop = path.join(root, "instructions", "universal-development-loop.md");
+  if (fileExists(universalLoop)) {
+    const text = readText(universalLoop);
+    for (const required of ["Intake", "Evidence", "Baseline Proof", "Small Slice", "Test First", "Focused Validation", "Review Gate", "Handoff", "Process Improvement"]) {
+      requireTextContains(text, required, "Universal Development Loop", universalLoop);
+    }
+  }
+
+  const projectTemplate = path.join(root, "templates", "project", "AGENTS.md");
+  if (fileExists(projectTemplate)) {
+    requireTextContains(readText(projectTemplate), "Universal Development Loop", "project AGENTS.md template", projectTemplate);
+  }
+
+  const adapterTemplate = path.join(root, "templates", "project", "adapter.json");
+  if (fileExists(adapterTemplate)) {
+    const adapter = readJsonRecord(adapterTemplate);
+    if (adapter) {
+      if (adapter.schemaVersion !== 1) {
+        addError(`Project adapter template must use schemaVersion 1: ${adapterTemplate}`);
+      }
+      if (!isPlainRecord(adapter.validation)) {
+        addError(`Project adapter template must define validation commands object: ${adapterTemplate}`);
+      }
+    }
+  }
+
+  const opencodeTemplate = path.join(root, "templates", "project", "opencode.json");
+  if (fileExists(opencodeTemplate)) {
+    const config = readJsonRecord(opencodeTemplate);
+    if (config && config.$schema !== "https://opencode.ai/config.json") {
+      addError(`Project opencode.json template must declare the OpenCode schema: ${opencodeTemplate}`);
+    }
+  }
+
+  const readmePath = path.join(root, "README.md");
+  if (fileExists(readmePath)) {
+    const readme = readText(readmePath);
+    for (const heading of ["What This Is", "Universal Development Loop", "Install", "Bootstrap A Project", "Token Economy", "Validate"]) {
+      requireTextContains(readme, `## ${heading}`, "README opencode-dev-kit quickstart", readmePath);
+    }
+    requireTextContains(readme, "opencode-dev-kit", "README product framing", readmePath);
+  }
+
+  const scripts = readPackageScripts(root);
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "validate", "validate:strict", "test"]) {
+    if (!scripts[script]) {
+      addError(`package.json missing required opencode-dev-kit script '${script}'`);
+    }
+  }
+  if (scripts["validate:strict"] && !scripts["validate:strict"].includes("--fail-on-warnings")) {
+    addError("package.json script 'validate:strict' must pass --fail-on-warnings.");
+  }
+}
+
+function readJsonRecord(file: string): Record<string, unknown> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readText(file));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    addError(`Invalid JSON: ${file}: ${message}`);
+    return null;
+  }
+  if (!isPlainRecord(parsed)) {
+    addError(`JSON file must contain an object: ${file}`);
+    return null;
+  }
+  return parsed;
+}
+
+function validateStringArray(value: unknown, file: string, key: string): string[] {
+  if (value == null) {
+    return [];
+  }
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) {
+    addError(`Profile field '${key}' must be an array of non-empty strings: ${file}`);
+    return [];
+  }
+  return value;
+}
+
+function validateProfiles(root: string, skillNames: string[], agentNames: string[]): void {
+  const profilesDir = path.join(root, "profiles");
+  if (!directoryExists(profilesDir)) {
+    return;
+  }
+  const profileFiles = listFiles(profilesDir, ".json");
+  const profileNames = new Set(profileFiles.map((file) => path.basename(file, ".json")));
+  const allowedKeys = new Set(["agents", "description", "extends", "name", "skills"]);
+  const extendsMap = new Map<string, string>();
+  const skillSet = new Set(skillNames);
+  const agentSet = new Set(agentNames);
+
+  for (const file of profileFiles) {
+    const name = path.basename(file, ".json");
+    const profile = readJsonRecord(file);
+    if (!profile) {
+      continue;
+    }
+    for (const key of Object.keys(profile)) {
+      if (!allowedKeys.has(key)) {
+        addError(`Unsupported profile field '${key}': ${file}`);
+      }
+    }
+    if (typeof profile.name !== "string" || profile.name !== name) {
+      addError(`Profile name must match filename '${name}': ${file}`);
+    }
+    if (profile.description != null && typeof profile.description !== "string") {
+      addError(`Profile description must be a string: ${file}`);
+    }
+    if (profile.extends != null) {
+      if (typeof profile.extends !== "string" || profile.extends.trim() === "") {
+        addError(`Profile extends must be a non-empty string: ${file}`);
+      } else if (!profileNames.has(profile.extends)) {
+        addError(`Profile extends missing profile '${profile.extends}': ${file}`);
+      } else {
+        extendsMap.set(name, profile.extends);
+      }
+    }
+    for (const skill of validateStringArray(profile.skills, file, "skills")) {
+      if (!skillSet.has(skill)) {
+        addError(`Profile references missing skill '${skill}': ${file}`);
+      }
+    }
+    for (const agent of validateStringArray(profile.agents, file, "agents")) {
+      if (!agentSet.has(agent)) {
+        addError(`Profile references missing agent '${agent}': ${file}`);
+      }
+    }
+  }
+
+  for (const profile of profileNames) {
+    const seen = new Set<string>();
+    let current: string | undefined = profile;
+    while (current) {
+      if (seen.has(current)) {
+        addError(`Profile inheritance cycle: ${[...seen, current].join(" -> ")}`);
+        break;
+      }
+      seen.add(current);
+      current = extendsMap.get(current);
     }
   }
 }
@@ -710,6 +916,8 @@ function main(): void {
   const instructionNames = getInstructionNames(root);
   validateTypeScriptOnlySourceFiles(root);
   validatePackageScripts(root);
+  validateDevKitContract(root);
+  validateProfiles(root, skillNames, agentNames);
   validateOpenCodeConfigFiles(root);
   validateReadme(root, skillNames, agentNames, instructionNames);
   validateAgentsMd(root);
@@ -721,6 +929,10 @@ function main(): void {
 
   for (const warning of warnings) {
     console.log(`WARN: ${warning}`);
+  }
+
+  if (options.failOnWarnings && warnings.length > 0) {
+    addError(`Warnings are not allowed in strict validation mode: ${warnings.length} warning(s).`);
   }
 
   if (errors.length > 0) {

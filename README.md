@@ -1,13 +1,31 @@
-# agents-and-skills
+# opencode-dev-kit
 
-Reusable OpenCode skills, reviewer agents, and instruction templates for agentic software development.
+Installable OpenCode development kit for one reusable AI-assisted engineering process across projects.
+
+## What This Is
+
+`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer agents, project templates, and deterministic helper tools. Its purpose is to make development in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
+
+The kit optimizes one process: gather evidence, prove the current state, choose the smallest useful slice, work test-first when behavior changes, validate, run proportional reviewer gates, and hand off with residual risks.
+
+## Universal Development Loop
+
+The central contract is `instructions/universal-development-loop.md`:
+
+```text
+Intake -> Evidence -> Baseline Proof -> Small Slice -> Test First -> Implement -> Focused Validation -> Review Gate -> Final Validation -> Handoff -> Process Improvement
+```
+
+Technology adapters may change commands and constraints, but not the loop. A TypeScript project, Rust project, legacy service, documentation repo, or desktop app should all use the same process with different validation commands.
 
 ## Contents
 
 - `.opencode/skills/`: reusable OpenCode skills.
 - `.opencode/agents/`: reusable read-only reviewer agents.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
-- `tools/`: TypeScript validation, test, install, code-quality inventory, and OpenCode session-retro inventory/analysis tooling for this library.
+- `templates/`: project bootstrap and CI templates for applying the Universal Development Loop to another repository.
+- `profiles/`: install manifests that choose artifacts without creating separate workflows.
+- `tools/`: TypeScript validation, install, project bootstrap, doctor, inventory, code-quality, and OpenCode session-retro tooling for this kit.
 
 ## Prerequisites
 
@@ -18,18 +36,19 @@ Reusable OpenCode skills, reviewer agents, and instruction templates for agentic
 
 ### Global Install
 
-Install all skills, agents, and a reusable global `AGENTS.md` block into OpenCode's global config directory:
+Install all repository skills, all reviewer agents, and a reusable global `AGENTS.md` block into OpenCode's global config directory:
 
 ```sh
 npm run install:global
 ```
 
-By default this installs into `~/.config/opencode`, syncs skills to `skills/`, syncs agents to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Full sync prunes destination skill directories and agent `.md` files that are not present in this repository. Existing changed or pruned files/directories are backed up under `.backups/agents-and-skills/` before replacement/removal, outside OpenCode's loader folders.
+By default this installs into `~/.config/opencode`, syncs every repository skill to `skills/`, syncs every repository agent to `agents/`, and adds `instructions/global-opencode-agent-instructions.md` as an idempotent marked block in `~/.config/opencode/AGENTS.md` without deleting existing user instructions. Full sync prunes destination skill directories and agent `.md` files that are not present in the selected install set. Existing changed or pruned files/directories are backed up under `.backups/agents-and-skills/` before replacement/removal, outside OpenCode's loader folders.
 
 Useful options:
 
 - `--dry-run` or `--what-if`: preview changes without writing files.
 - `--config-dir <path>`: install into a custom OpenCode config directory.
+- `--profile <standard|strict|advanced>`: optionally restrict the installed artifact set without changing the Universal Development Loop.
 - `--agents-md-source <path>`: install a custom source file into the global `AGENTS.md` block.
 - `--skip-agents-md`: install only skills and agents.
 - `--no-prune`: keep destination skills/agents not present in this repository.
@@ -37,9 +56,54 @@ Useful options:
 
 Use `--agents-md-source AGENTS.md` only if you intentionally want this repository's local maintenance rules in the global `AGENTS.md` block.
 
+Omit `--profile` when you want the full dev kit globally. Use a profile only when you intentionally want a smaller install set.
+
 Restart OpenCode after installing; config-time files are loaded at startup.
 
 Keep project-specific skills out of global discovery unless their descriptions explicitly scope them to that project. Global skills are visible in unrelated repositories through the skill catalog, so broad or local-product triggers add avoidable routing noise.
+
+## Bootstrap A Project
+
+Preview the files that would connect a target project to the Universal Development Loop:
+
+```sh
+npm run init:project -- --target <project-path>
+```
+
+Write the bootstrap files when the preview is correct:
+
+```sh
+npm run init:project -- --target <project-path> --mode write
+```
+
+The bootstrap writes a project `AGENTS.md`, optional `opencode.json`, and `opencode-dev-kit/adapter.json` plus `opencode-dev-kit/validation.md`. The adapter records technology-specific commands; it does not define a separate workflow.
+
+Check readiness after bootstrapping:
+
+```sh
+npm run doctor -- --project <project-path>
+```
+
+Before broad AI work in a target repository, gather a compact deterministic map:
+
+```sh
+npm run project:inventory -- --root <project-path> --format markdown
+```
+
+## Token Economy
+
+- Use the Universal Development Loop instead of choosing among many competing workflows.
+- Use `project:inventory`, `code-quality:inventory`, `glob`, and `grep` before broad file reads.
+- Keep heavyweight skills in optional profiles and load them only when they reduce total work.
+- Run focused validation first; run broad validation when the change crosses boundaries.
+- Use one relevant reviewer gate by risk instead of launching every reviewer.
+- Convert repeated manual counting, drift checks, or report assembly into deterministic helpers.
+
+Inspect this kit's instruction context cost with:
+
+```sh
+npm run instruction:inventory -- --format markdown
+```
 
 ### Manual Skills
 
@@ -90,6 +154,12 @@ For code maintainability reviews in this library, gather deterministic file-size
 npm run code-quality:inventory -- --format markdown
 ```
 
+For instruction-artifact context-cost reviews in this kit, gather deterministic Markdown metrics with:
+
+```sh
+npm run instruction:inventory -- --format markdown
+```
+
 For installer changes, also prove the no-write path before using a real config directory:
 
 ```sh
@@ -132,10 +202,10 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
-- Existing OpenSpec continuation or "what next" work -> `next-step`; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
-- Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved, then use `next-step` to choose the next workstream.
+- Existing OpenSpec continuation or "what next" work -> `next-step` from the `advanced` profile; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
+- Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
-- Broad independent tracks -> `orchestrator` only after bounded workstreams, success criteria, and validation evidence are clear; user approval is required only for ambiguous scope, remote/destructive actions, dirty-state preservation, or other user-owned decisions.
+- Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
 - Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `session-archive-retro`; all-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `opencode-total-session-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
 - Code maintainability/readability after non-trivial implementation, refactoring, large-file navigation, duplication, DRY/SOLID/YAGNI, or design-pattern trade-off work -> `code-quality-audit`; use `code-quality-reviewer` as the read-only gate.
@@ -231,6 +301,7 @@ Use OpenSpec as a durable follow-up tracker when a session produces a real backl
 ## Instruction Templates
 
 - `global-opencode-agent-instructions.md`: generic global `~/.config/opencode/AGENTS.md` baseline.
+- `universal-development-loop.md`: one canonical AI-assisted engineering loop for every target project.
 - `reusable-project-agent-instructions.md`: project-level `AGENTS.md` baseline.
 - `leaf-reviewer-agent-contract.md`: reusable read-only reviewer subagent contract.
 - `evidence-and-validation.md`: evidence hierarchy and validation discipline.

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "project-adapter",
+  "validation": {
+    "focusedTest": "unknown",
+    "test": "unknown",
+    "typecheck": "unknown",
+    "lint": "unknown",
+    "build": "unknown"
+  },
+  "quality": {
+    "focusedValidationFirst": true,
+    "broadValidationBeforeHandoff": true,
+    "testFirstDefault": true
+  }
+}

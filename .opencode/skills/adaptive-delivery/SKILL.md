@@ -1,18 +1,18 @@
 ---
 name: adaptive-delivery
-description: "Adaptively triage broad, unclear, high-risk, or process-sensitive user work into the smallest useful process: direct execution, planning, OpenSpec, architecture, orchestrator fan-out, and reviewer gates."
+description: "Apply the Universal Development Loop proportionally to broad, unclear, high-risk, or process-sensitive work without adding unnecessary ceremony."
 license: MIT
 ---
 
 # Adaptive Delivery
 
-Use this skill when the user gives a broad, unclear, cross-cutting, high-risk, or process-sensitive task and expects the agent to organize the work, not just execute one obvious edit. It is the delivery lead layer above planning, OpenSpec, architecture, orchestration, implementation, validation, and review skills.
+Use this skill when the user gives a broad, unclear, cross-cutting, high-risk, or process-sensitive task and expects the agent to organize the work, not just execute one obvious edit. It is the delivery lead layer for applying the Universal Development Loop across planning, evidence, implementation, validation, and review.
 
 Do not use it for obvious tiny edits, single-file mechanical changes, simple questions, or tasks where the normal assistant can safely inspect, edit, validate, and report without extra ceremony. If loaded and the task is tiny, explicitly exit this skill and continue directly.
 
 ## Purpose
 
-Choose the minimum effective workflow for the current task.
+Apply the minimum effective slice of the Universal Development Loop for the current task.
 
 - Keep small tasks fast.
 - Turn ambiguous work into evidence, assumptions, and only necessary user questions.
@@ -31,20 +31,22 @@ Classify before choosing a process. A quick classification is enough for low-ris
 - `Spec Need`: none | update existing | create OpenSpec change | blocked by missing spec system.
 - `Architecture Need`: none | local design | service/system design gate.
 - `Parallelism`: none | read-only discovery | independent implementation tracks | isolated worktrees.
-- `Ceremony Budget`: direct | planned | spec-first | orchestrated.
+- `Ceremony Budget`: direct | planned | spec-tracked | orchestrated.
 
 ## Ceremony Gate
 
-Use the lightest lane that can produce trustworthy evidence.
+Use the lightest lane that can produce trustworthy evidence. These lanes are proportional applications of the same Universal Development Loop, not separate workflows.
 
 - `Direct Lane`: use for tiny and small clear tasks. Inspect enough context, add/update the focused test first for behavior changes, make the smallest correct change, run focused validation, and use `code-quality-audit` or `code-quality-reviewer` when the code edit is non-trivial enough to affect maintainability.
 - `Planned Lane`: use when implementation needs decomposition, risk review, or test strategy but not a formal spec. Load `deep-task-planning` when appropriate.
 - `Explore Lane`: use when the problem, desired behavior, compatibility, or acceptance criteria are unclear. Load `openspec-explore` for spec-shaped product questions; otherwise perform local evidence discovery and ask only blocking questions.
-- `Spec Lane`: use when the change alters observable behavior, API, protocol, data model, compatibility contract, deployment behavior, or another normative requirement. Load `openspec-propose` to create or update the change package before implementation unless the user explicitly requests code-first work.
+- `Spec-Tracked Lane`: use when the change alters observable behavior, API, protocol, data model, compatibility contract, deployment behavior, or another normative requirement and the repository uses or approves OpenSpec tracking. Load `openspec-propose` to create or update the change package before implementation unless the user explicitly requests code-first work.
 - `Architecture Lane`: use when boundaries, ownership, concurrency, failure model, deployment, observability, migration, or operational safety need decisions before coding. Load the relevant architecture/domain skill such as `service-architecture-design`.
 - `Orchestrated Lane`: use only when at least two independent workstreams have bounded read/write scope, success criteria, and validation evidence. Load `orchestrator` and keep its worker, isolation, integration, validation, and cleanup rules authoritative.
 
-Do not create a formal plan, OpenSpec change, architecture document, or worker team just because this skill is loaded. Each ceremony must have a concrete trigger and expected evidence value.
+If a referenced OpenSpec, architecture, domain, or orchestrator skill is not installed in the selected kit profile, do not block solely on the missing skill. Use the Universal Development Loop fallback contract, report the missing specialty skill as a residual risk or continuation item, and lower confidence where appropriate.
+
+Do not create a formal plan, OpenSpec change, architecture document, or worker team just because this skill is loaded. Each ceremony must have a concrete trigger and expected evidence value inside the same loop.
 
 ## Question Policy
 
