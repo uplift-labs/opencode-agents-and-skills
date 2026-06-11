@@ -30,6 +30,12 @@ Apply the same process for every task, scaled to the size and risk of the change
 - Ask the user only for real blockers: credentials, missing external systems, destructive or remote actions, owner/product/security/legal decisions, or MR/PR outcomes.
 - Preserve user and teammate changes. Never revert files you did not change unless explicitly requested.
 
+## Process Control
+
+- Keep clear small tasks direct and cheap.
+- Use `openspec-autopilot` when a ready OpenSpec task ledger/queue exists, the user explicitly invokes Autopilot, strict task-type phases must be enforced, or safe independent OpenSpec work can be advanced in parallel until blocker/MR/limit.
+- Use prompt-only orchestration only when Autopilot is unavailable or not the right control plane.
+
 ## Quality
 
 - Treat source, tests, schemas, scripts, generated artifacts, and live output as primary evidence.

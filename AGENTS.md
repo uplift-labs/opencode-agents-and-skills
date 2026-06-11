@@ -33,6 +33,7 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Ask the user only for real blockers: scope or risk decisions, credentials/provider access, missing owner/product/security/legal decisions, destructive operations, remote-state actions, and MR/PR review outcomes.
 - Continue autonomously when local evidence, repository policy, or a safe reversible default is enough; do not ask routine preference or progress questions.
 - Subagents and read-only reviewer gates never ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
+- Use `openspec-autopilot` as the process control plane when explicit Autopilot, ready OpenSpec task ledgers/queues, strict task-type phase enforcement, or safe parallel OpenSpec workstreams are in scope; keep small clear tasks direct.
 
 ## Completion Handoff
 

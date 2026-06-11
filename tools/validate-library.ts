@@ -547,6 +547,8 @@ function validateDevKitContract(root: string): void {
   requireFile(root, "tools/doctor.ts", "doctor tool");
   requireFile(root, "tools/project-inventory.ts", "project inventory tool");
   requireFile(root, "tools/instruction-artifacts-inventory.ts", "instruction inventory tool");
+  requireFile(root, "tools/pre-push-validate.ts", "pre-push validation tool");
+  requireFile(root, ".githooks/pre-push", "tracked pre-push hook");
 
   const universalLoop = path.join(root, "instructions", "universal-development-loop.md");
   if (fileExists(universalLoop)) {
@@ -592,7 +594,7 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }

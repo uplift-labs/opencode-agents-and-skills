@@ -60,6 +60,7 @@
 
 - Run independent read/search/tool calls in parallel whenever there is no data dependency.
 - Use subagents only when the work is broad enough to benefit from separate context, parallel coverage, or independent review; keep simple searches, single-file reads, and tightly coupled reasoning in the main session.
+- Prefer `openspec-autopilot` over ad-hoc orchestration when an explicit Autopilot request, ready OpenSpec task ledger/queue, strict task-type phase contract, or safe parallel OpenSpec workstream exists; let `autopilot_run_next` drive until blocker, MR wait, or limit.
 - Auto-enter master-orchestrator posture only for broad work with multiple independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead; stay serial for small, unclear, or tightly coupled work.
 - When entering master-orchestrator posture, the main session owns decomposition, dispatch, report reconciliation, integration, tests, reviewer gates, cleanup, user decisions, and final synthesis; it should not do substantial worker-assigned implementation directly.
 - Before finishing an orchestrated run, close or explicitly skip with reasons: worker report reconciliation, integration, focused/final validation, review gate, cleanup, residual risks, and next actions.

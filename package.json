@@ -11,7 +11,9 @@
     "code-quality:inventory": "node tools/code-quality-inventory.ts",
     "retro:inventory": "node tools/opencode-session-retro-inventory.ts",
     "retro:analyze": "node tools/opencode-session-retro-analyze.ts",
-    "test": "node tools/test-library.ts && node tools/test-code-quality-inventory.ts",
+    "test": "node tools/test-library.ts && node tools/test-code-quality-inventory.ts && node tools/test-autopilot-ledger.ts && node tools/test-pre-push-validate.ts",
+    "autopilot:validate": "node tools/autopilot-ledger.ts",
+    "prepush:validate": "node tools/pre-push-validate.ts",
     "validate": "node tools/validate-library.ts",
     "validate:strict": "node tools/validate-library.ts --fail-on-warnings"
   },

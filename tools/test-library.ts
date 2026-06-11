@@ -173,9 +173,10 @@ function newLibraryFixture(name: string): string {
     "}",
     "",
   ]));
-  for (const tool of ["init-project.ts", "doctor.ts", "project-inventory.ts", "instruction-artifacts-inventory.ts"]) {
+  for (const tool of ["init-project.ts", "doctor.ts", "project-inventory.ts", "instruction-artifacts-inventory.ts", "pre-push-validate.ts"]) {
     writeText(path.join(dir, "tools", tool), lines(["#!/usr/bin/env node", "", ""]));
   }
+  writeText(path.join(dir, ".githooks", "pre-push"), lines(["#!/bin/sh", "node tools/pre-push-validate.ts", ""]));
   writeText(path.join(dir, "package.json"), lines([
     "{",
     "  \"name\": \"opencode-dev-kit-fixture\",",
@@ -188,6 +189,7 @@ function newLibraryFixture(name: string): string {
     "    \"project:inventory\": \"node tools/project-inventory.ts\",",
     "    \"instruction:inventory\": \"node tools/instruction-artifacts-inventory.ts\",",
     "    \"code-quality:inventory\": \"node tools/code-quality-inventory.ts\",",
+    "    \"prepush:validate\": \"node tools/pre-push-validate.ts\",",
     "    \"validate\": \"node tools/validate-library.ts\",",
     "    \"validate:strict\": \"node tools/validate-library.ts --fail-on-warnings\",",
     "    \"test\": \"node tools/test-library.ts\"",

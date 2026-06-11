@@ -4,7 +4,7 @@ Installable OpenCode development kit for one reusable AI-assisted engineering pr
 
 ## What This Is
 
-`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer agents, project templates, and deterministic helper tools. Its purpose is to make development in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
+`opencode-dev-kit` packages reusable OpenCode skills, prototype plugins, read-only reviewer agents, project templates, and deterministic helper tools. Its purpose is to make development in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
 
 The kit optimizes one process: gather evidence, prove the current state, choose the smallest useful slice, work test-first when behavior changes, validate, run proportional reviewer gates, and hand off with residual risks.
 
@@ -21,7 +21,9 @@ Technology adapters may change commands and constraints, but not the loop. A Typ
 ## Contents
 
 - `.opencode/skills/`: reusable OpenCode skills.
+- `.opencode/plugins/`: prototype OpenCode server plugins and model-facing tool surfaces.
 - `.opencode/agents/`: reusable read-only reviewer agents.
+- `fixtures/`: deterministic validation and acceptance fixtures for helper tooling.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
 - `templates/`: project bootstrap and CI templates for applying the Universal Development Loop to another repository.
 - `profiles/`: install manifests that choose artifacts without creating separate workflows.
@@ -133,6 +135,28 @@ OpenCode agents are loaded from project or global agent folders. Copy the select
 
 Copy only the reviewers that are useful for the target project. They are read-only leaf validators by default.
 
+### Manual Plugins
+
+OpenCode project plugins are loaded from `.opencode/plugins/`. The prototype `openspec-autopilot.ts` plugin exposes the model-facing `autopilot_*` tools and depends on this repository's TypeScript ledger validator during MVP development.
+
+For reusable installation, copy or package the full MVP bundle, then restart OpenCode so config-time plugin files are reloaded.
+
+Autopilot MVP bundle:
+
+- `.opencode/skills/openspec-autopilot/SKILL.md`
+- `.opencode/plugins/openspec-autopilot.ts`
+- `.opencode/package.json`
+- `tools/autopilot-ledger.ts` or a bundled equivalent at the plugin's import path
+- `opencode.json` `command.autopilot` entry when `/autopilot` should be available
+
+Rollback is the reverse operation: remove the `command.autopilot` config entry, remove the plugin file and Autopilot skill, remove the plugin package dependency if unused, then restart OpenCode.
+
+### Manual Commands
+
+OpenCode prompt commands are configured through `opencode.json` under `command`. To expose `/autopilot` outside this repository, merge the `command.autopilot` entry from this repository's `opencode.json` into the target project or global config.
+
+The command uses schema-backed `template` syntax and enters a normal LLM turn that instructs the model to load `openspec-autopilot` and call `autopilot_run_next`. Restart OpenCode after changing command, skill, or plugin files.
+
 ### Manual Instructions
 
 Copy selected files from `instructions/` into a global or project `AGENTS.md` or another instruction file. Keep only rules that are durable for that scope.
@@ -160,6 +184,12 @@ For instruction-artifact context-cost reviews in this kit, gather deterministic 
 npm run instruction:inventory -- --format markdown
 ```
 
+Validate OpenSpec Autopilot task ledgers with:
+
+```sh
+npm run autopilot:validate -- <task-ledger.json>
+```
+
 For installer changes, also prove the no-write path before using a real config directory:
 
 ```sh
@@ -170,6 +200,20 @@ For ports from a project-local prompt set, pass anchors that must not remain in 
 
 ```sh
 npm run validate -- --forbidden-anchor "OldProductName" "D:/old/project/path"
+```
+
+Before pushing changes from this repository, run the pre-push gate:
+
+```sh
+npm run prepush:validate
+```
+
+The pre-push gate runs `npm run validate`, `npm test`, and, when `openspec/` exists, `openspec validate --all`.
+
+To enable the tracked local git hook for this clone, run:
+
+```sh
+git config core.hooksPath .githooks
 ```
 
 For broad instruction-artifact audits, use `instructions/instruction-artifact-audit-runbook.md` to prove repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes. Capture before/after metrics such as global rules line count, top heavy skill line counts, installed-copy drift, validator test count, and reviewer findings.
@@ -202,6 +246,7 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
+- Agent-oriented OpenSpec Autopilot continuation, explicit `/autopilot`, `autopilot`, ready Autopilot task ledgers/queues, strict task-type phase enforcement, safe parallel OpenSpec work, or `работай` inside an active Autopilot context -> `openspec-autopilot`; the agent should call `autopilot_run_next` first and treat the plugin as the authoritative process/state machine.
 - Existing OpenSpec continuation or "what next" work -> `next-step` from the `advanced` profile; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
 - Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
@@ -227,6 +272,8 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 Use OpenSpec as a durable follow-up tracker when a session produces a real backlog, not for every incidental note.
 
+This repository's OpenSpec guide starts at `openspec/project.md`; active changes live under `openspec/changes/<change-id>/`.
+
 - Good triggers: codebase audits, session retros, instruction-artifact audits, reviewer gates, broad discovery, and validation failure triage that produce several concrete tasks outside the current approved scope.
 - Bad triggers: isolated nits, speculative polish, local style preferences, duplicated final-answer bullets, or one obvious next step.
 - Prefer one OpenSpec change per coherent outcome, capability, risk area, or artifact family. For lightweight backlog changes, `tasks.md` can be the primary surface; add proposal/spec/design detail only when requirements, behavior, compatibility, architecture, or acceptance criteria need it.
@@ -239,11 +286,11 @@ Use OpenSpec as a durable follow-up tracker when a session produces a real backl
 
 - `adaptive-delivery`: adaptive entrypoint for broad, unclear, high-risk, or process-sensitive work; chooses the smallest useful lane across direct execution, planning, OpenSpec, architecture, orchestration, and reviewer gates.
 - `deep-task-planning`: execution-grade plans for complex work.
-- `next-step`: discover OpenSpec-backed workstreams, request approval for orchestrator fan-out, require `deep-task-planning` for approved planning workers, or choose one concrete serial next step.
+- `next-step`: discover OpenSpec-backed workstreams, route ready ledgers/queues to `openspec-autopilot`, request approval for non-Autopilot fan-out, or choose one concrete serial next step.
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
 - `merge-request-review-loop`: autonomous MR/PR review follow-up for status checks, reviewer feedback, local fixes, revalidation, outcome handoff, and remote-action gates.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
-- `orchestrator`: prompt-only master coordination for broad independent work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead; it is not a durable runtime orchestration service.
+- `orchestrator`: prompt-only master coordination for broad independent non-Autopilot work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead; it is not a durable runtime orchestration service.
 - `opencode-total-session-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize session-level insights into trends, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
 - `session-archive-retro`: analyze bounded/current-project session history, transcripts, and logs for recurring workflow improvements.
 
@@ -262,6 +309,7 @@ Use OpenSpec as a durable follow-up tracker when a session produces a real backl
 
 ### OpenSpec
 
+- `openspec-autopilot`: agent-oriented OpenSpec Autopilot control plane for ready task ledgers/queues, strict task-type phases, and parallel OpenSpec work; call `autopilot_run_next` to continue until blocker, MR wait, or limit.
 - `openspec-explore`: explore requirements/options before a change.
 - `openspec-propose`: draft proposal/design/spec/tasks, including lightweight follow-up backlog changes from audit/retro/reviewer evidence.
 - `openspec-apply-change`: implement accepted OpenSpec changes with TDD-first task execution.

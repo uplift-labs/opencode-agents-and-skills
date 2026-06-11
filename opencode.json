@@ -1,4 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "command": {
+    "autopilot": {
+      "description": "Run OpenSpec Autopilot through the openspec-autopilot skill and plugin tools.",
+      "template": "Use the `openspec-autopilot` skill. Then call `autopilot_run_next` with no arguments unless the user supplied an explicit OpenSpec change or task scope. Interpret the JSON output, ask only returned blocker questions, follow `nextRecommendedCall` when safe, and do not manually edit automation ledgers or simulate plugin-owned state transitions."
+    }
+  },
   "lsp": true
 }

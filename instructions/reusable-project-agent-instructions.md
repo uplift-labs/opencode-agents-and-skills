@@ -35,6 +35,12 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 - Do not ask routine questions when evidence can be gathered locally or a safe reversible default exists.
 - Avoid scope creep. New tasks must directly advance the current goal or be recorded as future work.
 
+## Process Control
+
+- Use a direct single-agent path for clear small edits and questions.
+- Use `openspec-autopilot` when a ready OpenSpec task ledger/queue exists, the user explicitly invokes Autopilot, strict task-type phases must be enforced, or safe independent OpenSpec work can be advanced in parallel until blocker/MR/limit.
+- Use prompt-only orchestration only when Autopilot is unavailable or not the right control plane.
+
 ## Review And Evidence
 
 - Findings require evidence, impact, recommendation, and confidence.

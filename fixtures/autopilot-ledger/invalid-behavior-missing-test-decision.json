@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "feature-missing-test-decision",
+  "taskType": "feature",
+  "status": "Implementation",
+  "priority": "high",
+  "dependencies": [],
+  "scope": { "read": ["src/**"], "write": ["src/**"], "forbidden": ["openspec/changes/*/automation/**", ".autopilot/**"] },
+  "autonomy": { "allowCommit": true, "allowPush": true, "allowCreateMr": true, "allowMerge": false },
+  "validation": { "commands": [] },
+  "phaseProfile": {
+    "analyze": { "required": true, "depth": "deep" },
+    "implementation": { "required": true, "mode": "test-first" },
+    "review": { "required": true, "mode": "code-and-test" },
+    "acceptance": { "required": true, "mr": "required" }
+  },
+  "phaseEvidence": {},
+  "plan": { "summary": "Plan exists.", "slices": ["test", "implement"], "scope": "src/**", "testStrategy": "Focused failing test first." },
+  "reviewPolicy": { "required": [], "skipped": [] },
+  "mr": { "required": true, "status": "none" },
+  "blockers": [],
+  "feedback": [],
+  "history": [
+    {
+      "from": "Ready",
+      "to": "Analyze",
+      "at": "2026-06-10T00:00:00.000Z",
+      "by": "plugin",
+      "source": "autopilot_run_next",
+      "evidence": { "reason": "Task selected." }
+    },
+    {
+      "from": "Analyze",
+      "to": "Implementation",
+      "at": "2026-06-10T00:01:00.000Z",
+      "by": "plugin",
+      "source": "autopilot_run_next",
+      "evidence": { "planSummary": "Plan exists.", "slices": ["test", "implement"], "scope": "src/**", "testStrategy": "Focused failing test first." }
+    }
+  ],
+  "revision": { "number": 2, "contentHash": "placeholder", "updatedBy": "plugin", "updatedAt": "2026-06-10T00:01:00.000Z" }
+}

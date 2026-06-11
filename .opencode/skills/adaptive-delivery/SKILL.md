@@ -42,6 +42,7 @@ Use the lightest lane that can produce trustworthy evidence. These lanes are pro
 - `Explore Lane`: use when the problem, desired behavior, compatibility, or acceptance criteria are unclear. Load `openspec-explore` for spec-shaped product questions; otherwise perform local evidence discovery and ask only blocking questions.
 - `Spec-Tracked Lane`: use when the change alters observable behavior, API, protocol, data model, compatibility contract, deployment behavior, or another normative requirement and the repository uses or approves OpenSpec tracking. Load `openspec-propose` to create or update the change package before implementation unless the user explicitly requests code-first work.
 - `Architecture Lane`: use when boundaries, ownership, concurrency, failure model, deployment, observability, migration, or operational safety need decisions before coding. Load the relevant architecture/domain skill such as `service-architecture-design`.
+- `Autopilot Lane`: use when the repository has ready OpenSpec task ledgers, the user explicitly invokes Autopilot, task-type phase discipline must be enforced, or safe independent OpenSpec work can be advanced faster through a plugin-owned process/state machine. Load `openspec-autopilot` and let `autopilot_run_next` drive until blocker, MR wait, or limit.
 - `Orchestrated Lane`: use only when at least two independent workstreams have bounded read/write scope, success criteria, and validation evidence. Load `orchestrator` and keep its worker, isolation, integration, validation, and cleanup rules authoritative.
 
 If a referenced OpenSpec, architecture, domain, or orchestrator skill is not installed in the selected kit profile, do not block solely on the missing skill. Use the Universal Development Loop fallback contract, report the missing specialty skill as a residual risk or continuation item, and lower confidence where appropriate.
@@ -130,6 +131,7 @@ Use existing OpenSpec skills rather than duplicating their contracts.
 - Use `openspec-propose` when the task needs proposal, design, spec deltas, tasks, acceptance criteria, or traceability before implementation.
 - Use `openspec-propose` to convert several session-scoped follow-up tasks from audits, retros, reviewer gates, or validation failures into lightweight OpenSpec changes when they pass the follow-up threshold.
 - Use `openspec-consistency-review` before implementation, archive, release, or merge when specs/tasks/docs/tests may have drifted.
+- Use `openspec-autopilot` when ready OpenSpec task ledgers exist, the user explicitly invokes Autopilot, strict typed phases matter, or independent OpenSpec tasks should be advanced in parallel through plugin-owned state.
 - Use `openspec-apply-change` for accepted OpenSpec changes and keep its TDD, task update, validation, and reviewer gate rules.
 - Use `next-step` when the user asks what to do next in an existing OpenSpec-backed workflow.
 
@@ -137,7 +139,7 @@ Do not force OpenSpec for local refactors, internal cleanup, obvious bug fixes w
 
 ## Orchestrator Handoff
 
-When the dependency graph exposes independent packages, hand execution to `orchestrator`.
+When the dependency graph exposes independent packages, prefer `openspec-autopilot` for OpenSpec-backed ledgers/queues and use `orchestrator` for prompt-only coordination outside the Autopilot control plane.
 
 - Freeze objective, constraints, non-goals, success criteria, and final validation target first.
 - Hand off only bounded workstreams that are user-approved when approval is required, or eligible under the `orchestrator` auto gate when approval is not required.

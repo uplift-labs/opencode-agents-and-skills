@@ -12,6 +12,8 @@ This is prompt-only orchestration. It can coordinate native `task` workers, but 
 
 Do not use this skill for small tasks, vague goals, serial dependency chains, single-file work, or routine exploration a single assistant can finish.
 
+If OpenSpec Autopilot is available and the work is a ready OpenSpec task queue, strict typed workflow, or plugin-owned worker/state run, use `openspec-autopilot` instead. Autopilot is the process control plane; this skill is only a prompt-only fallback or non-Autopilot fan-out helper.
+
 ## Entry Gate
 
 Enter master-orchestrator posture only when all are true:

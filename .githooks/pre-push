@@ -1,0 +1,2 @@
+#!/bin/sh
+node tools/pre-push-validate.ts
