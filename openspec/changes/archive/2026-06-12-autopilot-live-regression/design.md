@@ -2,12 +2,12 @@
 
 ## Test Strategy
 
-Run the regression from a fresh OpenCode session after restart so config-time artifacts are reloaded. Use a two-turn launch so slash-command routing is actually tested:
+Prefer running the regression from a fresh OpenCode session after restart so config-time artifacts are reloaded. Use a two-turn launch when available so slash-command routing is actually tested:
 
 1. First user turn: submit exactly `/autopilot` and capture the first substantive model/tool behavior.
 2. Second user turn: paste the continuation prompt from `live-regression-prompt.md` and continue the full regression.
 
-Treat the session as a real user would:
+If a current explicit `/autopilot` command session is used instead, record that limitation in the report and do not claim fresh-restart proof. Treat the session as a real user would:
 
 1. Use `autopilot_status`, `autopilot_collect`, `autopilot_answer_blocker`, and `autopilot_stop` when scenarios require them.
 2. Exercise the task ledger validator and the plugin's ledger discovery against this prepared change.

@@ -1,18 +1,19 @@
-# Autopilot Regression Spec
+# Autopilot Regression Workflow Spec
 
 ## ADDED Requirements
 
-### Requirement: Fresh Session Autopilot Smoke
+### Requirement: Explicit Autopilot Smoke Evidence
 
-A fresh OpenCode session SHALL start with a first user turn containing exactly `/autopilot` and SHALL either call `autopilot_run_next` or report a concrete blocker explaining why the tool is unavailable.
+An Autopilot live regression SHALL capture explicit `/autopilot` command evidence and SHALL either call `autopilot_run_next` or report a concrete blocker explaining why the skill, command, plugin, or tool is unavailable.
 
 #### Scenario: Autopilot command starts the control plane
 
-- **GIVEN** OpenCode has been restarted in this repository with project plugins enabled
+- **GIVEN** a regression scope requires command/plugin smoke evidence
 - **WHEN** the user submits `/autopilot`
 - **THEN** the model loads/uses `openspec-autopilot`
 - **AND** the model calls `autopilot_run_next` unless plugin/tool availability is blocked
-- **AND** the session records the exact output or blocker evidence
+- **AND** the regression report records the exact output or blocker evidence
+- **AND** if a fresh restarted session was required but unavailable, the report records that limitation instead of silently treating it as proven
 
 ### Requirement: Tiered Scenario Completion
 
@@ -23,7 +24,7 @@ The regression SHALL classify scenarios as P0, P1, or P2 and SHALL complete, blo
 - **GIVEN** a scenario requires creating or mutating `.autopilot/**` or `openspec/changes/*/automation/**`
 - **WHEN** the plugin does not provide a supported owner path for that setup
 - **THEN** the scenario is recorded as blocked
-- **AND** a follow-up OpenSpec change is created or updated instead of bypassing protected-path policy
+- **AND** the report links an existing follow-up or records an accepted out-of-scope residual risk instead of bypassing protected-path policy
 
 ### Requirement: Task-Type Regression Coverage
 
@@ -57,10 +58,10 @@ The regression SHALL NOT merge, push protected branches, force-push non-owned br
 
 ### Requirement: Durable Regression Report
 
-The regression SHALL write a durable report to `openspec/changes/autopilot-live-regression/live-regression-report.md`.
+The regression SHALL write a durable report in the tracked OpenSpec change directory.
 
 #### Scenario: Regression evidence is stored in the change
 
 - **GIVEN** a live regression session has executed or blocked scenarios
 - **WHEN** the session reaches final handoff
-- **THEN** `live-regression-report.md` contains the scenario matrix, evidence, findings, follow-up changes, validation results, reviewer gates, residual risks, and ready-to-land status
+- **THEN** the report contains the scenario matrix, evidence, findings, follow-up changes, validation results, reviewer gates, residual risks, and ready-to-land status

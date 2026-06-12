@@ -2,7 +2,7 @@
 
 ## Why
 
-The OpenSpec Autopilot MVP now has a skill, `/autopilot` prompt command, server plugin tool skeleton, task ledger validator, fixtures, and routing guidance. It still needs a fresh-session live regression to prove whether the workflow is usable for agents and whether the model-facing control plane behaves well across task types, blockers, MR waits, and parallelizable work.
+The OpenSpec Autopilot MVP now has a skill, `/autopilot` prompt command, server plugin tool skeleton, task ledger validator, fixtures, and routing guidance. It still needs live regression evidence to prove whether the workflow is usable for agents and whether the model-facing control plane behaves well across task types, blockers, MR waits, and parallelizable work. A fresh restarted session is preferred for command/plugin reload proof; a current explicit `/autopilot` command smoke is acceptable when the limitation is recorded.
 
 ## What Changes
 
@@ -30,4 +30,4 @@ The OpenSpec Autopilot MVP now has a skill, `/autopilot` prompt command, server 
 - `npm test`
 - `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`
 - `openspec validate --all`
-- Fresh OpenCode session smoke: `/autopilot` loads the skill/command/plugin and attempts `autopilot_run_next`.
+- OpenCode command smoke: `/autopilot` loads the skill/command/plugin and attempts `autopilot_run_next`; record whether this was a fresh restarted session or current explicit command smoke.
