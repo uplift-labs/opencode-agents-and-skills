@@ -3,6 +3,7 @@ export type AutopilotTriggerMode = "off" | "observe" | "controlled" | "autonomou
 export type AutopilotTriggerOptions = {
   triggerMode?: AutopilotTriggerMode;
   fileWatch?: { enabled?: boolean; debounceMs?: number; cooldownMs?: number };
+  postToolCheckpoints?: { enabled?: boolean; debounceMs?: number; cooldownMs?: number };
   workerCollect?: { enabled?: boolean; debounceMs?: number };
   blockerReplies?: { enabled?: boolean };
   permissionReplies?: { enabled?: boolean };
@@ -13,6 +14,13 @@ export type AutopilotTriggerOptions = {
 export type AutopilotBusEvent = {
   type: string;
   properties?: Record<string, unknown>;
+};
+
+export type AutopilotToolExecutionInput = {
+  tool: string;
+  sessionID?: string;
+  callID?: string;
+  args?: unknown;
 };
 
 export type AutopilotTriggerJobKind = "status" | "check" | "collect" | "answer_blocker" | "stop" | "run_next";
@@ -87,6 +95,16 @@ const modeRank: Record<AutopilotTriggerMode, number> = {
   controlled: 2,
   autonomous: 3,
 };
+
+const progressCheckpointReasonCodes = new Set(["advanced", "ledger_materialized"]);
+const noProgressCheckpointReasonCodes = new Set([
+  "ready_runtime_deferred",
+  "no_ledgers",
+  "active_change_handoff",
+  "collect_deferred",
+  "stop_no_active_state",
+  "no_actionable_tasks",
+]);
 
 function resolvedMode(options: AutopilotTriggerOptions): AutopilotTriggerMode {
   return options.triggerMode ?? "observe";
@@ -227,6 +245,115 @@ function collectStrings(value: unknown, output: string[] = []): string[] {
     }
   }
   return output;
+}
+
+function parseRecordJson(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parsedAutopilotToolOutput(output: unknown): Record<string, unknown> | undefined {
+  if (typeof output === "string") {
+    return parseRecordJson(output);
+  }
+  if (!isRecord(output)) {
+    return undefined;
+  }
+  if (Object.prototype.hasOwnProperty.call(output, "output")) {
+    if (typeof output.output === "string") {
+      return parseRecordJson(output.output);
+    }
+    return isRecord(output.output) ? output.output : undefined;
+  }
+  return output;
+}
+
+function firstRecord(value: unknown): Record<string, unknown> | undefined {
+  return Array.isArray(value) && isRecord(value[0]) ? value[0] : undefined;
+}
+
+function recordsFrom(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function changeIdFromPath(value: unknown): string | undefined {
+  const filePath = normalizedPath(value);
+  return filePath == null ? undefined : changePathParts(filePath)?.changeId;
+}
+
+function scopeFromRecord(record: Record<string, unknown>): AutopilotTriggerScope | undefined {
+  const scope = {
+    changeId: optionalString(record.changeId) ?? changeIdFromPath(record.path),
+    taskId: optionalString(record.taskId),
+  };
+  return scope.changeId == null && scope.taskId == null ? undefined : scope;
+}
+
+function stableOutputScopeKey(scope: AutopilotTriggerScope): string {
+  return `changeId=${scope.changeId ?? ""};taskId=${scope.taskId ?? ""}`;
+}
+
+function singleDistinctScope(scopes: AutopilotTriggerScope[]): AutopilotTriggerScope | undefined {
+  const byKey = new Map<string, AutopilotTriggerScope>();
+  for (const scope of scopes) {
+    byKey.set(stableOutputScopeKey(scope), scope);
+  }
+  return byKey.size === 1 ? Array.from(byKey.values())[0] : undefined;
+}
+
+function scopeFromAutopilotOutput(payload: Record<string, unknown>): AutopilotTriggerScope | undefined {
+  const progressScopes = [
+    ...recordsFrom(payload.tasksStarted).map(scopeFromRecord),
+    ...recordsFrom(payload.tasksAdvanced).map(scopeFromRecord),
+  ].filter((scope): scope is AutopilotTriggerScope => scope != null);
+  if (progressScopes.length > 0) {
+    return singleDistinctScope(progressScopes);
+  }
+
+  const summary = firstRecord(payload.taskSummaries);
+  if (summary != null) {
+    return scopeFromRecord(summary);
+  }
+
+  if (isRecord(payload.selection)) {
+    const selectedTaskId = optionalString(payload.selection.selectedTaskId);
+    return selectedTaskId == null ? undefined : { taskId: selectedTaskId };
+  }
+
+  return undefined;
+}
+
+function outputLoopGuardSuppressesRepeat(payload: Record<string, unknown>): boolean {
+  if (!isRecord(payload.loopGuard)) {
+    return false;
+  }
+  return payload.loopGuard.repeatedNoProgress === true || payload.loopGuard.suppressRepeatRecommendation === true;
+}
+
+function autopilotOutputMadeProgress(payload: Record<string, unknown>): boolean {
+  const reasonCode = optionalString(payload.reasonCode);
+  return payload.outcome === "advanced"
+    || (reasonCode != null && progressCheckpointReasonCodes.has(reasonCode));
+}
+
+function autopilotOutputIsNoProgress(payload: Record<string, unknown>): boolean {
+  const reasonCode = optionalString(payload.reasonCode);
+  return outputLoopGuardSuppressesRepeat(payload)
+    || (reasonCode != null && noProgressCheckpointReasonCodes.has(reasonCode));
+}
+
+function safeSourcePart(value: string): string {
+  const sanitized = value.trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+  return sanitized.length > 0 ? sanitized : "unknown";
+}
+
+function safeToolSourceID(input: AutopilotToolExecutionInput): string {
+  const callID = optionalString(input.callID) ?? "unknown";
+  return `${safeSourcePart(input.tool)}:${safeSourcePart(callID)}`;
 }
 
 function markerIsComplete(event: AutopilotBusEvent, text: string): boolean {
@@ -465,6 +592,52 @@ export function classifyAutopilotEvent(event: AutopilotBusEvent, options: Autopi
     default:
       return ignore("unsupported event type");
   }
+}
+
+export function classifyAutopilotToolExecutionAfter(input: AutopilotToolExecutionInput, output: unknown, options: AutopilotTriggerOptions = {}): AutopilotTriggerDecision {
+  if (!modeAtLeast(options, "observe") || options.postToolCheckpoints?.enabled === false) {
+    return ignore("post-tool checkpoints disabled");
+  }
+  if (input.tool !== "autopilot_run_next" && input.tool !== "autopilot_collect") {
+    return ignore("unsupported tool for post-tool checkpoint");
+  }
+
+  const payload = parsedAutopilotToolOutput(output);
+  if (payload == null) {
+    return ignore("unsupported Autopilot tool output");
+  }
+
+  const common = {
+    scope: scopeFromAutopilotOutput(payload),
+    sourceEvent: "tool.execute.after",
+    sourceID: safeToolSourceID(input),
+    debounceMs: options.postToolCheckpoints?.debounceMs ?? 250,
+    cooldownMs: options.postToolCheckpoints?.cooldownMs ?? 1000,
+    requiresRuntimeOwnership: false,
+    claimCapable: false,
+  };
+
+  if (autopilotOutputMadeProgress(payload)) {
+    return schedule({
+      ...common,
+      kind: "check",
+      reason: "Autopilot tool reported progress; schedule cheap checkpoint",
+    });
+  }
+
+  if (optionalString(payload.reasonCode) === "runtime_evidence_conflict") {
+    return schedule({
+      ...common,
+      kind: "status",
+      reason: "Autopilot tool reported runtime evidence conflict; schedule status checkpoint",
+    });
+  }
+
+  if (autopilotOutputIsNoProgress(payload)) {
+    return ignore("no-progress Autopilot output suppresses post-tool checkpoint");
+  }
+
+  return ignore("Autopilot output did not report progress");
 }
 
 export function classifyAutopilotTuiCommand(command: string, options: AutopilotTriggerOptions = {}): AutopilotTriggerDecision {

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   classifyAutopilotEvent,
+  classifyAutopilotToolExecutionAfter,
   classifyAutopilotTuiCommand,
   type AutopilotTriggerDecision,
   type AutopilotTriggerJob,
@@ -37,6 +38,11 @@ function writeTasks(repo: string, changeId: string, markdown: string): void {
 function firstJob(decision: AutopilotTriggerDecision): AutopilotTriggerJob {
   assert(decision.jobs.length === 1, `Expected exactly one trigger job, got ${decision.jobs.length}: ${JSON.stringify(decision)}`);
   return decision.jobs[0] as AutopilotTriggerJob;
+}
+
+function scheduledJob(decision: AutopilotTriggerDecision): AutopilotTriggerJob {
+  assert(decision.action === "scheduled", `Expected scheduled decision, got ${decision.action}.`);
+  return firstJob(decision);
 }
 
 function assertIgnored(decision: AutopilotTriggerDecision, reasonIncludes: string): void {
@@ -341,6 +347,208 @@ const tests: TestCase[] = [
       assert(job.requiresRuntimeOwnership === true, "Autonomous run_next requires runtime ownership.");
       assert(job.claimCapable === true, "Autonomous run_next is claim-capable only after prerequisites pass.");
       assert(job.cooldownMs === 77, `Expected configured autonomous cooldown, got ${job.cooldownMs}.`);
+    },
+  },
+  {
+    name: "post-tool checkpoints schedule cheap checks only after progress",
+    run: () => {
+      const materialized = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-1", args: {} },
+        {
+          output: JSON.stringify({
+            reasonCode: "ledger_materialized",
+            tasksAdvanced: [{ taskId: "task-a", changeId: "change-a" }],
+            loopGuard: { repeatedNoProgress: false },
+          }),
+          metadata: { service: "openspec-autopilot" },
+        },
+        { postToolCheckpoints: { debounceMs: 17 } },
+      );
+      const checkJob = scheduledJob(materialized);
+      assert(checkJob.kind === "check", `Expected cheap check after materialized ledger, got ${checkJob.kind}.`);
+      assert(checkJob.sourceEvent === "tool.execute.after", `Expected tool.execute.after source, got ${checkJob.sourceEvent}.`);
+      assert(checkJob.scope?.changeId === "change-a", `Expected change-a scope, got ${JSON.stringify(checkJob.scope)}.`);
+      assert(checkJob.scope?.taskId === "task-a", `Expected task-a scope, got ${JSON.stringify(checkJob.scope)}.`);
+      assert(checkJob.sourceID === "autopilot_run_next:call-1", `Expected sanitized tool source, got ${checkJob.sourceID}.`);
+      assert(checkJob.debounceMs === 17, `Expected configured debounce, got ${checkJob.debounceMs}.`);
+      assert(checkJob.cooldownMs === 1000, `Expected default cooldown, got ${checkJob.cooldownMs}.`);
+      assert(checkJob.requiresRuntimeOwnership === false, "Post-tool checkpoint must not require runtime ownership.");
+      assert(checkJob.claimCapable === false, "Post-tool checkpoint must not be claim-capable.");
+
+      const collected = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_collect", sessionID: "session-1", callID: "call-2", args: {} },
+        {
+          output: {
+            reasonCode: "advanced",
+            tasksAdvanced: [{ taskId: "task-b" }],
+            loopGuard: { repeatedNoProgress: false },
+          },
+          metadata: { service: "openspec-autopilot" },
+        },
+      );
+      const collectJob = scheduledJob(collected);
+      assert(collectJob.kind === "check", `Expected cheap check after advanced collect, got ${collectJob.kind}.`);
+      assert(collectJob.scope?.taskId === "task-b", `Expected task-b scope, got ${JSON.stringify(collectJob.scope)}.`);
+
+      assertIgnored(
+        classifyAutopilotToolExecutionAfter(
+          { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-3", args: {} },
+          {
+            output: JSON.stringify({
+              outcome: "idle",
+              reasonCode: "ready_runtime_deferred",
+              loopGuard: { repeatedNoProgress: true, suppressRepeatRecommendation: true },
+            }),
+          },
+        ),
+        "no-progress",
+      );
+      assertIgnored(
+        classifyAutopilotToolExecutionAfter(
+          { tool: "bash", sessionID: "session-1", callID: "call-4", args: {} },
+          { output: "{}" },
+        ),
+        "unsupported tool",
+      );
+      assertIgnored(
+        classifyAutopilotToolExecutionAfter(
+          { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-5", args: {} },
+          { output: "{}" },
+          { postToolCheckpoints: { enabled: false } },
+        ),
+        "disabled",
+      );
+    },
+  },
+  {
+    name: "post-tool checkpoints classify conflicts and progress output shapes",
+    run: () => {
+      const rawString = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call:raw\nunsafe", args: {} },
+        JSON.stringify({ outcome: "advanced", tasksStarted: [{ taskId: "task-started", path: "openspec/changes/change-started/automation/task.json" }] }),
+        { postToolCheckpoints: { cooldownMs: 33 } },
+      );
+      const rawJob = scheduledJob(rawString);
+      assert(rawJob.kind === "check", `Expected raw string progress to schedule check, got ${rawJob.kind}.`);
+      assert(rawJob.sourceID === "autopilot_run_next:call_raw_unsafe", `Expected sanitized sourceID, got ${rawJob.sourceID}.`);
+      assert(rawJob.scope?.changeId === "change-started", `Expected path-derived change-started scope, got ${JSON.stringify(rawJob.scope)}.`);
+      assert(rawJob.scope?.taskId === "task-started", `Expected task-started scope, got ${JSON.stringify(rawJob.scope)}.`);
+      assert(rawJob.cooldownMs === 33, `Expected configured cooldown, got ${rawJob.cooldownMs}.`);
+
+      const bareRecord = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_collect", sessionID: "session-1", callID: "call-bare", args: {} },
+        { reasonCode: "advanced", tasksAdvanced: [{ taskId: "task-path", path: "openspec/changes/change-path/automation/task.json" }] },
+      );
+      const bareJob = scheduledJob(bareRecord);
+      assert(bareJob.kind === "check", `Expected bare record progress to schedule check, got ${bareJob.kind}.`);
+      assert(bareJob.scope?.changeId === "change-path", `Expected path-derived change-path scope, got ${JSON.stringify(bareJob.scope)}.`);
+      assert(bareJob.scope?.taskId === "task-path", `Expected task-path scope, got ${JSON.stringify(bareJob.scope)}.`);
+
+      const conflict = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_collect", sessionID: "session-1", callID: "call-conflict", args: {} },
+        { output: { reasonCode: "runtime_evidence_conflict", taskSummaries: [{ taskId: "task-conflict", path: "openspec/changes/change-conflict/automation/task.json" }] } },
+      );
+      const conflictJob = scheduledJob(conflict);
+      assert(conflictJob.kind === "status", `Expected conflict checkpoint to schedule status, got ${conflictJob.kind}.`);
+      assert(conflictJob.scope?.changeId === "change-conflict", `Expected conflict change scope, got ${JSON.stringify(conflictJob.scope)}.`);
+      assert(conflictJob.scope?.taskId === "task-conflict", `Expected conflict task scope, got ${JSON.stringify(conflictJob.scope)}.`);
+
+      const selectionOnly = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-selection", args: {} },
+        { output: { outcome: "advanced", selection: { selectedTaskId: "selected-task" } } },
+      );
+      const selectionJob = scheduledJob(selectionOnly);
+      assert(selectionJob.scope?.taskId === "selected-task", `Expected selected-task scope, got ${JSON.stringify(selectionJob.scope)}.`);
+
+      const multipleScopes = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_collect", sessionID: "session-1", callID: "call-multi", args: {} },
+        { output: { reasonCode: "advanced", tasksAdvanced: [{ taskId: "left" }, { taskId: "right" }] } },
+      );
+      const multipleJob = scheduledJob(multipleScopes);
+      assert(multipleJob.scope == null, `Multiple distinct advanced scopes must fall back to an unscoped check, got ${JSON.stringify(multipleJob.scope)}.`);
+    },
+  },
+  {
+    name: "post-tool checkpoints suppress each no-progress signal independently",
+    run: () => {
+      for (const reasonCode of [
+        "ready_runtime_deferred",
+        "no_ledgers",
+        "active_change_handoff",
+        "collect_deferred",
+        "stop_no_active_state",
+        "no_actionable_tasks",
+      ]) {
+        assertIgnored(
+          classifyAutopilotToolExecutionAfter(
+            { tool: "autopilot_run_next", sessionID: "session-1", callID: `call-${reasonCode}`, args: {} },
+            { output: { reasonCode } },
+          ),
+          "no-progress",
+        );
+      }
+
+      for (const loopGuard of [{ repeatedNoProgress: true }, { suppressRepeatRecommendation: true }]) {
+        assertIgnored(
+          classifyAutopilotToolExecutionAfter(
+            { tool: "autopilot_collect", sessionID: "session-1", callID: "call-loop", args: {} },
+            { output: { reasonCode: "idle", loopGuard } },
+          ),
+          "no-progress",
+        );
+      }
+    },
+  },
+  {
+    name: "post-tool checkpoints reject unsupported output shapes",
+    run: () => {
+      for (const output of [
+        "not json",
+        JSON.stringify([]),
+        JSON.stringify("text"),
+        { output: [], outcome: "advanced" },
+        null,
+        undefined,
+      ]) {
+        assertIgnored(
+          classifyAutopilotToolExecutionAfter(
+            { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-bad", args: {} },
+            output,
+          ),
+          "unsupported",
+        );
+      }
+      assertIgnored(
+        classifyAutopilotToolExecutionAfter(
+          { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-empty", args: {} },
+          { output: {} },
+        ),
+        "did not report progress",
+      );
+    },
+  },
+  {
+    name: "post-tool checkpoint modes preserve safe defaults",
+    run: () => {
+      const progressOutput = { output: { reasonCode: "advanced", tasksAdvanced: [{ taskId: "task-a" }] } };
+      const defaults = scheduledJob(classifyAutopilotToolExecutionAfter({ tool: "autopilot_run_next", sessionID: "session-1", callID: "call-default", args: {} }, progressOutput));
+      assert(defaults.debounceMs === 250, `Expected default debounce, got ${defaults.debounceMs}.`);
+      assert(defaults.cooldownMs === 1000, `Expected default cooldown, got ${defaults.cooldownMs}.`);
+
+      for (const triggerMode of ["observe", "controlled", "autonomous"] as const) {
+        const job = scheduledJob(classifyAutopilotToolExecutionAfter({ tool: "autopilot_collect", sessionID: "session-1", callID: `call-${triggerMode}`, args: {} }, progressOutput, { triggerMode }));
+        assert(job.kind === "check", `Expected ${triggerMode} mode to schedule check, got ${job.kind}.`);
+        assert(job.claimCapable === false, `${triggerMode} post-tool checkpoint must not be claim-capable.`);
+      }
+
+      assertIgnored(
+        classifyAutopilotToolExecutionAfter(
+          { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-off", args: {} },
+          progressOutput,
+          { triggerMode: "off" },
+        ),
+        "disabled",
+      );
     },
   },
 ];
