@@ -27,6 +27,7 @@ For a new broad task that is not yet tied to existing OpenSpec work, use `adapti
 - Inspect the current repository state, OpenSpec change directories, specs, tasks, proposal/design files, archive candidates, recent diffs, and validation evidence if available.
 - Prefer the repository's OpenSpec commands when available, such as `openspec list`, `openspec list --specs`, and `openspec validate --all`; otherwise inspect the OpenSpec files directly.
 - Inventory all available OpenSpec-backed work, including incomplete implementation tasks, missing tests, spec/doc synchronization, consistency reviews, validation failures, proposal/exploration gaps, and archive-ready completed changes.
+- Surface completed-but-not-retroed OpenSpec changes as available work when implementation tasks are done but `Retrospective Before Archive` or `retrospective.md`/retro-gate evidence is missing.
 - Include lightweight follow-up changes whose primary artifact is `tasks.md`, especially changes created from audits, retros, reviewer gates, or validation failure triage.
 - Group items into independent workstreams, not low-level task lists. Each workstream should have a clear outcome, bounded scope, readiness state, and likely validation evidence.
 - Keep the user-facing discovery summary high-level. Do not include detailed file-by-file plans, worker prompts, implementation steps, or test matrices until orchestration is approved.

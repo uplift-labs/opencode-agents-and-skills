@@ -594,7 +594,7 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "autopilot:validate", "openspec:validate", "prepush:validate", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "autopilot:validate", "autopilot:evidence", "openspec:validate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }
@@ -602,8 +602,17 @@ function validateDevKitContract(root: string): void {
   if (scripts["autopilot:validate"] && scripts["autopilot:validate"] !== "node tools/autopilot-ledger.ts") {
     addError("package.json script 'autopilot:validate' must run node tools/autopilot-ledger.ts.");
   }
+  if (scripts["autopilot:evidence"] && scripts["autopilot:evidence"] !== "node tools/autopilot-evidence.ts") {
+    addError("package.json script 'autopilot:evidence' must run node tools/autopilot-evidence.ts.");
+  }
   if (scripts["openspec:validate"] && scripts["openspec:validate"] !== "openspec validate --all") {
     addError("package.json script 'openspec:validate' must run openspec validate --all.");
+  }
+  if (scripts["openspec:retro-gate"] && scripts["openspec:retro-gate"] !== "node tools/openspec-retro-gate.ts") {
+    addError("package.json script 'openspec:retro-gate' must run node tools/openspec-retro-gate.ts.");
+  }
+  if (scripts["openspec:retro-followups"] && scripts["openspec:retro-followups"] !== "node tools/openspec-retro-followups.ts") {
+    addError("package.json script 'openspec:retro-followups' must run node tools/openspec-retro-followups.ts.");
   }
   if (scripts["validate:strict"] && !scripts["validate:strict"].includes("--fail-on-warnings")) {
     addError("package.json script 'validate:strict' must pass --fail-on-warnings.");

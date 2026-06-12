@@ -61,6 +61,7 @@ export type LedgerFilter = {
 export type AutopilotOutputOptions = {
   dependencyGraph?: LedgerSummary[];
   runtimeState?: unknown;
+  mutateRuntimeState?: boolean;
 };
 
 export type LedgerSummary = {
@@ -71,6 +72,7 @@ export type LedgerSummary = {
   priority: string;
   dependencies: string[];
   writeScope: string[];
+  forbiddenScope: string[];
   writeScopeSize: number;
   valid: boolean;
   errors: string[];
@@ -238,6 +240,7 @@ export function readLedgerSummaries(root: string, options: AutopilotOptions = {}
         priority: asString(record.priority, ""),
         dependencies: asStringArray(record.dependencies),
         writeScope: asStringArray(scope.write),
+        forbiddenScope: asStringArray(scope.forbidden),
         writeScopeSize: asStringArray(scope.write).length,
         valid: result.valid,
         errors: result.errors,
@@ -258,6 +261,7 @@ export function readLedgerSummaries(root: string, options: AutopilotOptions = {}
         priority: "",
         dependencies: [],
         writeScope: [],
+        forbiddenScope: [],
         writeScopeSize: 0,
         valid: false,
         errors: [`Failed to read task ledger: ${message}`],
@@ -608,7 +612,7 @@ export function createRunNextOutput(ledgers: LedgerSummary[], outputOptions: Aut
   if (reasonCode === "ready_runtime_deferred") {
     const selection = selectionFor(ledgers, readyRuntimeDeferredLedgers(ledgers), reasonCode, dependencyGraph, outputOptions.runtimeState);
     if (shouldClaimReadyTasks(outputOptions.runtimeState)) {
-      const claimed = claimSelectedReadyTasks(ledgers, selection);
+      const claimed = claimSelectedReadyTasks(ledgers, selection, outputOptions.runtimeState);
       if (claimed.conflicts.length > 0) {
         return {
           ...outputFor(
@@ -627,7 +631,7 @@ export function createRunNextOutput(ledgers: LedgerSummary[], outputOptions: Aut
         return {
           ...outputFor(
             ledgers,
-            `Autopilot claim mode validated and started the selected Ready task in plugin-owned runtime state. Protected ledger mutation remains deferred to plugin-owned state handling.`,
+            `Autopilot claim mode validated the selected Ready task and recorded plugin-owned active runtime state. Protected ledger mutation remains deferred to plugin-owned state handling.`,
             "advanced",
             "autopilot_run_next",
             null,
@@ -670,7 +674,7 @@ export function createCollectOutput(ledgers: LedgerSummary[], outputOptions: Aut
     );
   }
 
-  const collected = collectWorkerReports(ledgers, outputOptions.runtimeState);
+  const collected = collectWorkerReports(ledgers, outputOptions.runtimeState, { mutateRuntimeState: outputOptions.mutateRuntimeState === true });
   if (collected.conflicts.length > 0) {
     return {
       ...outputFor(
@@ -697,7 +701,9 @@ export function createCollectOutput(ledgers: LedgerSummary[], outputOptions: Aut
 
   return outputFor(
     ledgers,
-    collected.reportsFound
+    collected.alreadyConsumed.length > 0
+      ? `MVP collect inspected ${ledgers.length} task ledger(s). ${collected.alreadyConsumed.length} worker report(s) were already consumed; no scoped worker report advanced state.`
+      : collected.reportsFound
       ? `MVP collect inspected ${ledgers.length} task ledger(s). No scoped worker report advanced state.`
       : `MVP collect inspected ${ledgers.length} task ledger(s). Runtime worker report collection and legal state mutation are deferred.`,
     reasonCode,

@@ -8,9 +8,17 @@ license: MIT
 
 Use this skill when OpenSpec work should be controlled by the Autopilot plugin rather than by ad-hoc model decisions.
 
+## Eligibility
+
 Use it for explicit `/autopilot` or `autopilot`, active-context `работай`, ready OpenSpec task ledgers/queues, strict task-type phase enforcement, safe parallel OpenSpec work when plugin/runtime selection evidence is available, or ready research/planning ledger tasks that need durable evidence and gates. Current MVP may stop with `reasonCode: "ready_runtime_deferred"` or another no-op reason code when real claim, dispatch, MR sync, or ledger mutation would be required.
 
 Do not use it for casual codebase questions, one obvious small edit, OpenSpec discovery with no ready work (`next-step`), a single accepted change that `openspec-apply-change` can finish directly, or non-OpenSpec fan-out where prompt-only `orchestrator` is enough.
+
+## Escape Hatch
+
+Do not keep Autopilot alive only because this skill was loaded. When `reasonCode` is `ready_runtime_deferred`, `no_ledgers`, or `no_actionable_tasks`, report the stop condition, do not repeat an equivalent no-progress `autopilot_run_next`, and hand off to the named safer workflow from `nextActions[]`, `next-step`, `openspec-apply-change`, manual direct work, or `orchestrator` as appropriate.
+
+When local stale evidence or an evidence conflict appears, stop and report the mismatch. Prefer source, tests, plugin output, and current validation over stale prose reports; do not manually mutate protected Autopilot state to make the flow appear complete.
 
 ## First Action
 
@@ -47,9 +55,9 @@ Protected paths are plugin-owned: `openspec/changes/*/automation/task.json`, `op
 
 | Tool | Use |
 | --- | --- |
-| `autopilot_run_next` | Main control-plane call: discover/classify current ledgers and return authoritative actionability. Default MVP behavior stops with deferred/no-op output when mutation would be needed; explicit claim harness state may return validation-only `advanced`/`tasksStarted` evidence for one selected Ready task without protected-file mutation. |
+| `autopilot_run_next` | Main control-plane call: discover/classify current ledgers and return authoritative actionability. Default MVP behavior stops with deferred/no-op output when mutation would be needed; explicit claim harness state may return `advanced`/`tasksStarted` evidence and record active runtime state without protected-file mutation. |
 | `autopilot_status` | Concise tasks/runs/workers/blockers/MRs status. |
-| `autopilot_collect` | Gather plugin-owned worker reports and validate legal advancement; may return validation-only `advanced` evidence for accepted in-memory report transitions or `runtime_evidence_conflict` without protected mutation when report evidence is stale or invalid. |
+| `autopilot_collect` | Gather plugin-owned worker reports, validate legal advancement, and track consumed report ids for idempotent repeated calls; may return validation-only `advanced` evidence for accepted in-memory report transitions, `collect_deferred` when scoped reports were already consumed, or `runtime_evidence_conflict` without protected mutation when report evidence is stale or invalid. |
 | `autopilot_answer_blocker` | Validate the user's selected blocker option envelope against plugin-owned pending questions; current MVP records no mutation and recommends status before continuing. |
 | `autopilot_stop` | Acknowledge a pause/cancel request; returns `stop_no_active_state` for no-op stops or `stop_applied`/`outcome: "advanced"` with `tasksAdvanced` when provided plugin-owned active runtime state was changed. |
 
@@ -118,7 +126,7 @@ Current MVP-vNext default selection is `serial_default` with `maxImplementationC
 
 Tool result metadata may include `metadata.argumentContext` for no-op/runtime-only tools such as `autopilot_answer_blocker` and `autopilot_stop`. Treat `acknowledged`, `ignored`, and `mutation` as a sanitized argument-handling note only; ignored argument values are not echoed. `mutation: "none"` means no ledger/runtime mutation occurred. `mutation: "plugin-owned-runtime-only"` means the tool used only plugin-owned in-memory runtime state without protected-file mutation; read `summary`, `tasksStarted`, and `tasksAdvanced` to distinguish validation-only evidence from an observable active-state change. `autopilot_answer_blocker` may return `outcome: "failed"` when the `questionId`, `taskId`, label, or action does not match a plugin-owned pending question.
 
-`actionable` and `not_selected` actionability values are reserved for future runtime dispatch/selection behavior. `advanced` is a current `outcome`/`reasonCode` value for explicit in-memory harness claim, collect, or stop outputs. Until the active `improve-autopilot-runtime-e2e-harness` continuity and idempotency tasks are complete, treat claim/collect `advanced` as validation-only harness evidence unless a later status/stop output confirms observable active runtime state. Current MVP output may include top-level `selection` evidence while still returning deferred/no-op reasons when protected-file mutation would be required.
+`actionable` and `not_selected` actionability values are reserved for future runtime dispatch/selection behavior. `advanced` is a current `outcome`/`reasonCode` value for explicit in-memory harness claim, collect, or stop outputs. Claim `advanced` means the selected task claim was validated and may be observable through plugin-owned active runtime state; collect `advanced` means an accepted in-memory worker report transition was validated and its report id was consumed, not that protected ledger files were mutated. Current MVP output may include top-level `selection` evidence while still returning deferred/no-op reasons when protected-file mutation would be required.
 
 ## Task-Type Policy
 
@@ -144,6 +152,12 @@ Critical evidence gates:
 - `Review -> Acceptance` needs reviewer decisions or explicit reviewer skip reasons.
 - `Acceptance -> Done` needs MR merged evidence, or explicit no-MR policy for non-file-changing research/planning.
 - Any transition to `Blocked` needs blocker reason and recommended options when user action is required.
+
+## Retrospective Archive Gate
+
+Before archive or archive-ready acceptance, require `retrospective.md`, generated follow-up OpenSpec changes for actionable retrospective findings, and the repository retro gate when available. If a completed change lacks a passed `Archive Gate Decision`, `No findings` evidence, generated follow-up changes for `Target` `project-local` or `opencode-dev-kit`, or an approved skip with reason and approver, treat the missing retrospective/follow-up as an archive gate blocker and ask only blocker questions returned by the plugin/runtime.
+
+When `npm run openspec:retro-followups -- <change-id>` exists, run it before the gate so actionable `Problems Found` rows create or update OpenSpec follow-up changes. Then use `npm run openspec:retro-gate -- <change-id>` as deterministic evidence. If either command fails or is unavailable, report the archive gate status manually instead of mutating protected Autopilot state.
 
 ## Reviewer And Test Policy
 

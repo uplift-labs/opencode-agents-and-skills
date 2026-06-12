@@ -19,12 +19,13 @@ type RunState = {
   scope: { changeId?: string; taskId?: string };
   claimedTasks: ClaimedTask[];
   workerReports: WorkerReport[];
+  consumedWorkerReportIds: string[];
   blockerQuestions: BlockerQuestion[];
   mrWaits: MrWait[];
 };
 ```
 
-`ClaimedTask` records the ledger path, task id, status at claim time, worker assignment if any, and the legal next phase. `WorkerReport` records worker id, task id, phase, changed files or no-op reason, validation summary, secret-scan status, reviewer outputs, and errors. `BlockerQuestion` records question id, task id, options, recommended label, requested action, and whether it has been answered. `MrWait` records task id, MR status, URL when available, and the reason Autopilot stopped.
+`ClaimedTask` records the ledger path, task id, status at claim time, worker assignment if any, and the legal next phase. `WorkerReport` records worker id, task id, phase, changed files or no-op reason, validation summary, secret-scan status, reviewer outputs, and errors. `consumedWorkerReportIds` records plugin-owned report ids that already produced accepted in-memory advancement so repeated collect calls are idempotent. `BlockerQuestion` records question id, task id, options, recommended label, requested action, and whether it has been answered. `MrWait` records task id, MR status, URL when available, and the reason Autopilot stopped.
 
 ## Default Selection Contract
 
@@ -70,7 +71,7 @@ Parallelism should be separated by risk:
 | Parallel read-only | On when useful | Analyze, review, status inspection, validation planning, evidence-pack generation. | No writes outside plugin-owned runtime state; no ledger mutation by workers. |
 | Parallel implementation | Off | Multiple implementation workers. | Explicit user/config opt-in, independent write scopes, locks, separate worktrees/branches, WIP limit, and merge/review gates. |
 
-Guarded parallel implementation should start with `maxImplementationClaims = 2`. Raising the limit requires an explicit configuration or user decision and test coverage proving lock behavior. Absence of explicit parallel opt-in means Autopilot may show a parallel-ready queue but must still claim only one implementation task.
+Guarded parallel implementation should start with `maxImplementationClaims = 2`. Raising the limit requires an explicit configuration or user decision and test coverage proving lock behavior. Absence of explicit parallel opt-in means Autopilot may show a parallel-ready queue but must still claim only one implementation task. In the current harness slice, "parallel started" means deterministic plugin-owned claim evidence for candidates whose locks and worktree names were pre-seeded in runtime state; it does not create OS worktrees, branches, workers, or protected ledger mutations.
 
 ## Parallel Independence Checks
 
@@ -80,7 +81,7 @@ Two tasks are parallel-implementation-safe only when all checks pass:
 - Their `scope.write` entries are deterministically disjoint.
 - No task writes a path that another task lists as forbidden.
 - Unknown or unsupported glob overlap is treated as `not_parallel_safe`, not as safe.
-- Each task can use an isolated branch or worktree owned by Autopilot, such as `autopilot/<change>/<task>` or an equivalent collision-resistant name.
+- Each task can use an isolated branch or worktree owned by Autopilot, such as `autopilot/<change>/<task>` or an equivalent collision-resistant name. Harness evidence must be a relative `autopilot/...` path, must not contain `..`, must be unique among started candidates, and must include the task id as a path segment.
 - Runtime locks exist for the task ledger path and declared write scope before workers start.
 - MR/review output can be produced separately for each task without auto-merge.
 
@@ -103,13 +104,15 @@ The first non-MVP slice should avoid broad worker orchestration. It should imple
 
 - Discover valid ledgers and classify each as actionable, blocked, waiting for MR, terminal, or runtime-deferred.
 - Add deterministic ranking and selection evidence for all Ready candidates.
-- Claim one primary Ready ledger only when the plugin can produce a legal next action.
+- Claim one primary Ready ledger only when the plugin can produce a legal next action, and record that claim in plugin-owned active runtime state so `autopilot_stop` can observe it later in the same plugin runtime.
 - Produce a plugin-owned worker instruction or deterministic placeholder report for tests for the selected task only.
-- Collect a worker report and advance only if `validateTaskLedger` accepts the resulting ledger state.
+- Collect a worker report and advance only if `validateTaskLedger` accepts the resulting ledger state, then record the report id as consumed so repeated collect calls report no new advancement. Report ids are unique within a collect operation; duplicate report ids are runtime evidence conflicts even when they target different tasks.
 - Stop at MR wait and user blockers without mutating unrelated state.
 - Report parallel-ready candidates without starting them in default mode.
 - Return explicit no-progress reason codes when runtime capability is still deferred.
 - Detect runtime evidence conflicts before claiming or advancing a task, such as stale ledger revision, validation contradiction, unexpected tool output shape, or task/report status mismatch; return a clear blocker or failed result instead of continuing the flow.
+
+Output-helper calls may produce validation-only advancement evidence without consuming reports. Only plugin-owned runtime calls that explicitly opt in to runtime mutation record consumed report ids or active claim state.
 
 Implementation should be staged:
 
@@ -123,7 +126,7 @@ Implementation should be staged:
 
 `autopilot_answer_blocker` should require a pending `BlockerQuestion` match by `questionId` and task id when present. Unknown question ids should return a clear failed or blocked output and should not recommend continuing as if state changed.
 
-The accepted answer should record the selected label, action, timestamp, and actor. If an answer option is stale or no longer legal for the task state, the tool should return a blocker explaining the mismatch.
+Future persistent blocker-answer handling should record the selected label, action, timestamp, and actor. This MVP slice intentionally implements validation-only acceptance: matching pending answers are acknowledged, unknown or mismatched answers are rejected, and accepted answers recommend `autopilot_status` without mutating blocker state. If an answer option is stale or no longer legal for the task state, the tool should return a blocker explaining the mismatch.
 
 ## MR Wait
 
@@ -134,7 +137,9 @@ MR wait handling must be read-only unless explicit user approval and provider cr
 - Unit-test classification from fixture ledgers.
 - Unit-test deterministic ranking, explicit scope handling, priority normalization, and stable tie-breakers.
 - Unit-test legal transition checks before writing state.
-- Unit-test conservative independence checks for disjoint, overlapping, and unknown `scope.write` patterns.
+- Unit-test claim-to-stop continuity through plugin-owned active runtime state.
+- Unit-test repeated collect idempotency, duplicate report-id conflicts, and illegal worker-report transitions such as `Ready -> Review`.
+- Unit-test conservative independence checks for disjoint, overlapping, and unknown `scope.write` patterns, including lock/worktree ownership evidence.
 - Integration-test tool outputs through the plugin server with temp-worktree ledgers.
 - Test unknown blocker answer rejection before testing accepted answers.
 - Test MR wait output with fake MR metadata, not real provider credentials.

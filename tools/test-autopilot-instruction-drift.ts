@@ -116,6 +116,25 @@ function assertExplainsDeterministicSelection(text: string, label: string): void
   assert(/explain[^\n.]{0,120}deterministic[^\n.]{0,120}selection|deterministic[^\n.]{0,120}selection[^\n.]{0,120}explain/i.test(text), `${label} must tell agents to explain deterministic selection.`);
 }
 
+function assertAutopilotEligibilityBoundaries(text: string, label: string): void {
+  const normalized = text.toLowerCase();
+  for (const phrase of ["/autopilot", "работай", "ready OpenSpec task ledgers", "strict task-type", "safe parallel OpenSpec work"]) {
+    assert(normalized.includes(phrase.toLowerCase()), `${label} must document Autopilot eligibility phrase: ${phrase}.`);
+  }
+  for (const phrase of ["casual codebase questions", "one obvious small edit", "next-step", "openspec-apply-change", "orchestrator"]) {
+    assert(normalized.includes(phrase.toLowerCase()), `${label} must document Autopilot non-eligibility or handoff phrase: ${phrase}.`);
+  }
+}
+
+function assertAutopilotEscapeHatch(text: string, label: string): void {
+  const normalized = text.toLowerCase();
+  for (const phrase of ["ready_runtime_deferred", "no_ledgers", "no_actionable_tasks", "stale evidence", "evidence conflict"]) {
+    assert(normalized.includes(phrase.toLowerCase()), `${label} must document Autopilot escape-hatch phrase: ${phrase}.`);
+  }
+  assert(/do not repeat|without repeating|must not repeat/i.test(text), `${label} must prohibit repeated equivalent no-progress Autopilot calls.`);
+  assert(/hand ?off|route to|manual direct/i.test(text), `${label} must document a named stop or handoff path.`);
+}
+
 function extractLineContaining(text: string, needle: string, label: string): string {
   const line = text.split(/\r?\n/).find((candidate) => candidate.includes(needle));
   assert(line != null, `${label} must contain ${needle}.`);
@@ -136,6 +155,8 @@ const tests: TestCase[] = [
     name: "openspec-autopilot skill documents scoped args and safe parallel trigger",
     run: () => {
       const skill = readText(".opencode/skills/openspec-autopilot/SKILL.md");
+      const eligibility = extractMarkdownSection(skill, "## Eligibility");
+      assertAutopilotEligibilityBoundaries(eligibility, "openspec-autopilot Eligibility section");
       const firstAction = extractMarkdownSection(skill, "## First Action");
       assert(firstAction.includes("changeId") && firstAction.includes("taskId"), "openspec-autopilot First Action must document scoped changeId/taskId arguments.");
       assert(firstAction.includes("call with no args only when no scope is supplied"), "openspec-autopilot First Action must call with no args only when no scope is supplied.");
@@ -146,6 +167,14 @@ const tests: TestCase[] = [
       const stopRow = extractLineContaining(extractMarkdownSection(skill, "## Public Tools"), "`autopilot_stop`", "openspec-autopilot Public Tools");
       assert(stopRow.includes("stop_applied") && stopRow.includes('outcome: "advanced"') && stopRow.includes("tasksAdvanced"), "openspec-autopilot autopilot_stop row must document active stop output semantics.");
       assert(/plugin-owned active runtime state was changed/i.test(stopRow), "openspec-autopilot autopilot_stop row must tie stop_applied to plugin-owned active runtime state changes.");
+    },
+  },
+  {
+    name: "openspec-autopilot skill documents escape-hatch behavior",
+    run: () => {
+      const skill = readText(".opencode/skills/openspec-autopilot/SKILL.md");
+      const escapeHatch = extractMarkdownSection(skill, "## Escape Hatch");
+      assertAutopilotEscapeHatch(escapeHatch, "openspec-autopilot Escape Hatch section");
     },
   },
   {
@@ -198,6 +227,15 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "README routing documents Autopilot boundaries and handoffs",
+    run: () => {
+      const readme = readText("README.md");
+      const routing = extractMarkdownSection(readme, "## Routing Map");
+      assertAutopilotEligibilityBoundaries(routing, "README Routing Map");
+      assertAutopilotEscapeHatch(routing, "README Routing Map");
+    },
+  },
+  {
     name: "README install sections keep OpenCode restart guidance",
     run: () => {
       const readme = readText("README.md");
@@ -218,6 +256,9 @@ const tests: TestCase[] = [
       assert(template.includes("openspec-autopilot"), "command.autopilot template must route through openspec-autopilot skill.");
       assert(template.includes("autopilot_run_next"), "command.autopilot template must call autopilot_run_next first by default.");
       assert(template.includes("$ARGUMENTS"), "command.autopilot template must expose user-supplied scope through $ARGUMENTS.");
+      assertAutopilotEligibilityBoundaries(template, "opencode.json command.autopilot template");
+      assertAutopilotEscapeHatch(template, "opencode.json command.autopilot template");
+      assert(!template.includes("handoffTarget"), "command.autopilot template must not document a public handoffTarget before the output contract exposes it.");
     },
   },
 ];

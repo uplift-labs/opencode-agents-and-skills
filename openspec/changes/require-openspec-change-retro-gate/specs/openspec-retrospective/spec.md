@@ -61,19 +61,29 @@ The retrospective SHALL look for process problems that reduce quality or speed o
 
 ### Requirement: Findings Become Durable Follow-Ups
 
-Retrospective findings SHALL become durable follow-up artifacts unless explicitly dismissed with reason.
+Retrospective findings SHALL become durable follow-up artifacts unless fixed in scope, marked non-actionable with evidence, or explicitly dismissed with reason.
 
 #### Scenario: Project-local finding is confirmed
 
 - **GIVEN** a retrospective finding applies to the current project only
 - **WHEN** the finding is not fixed immediately in approved scope
-- **THEN** the retrospective creates or references a current-project OpenSpec follow-up change
+- **THEN** the retrospective follow-up helper creates or reuses a current-project OpenSpec follow-up change
+- **AND** `retrospective.md` references the generated change id in `Outputs`
 
 #### Scenario: Reusable workflow finding is confirmed
 
 - **GIVEN** a retrospective finding applies to Autopilot, reusable skills, agents, instructions, validators, evidence packs, or shared OpenCode workflow
 - **WHEN** the finding is not fixed immediately in approved scope
-- **THEN** the retrospective creates or references an `opencode-dev-kit` OpenSpec proposal/change or a local handoff artifact for one
+- **THEN** the retrospective follow-up helper creates or reuses an `opencode-dev-kit` OpenSpec proposal/change when the current repository owns it, or a local handoff artifact when cross-repo writes are not approved
+- **AND** `retrospective.md` references the generated follow-up id in `Outputs`
+
+#### Scenario: Follow-up output is referenced but missing
+
+- **GIVEN** `retrospective.md` has a finding with target `project-local` or `opencode-dev-kit`
+- **AND** `Outputs` names a follow-up id
+- **WHEN** archive is requested
+- **THEN** the retro gate checks that `openspec/changes/<id>/proposal.md` and `tasks.md` exist
+- **AND** archive is blocked when the referenced follow-up change is missing
 
 #### Scenario: No findings are found
 
@@ -92,5 +102,6 @@ The retrospective gate SHALL be enforceable by deterministic validation once the
 - **WHEN** the retro gate helper runs
 - **THEN** it reports whether `tasks.md` includes a final retro task
 - **AND** whether `retrospective.md` exists and includes evidence, outputs, and archive decision
+- **AND** whether actionable findings reference existing follow-up OpenSpec changes
 - **AND** whether archive is allowed
 - **AND** it returns stable JSON without model-like summarization

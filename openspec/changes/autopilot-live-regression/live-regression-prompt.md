@@ -39,12 +39,15 @@ After Turn 1 produces output or a blocker, paste this continuation prompt:
 1. Проверь `git status --short` и не трогай чужие изменения.
 2. Прочитай `openspec/project.md`, `proposal.md`, `design.md`, `tasks.md`, `spec.md`, `live-regression-report.md` и `automation/task.json` для `autopilot-live-regression`.
 3. Запусти baseline validation:
+   - `npm run autopilot:evidence -- --change autopilot-live-regression --mode collect`
    - `npm run validate`
    - `npm test`
    - `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`
    - `openspec validate --all`
-4. Используй `openspec-autopilot` skill и вызывай `autopilot_status`, `autopilot_collect`, `autopilot_answer_blocker`, `autopilot_stop` только когда сценарий требует этого или `nextRecommendedCall` безопасно рекомендует.
+   - `npm run openspec:retro-gate -- autopilot-live-regression` только после появления `retrospective.md`.
+4. Используй `openspec-autopilot` skill и вызывай `autopilot_status`, `autopilot_collect`, `autopilot_answer_blocker`, `autopilot_stop` только когда сценарий требует этого или `nextActions[]` безопасно рекомендует; `nextRecommendedCall` используй только как compatibility fallback.
 5. Не симулируй plugin-owned state transitions вручную.
+6. Для `ready_runtime_deferred`, `no_ledgers`, `no_actionable_tasks`, stale evidence или evidence conflict не повторяй эквивалентный no-progress tool call; фиксируй stop/handoff path: `next-step`, `openspec-apply-change`, manual direct work, prompt-only `orchestrator`, или follow-up OpenSpec.
 
 Scenario tiers:
 - P0: command smoke, `autopilot_run_next`, status/collect/stop, current regression ledger discovery, baseline validation, durable report. P0 должен завершиться или получить явный blocker.
@@ -60,6 +63,7 @@ Scenario tiers:
 - Small feature workflow: whether Autopilot is helpful or too heavy.
 - Large epic workflow: ready queues/parallel workstreams vs prompt-only orchestration.
 - Codebase exploration: verify Autopilot does not over-trigger for casual exploration.
+- Routing escape hatch: verify `ready_runtime_deferred`, `no_ledgers`, `no_actionable_tasks`, stale evidence, and evidence conflict wording stops or hands off instead of repeating `autopilot_run_next`.
 - Docs/typo: cheap Analyze, `testDecision: not-applicable`, explicit reviewer skip reasons.
 - Tooling/config: fixture/schema/validator gate and deployment-config reviewer routing.
 - Performance/protocol-style: benchmark/golden evidence and domain reviewer routing without fake claims.
@@ -94,11 +98,13 @@ Reviewer gates:
 
 Durable report:
 - Write `openspec/changes/autopilot-live-regression/live-regression-report.md` with scenario matrix, exact evidence, findings, follow-up changes, validation, reviewer gates, residual risks, and ready-to-land status.
+- Prefer `npm run autopilot:evidence -- --change autopilot-live-regression --mode collect` for compact scenario/reviewer/freshness/retro evidence before manual report synthesis.
 
 Финальный ответ должен включать:
 - Scenarios completed/skipped/blocked with reasons.
 - Был ли Autopilot удобен и где именно.
 - Где Autopilot лучше direct path, `next-step`, `openspec-apply-change`, или prompt-only `orchestrator`.
+- Где Autopilot обязан остановиться по escape hatch и какой handoff был выбран.
 - Confirmed bugs and UX findings.
 - OpenSpec follow-up changes created/updated.
 - Changed files.

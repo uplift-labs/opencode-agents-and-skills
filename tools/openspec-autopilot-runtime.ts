@@ -1,4 +1,5 @@
 import {
+  autopilotProtectedPathPatterns,
   type AutopilotParallelDecision,
   type AutopilotSelectionReason,
 } from "./autopilot-contract.ts";
@@ -27,6 +28,7 @@ export type AutopilotRuntimeState = {
   activeRun?: AutopilotActiveRunState;
   blockerQuestions?: AutopilotBlockerQuestion[];
   workerReports?: AutopilotWorkerReport[];
+  consumedWorkerReportIds?: string[];
 };
 
 export type AutopilotBlockerAnswer = {
@@ -69,6 +71,11 @@ export type CollectWorkerReportResult = {
   reportsFound: boolean;
   advanced: Array<Record<string, unknown>>;
   conflicts: BlockerSummary[];
+  alreadyConsumed: string[];
+};
+
+export type CollectWorkerReportOptions = {
+  mutateRuntimeState?: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -130,6 +137,24 @@ function normalizedWorkerReports(runtimeState: unknown): AutopilotWorkerReport[]
       evidence: isRecord(rawReport.evidence) ? rawReport.evidence : undefined,
     }];
   });
+}
+
+function consumedWorkerReportIds(runtimeState: unknown): Set<string> {
+  if (!isRecord(runtimeState)) {
+    return new Set();
+  }
+  return new Set(asStringArray(runtimeState.consumedWorkerReportIds));
+}
+
+function markWorkerReportConsumed(runtimeState: unknown, consumed: Set<string>, reportId: string): void {
+  if (consumed.has(reportId)) {
+    return;
+  }
+  consumed.add(reportId);
+  if (!isRecord(runtimeState)) {
+    return;
+  }
+  runtimeState.consumedWorkerReportIds = Array.from(consumed).sort();
 }
 
 export function validateBlockerAnswer(runtimeState: unknown, answer: AutopilotBlockerAnswer): AutopilotBlockerAnswerValidation {
@@ -224,6 +249,32 @@ function writeScopesAreDisjoint(left: LedgerSummary, right: LedgerSummary): bool
   return leftPatterns.every((leftPattern) => rightPatterns.every((rightPattern) => !scopePatternsMayOverlap(leftPattern, rightPattern)));
 }
 
+const commonProtectedForbiddenScopes = new Set<string>([...autopilotProtectedPathPatterns, "openspec/changes/*/automation/**"]);
+
+function taskSpecificForbiddenScope(ledger: LedgerSummary): string[] {
+  return ledger.forbiddenScope.filter((scope) => !commonProtectedForbiddenScopes.has(scope));
+}
+
+function writesAvoidForbidden(writeLedger: LedgerSummary, forbiddenLedger: LedgerSummary): boolean {
+  const forbiddenScope = taskSpecificForbiddenScope(forbiddenLedger);
+  if (forbiddenScope.length === 0) {
+    return true;
+  }
+  if (writeLedger.writeScope.length === 0) {
+    return false;
+  }
+  const writePatterns = writeLedger.writeScope.map(normalizeScopePattern);
+  const forbiddenPatterns = forbiddenScope.map(normalizeScopePattern);
+  if (writePatterns.some((pattern) => pattern == null) || forbiddenPatterns.some((pattern) => pattern == null)) {
+    return false;
+  }
+  return writePatterns.every((writePattern) => forbiddenPatterns.every((forbiddenPattern) => !scopePatternsMayOverlap(writePattern, forbiddenPattern)));
+}
+
+function scopesAreParallelCompatible(left: LedgerSummary, right: LedgerSummary): boolean {
+  return writeScopesAreDisjoint(left, right) && writesAvoidForbidden(left, right) && writesAvoidForbidden(right, left);
+}
+
 function writeScopeComparable(ledger: LedgerSummary): boolean {
   return ledger.writeScope.length > 0 && ledger.writeScope.every((scope) => normalizeScopePattern(scope) != null);
 }
@@ -232,7 +283,7 @@ function parallelDecisionFor(ledger: LedgerSummary, selectedPrimary: LedgerSumma
   if (selectedPrimary == null || ledger.id === selectedPrimary.id && ledger.path === selectedPrimary.path) {
     return "not_evaluated";
   }
-  return writeScopesAreDisjoint(selectedPrimary, ledger) ? "parallel_ready" : "not_parallel_safe";
+  return scopesAreParallelCompatible(selectedPrimary, ledger) ? "parallel_ready" : "not_parallel_safe";
 }
 
 function parallelImplementationState(runtimeState: unknown): AutopilotParallelImplementationState | null {
@@ -257,7 +308,14 @@ function maxParallelImplementationClaims(state: AutopilotParallelImplementationS
 
 function parallelWorktreeFor(ledger: LedgerSummary, state: AutopilotParallelImplementationState): string | null {
   const worktree = state.worktrees?.[ledger.id];
-  return typeof worktree === "string" && worktree.trim().length > 0 ? worktree : null;
+  if (typeof worktree !== "string") {
+    return null;
+  }
+  const normalized = worktree.trim().replaceAll("\\", "/");
+  if (!normalized.startsWith("autopilot/") || normalized.includes("..") || normalized.split("/").some((segment) => segment.length === 0)) {
+    return null;
+  }
+  return normalized.split("/").includes(ledger.id) ? normalized : null;
 }
 
 function hasParallelLock(ledger: LedgerSummary, state: AutopilotParallelImplementationState): boolean {
@@ -276,7 +334,7 @@ function parallelSelectionFor(rankedCandidates: LedgerSummary[], dependencyBlock
     if (!hasParallelLock(ledger, state) || worktree == null || usedWorktrees.has(worktree)) {
       return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" };
     }
-    if (!writeScopeComparable(ledger) || startedLedgers.some((started) => !writeScopesAreDisjoint(started, ledger))) {
+    if (!writeScopeComparable(ledger) || startedLedgers.some((started) => !scopesAreParallelCompatible(started, ledger))) {
       return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: false, selectionReason: "scope_conflict", parallelDecision: "not_parallel_safe" };
     }
     startedLedgers.push(ledger);
@@ -395,13 +453,31 @@ function applyWorkerReportToLedger(ledger: LedgerSummary, report: AutopilotWorke
 
   const validation = validateTaskLedger(nextLedger, { sourcePath: `${ledger.path}#${report.reportId}` });
   if (!validation.valid) {
-    return { conflict: { taskId: ledger.id, path: ledger.path, reason: `worker report ${report.reportId} would create invalid ledger state`, errors: validation.errors } };
+    const firstError = validation.errors[0];
+    return { conflict: { taskId: ledger.id, path: ledger.path, reason: `worker report ${report.reportId} would create invalid ledger state${firstError != null ? `: ${firstError}` : ""}`, errors: validation.errors } };
   }
 
   return { advanced: { taskId: ledger.id, path: ledger.path, reportId: report.reportId, from: report.fromStatus, to: report.toStatus, mutation: "plugin-owned-runtime-only" } };
 }
 
-export function claimSelectedReadyTasks(ledgers: LedgerSummary[], selection: AutopilotSelection): { started: Array<Record<string, unknown>>; conflicts: BlockerSummary[] } {
+function recordClaimedTasks(runtimeState: unknown, started: Array<Record<string, unknown>>): void {
+  if (!isRecord(runtimeState) || started.length === 0) {
+    return;
+  }
+  const startedTaskIds = started.flatMap((entry) => typeof entry.taskId === "string" ? [entry.taskId] : []);
+  if (startedTaskIds.length === 0) {
+    return;
+  }
+  const existingRun = isRecord(runtimeState.activeRun) ? runtimeState.activeRun : {};
+  const existingTaskIds = asStringArray(existingRun.taskIds);
+  const taskIds = Array.from(new Set([...existingTaskIds, ...startedTaskIds])).sort();
+  runtimeState.activeRun = {
+    runId: typeof existingRun.runId === "string" && existingRun.runId.trim().length > 0 ? existingRun.runId : `claim-${taskIds.join("-")}`,
+    taskIds,
+  };
+}
+
+export function claimSelectedReadyTasks(ledgers: LedgerSummary[], selection: AutopilotSelection, runtimeState?: unknown): { started: Array<Record<string, unknown>>; conflicts: BlockerSummary[] } {
   const selectedCandidates = selection.candidates.filter((candidate) => candidate.selected);
   const result: { started: Array<Record<string, unknown>>; conflicts: BlockerSummary[] } = { started: [], conflicts: [] };
   if (selectedCandidates.length === 0) {
@@ -430,13 +506,19 @@ export function claimSelectedReadyTasks(ledgers: LedgerSummary[], selection: Aut
     }
     result.started.push({ taskId: ledger.id, path: ledger.path, workerInstructionId: report.reportId, from: report.fromStatus, to: report.toStatus, mutation: "plugin-owned-runtime-only" });
   }
+  if (result.conflicts.length === 0) {
+    recordClaimedTasks(runtimeState, result.started);
+  }
   return result;
 }
 
-export function collectWorkerReports(ledgers: LedgerSummary[], runtimeState: unknown): CollectWorkerReportResult {
+export function collectWorkerReports(ledgers: LedgerSummary[], runtimeState: unknown, options: CollectWorkerReportOptions = {}): CollectWorkerReportResult {
   const reports = normalizedWorkerReports(runtimeState).sort((left, right) => left.reportId.localeCompare(right.reportId));
-  const result: CollectWorkerReportResult = { reportsFound: false, advanced: [], conflicts: [] };
+  const result: CollectWorkerReportResult = { reportsFound: false, advanced: [], conflicts: [], alreadyConsumed: [] };
   const consumedLedgerPaths = new Set<string>();
+  const consumedReportIds = consumedWorkerReportIds(runtimeState);
+  const reportIdsInOperation = new Set<string>();
+  const acceptedReportIds: string[] = [];
 
   for (const report of reports) {
     const matches = ledgers.filter((ledger) => ledger.id === report.taskId && (report.ledgerPath == null || ledger.path === report.ledgerPath));
@@ -444,6 +526,15 @@ export function collectWorkerReports(ledgers: LedgerSummary[], runtimeState: unk
       continue;
     }
     result.reportsFound = true;
+    if (reportIdsInOperation.has(report.reportId)) {
+      result.conflicts.push({ taskId: report.taskId, reason: `duplicate worker report id ${report.reportId} appeared more than once in one collect operation` });
+      continue;
+    }
+    reportIdsInOperation.add(report.reportId);
+    if (consumedReportIds.has(report.reportId)) {
+      result.alreadyConsumed.push(report.reportId);
+      continue;
+    }
     if (matches.length > 1) {
       result.conflicts.push({ taskId: report.taskId, reason: `worker report ${report.reportId} targets duplicate task id ${report.taskId}; ledgerPath is required to disambiguate` });
       continue;
@@ -460,6 +551,13 @@ export function collectWorkerReports(ledgers: LedgerSummary[], runtimeState: unk
     }
     if (applied.advanced) {
       result.advanced.push(applied.advanced);
+      acceptedReportIds.push(report.reportId);
+    }
+  }
+
+  if (options.mutateRuntimeState === true && result.conflicts.length === 0) {
+    for (const reportId of acceptedReportIds) {
+      markWorkerReportConsumed(runtimeState, consumedReportIds, reportId);
     }
   }
 

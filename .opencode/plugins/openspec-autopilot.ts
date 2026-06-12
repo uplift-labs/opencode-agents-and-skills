@@ -78,7 +78,7 @@ export default {
           async execute(args) {
             const root = repoRoot(ctx);
             const ledgers = readLedgerSummaries(root, resolvedOptions, { taskId: args.taskId });
-            return jsonOutput(createCollectOutput(ledgers, { runtimeState: resolvedOptions.runtimeState }));
+            return jsonOutput(createCollectOutput(ledgers, { runtimeState: resolvedOptions.runtimeState, mutateRuntimeState: true }));
           },
         }),
         autopilot_answer_blocker: tool({

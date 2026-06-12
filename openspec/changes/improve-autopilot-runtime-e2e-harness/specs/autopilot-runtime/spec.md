@@ -24,6 +24,15 @@ Autopilot SHALL distinguish no work, valid Ready work that cannot be advanced by
 - **THEN** the tool reports a clear deferred/blocked reason instead of ambiguous progress
 - **AND** the output includes the task id or ledger evidence needed for the next safe action
 
+#### Scenario: Claim harness records observable active runtime state
+
+- **GIVEN** a valid Ready task ledger exists
+- **AND** plugin-owned claim harness mode is enabled
+- **WHEN** `autopilot_run_next` validates the selected task claim
+- **THEN** it records the selected task in plugin-owned active runtime state
+- **AND** a later `autopilot_stop` for that task reports `stop_applied`
+- **AND** no protected ledger state is mutated
+
 ### Requirement: Default Runtime Selection Is Single-Task And Deterministic
 
 Autopilot SHALL select at most one primary implementation task by default and SHALL explain selection using deterministic ledger evidence.
@@ -67,6 +76,7 @@ Autopilot SHALL NOT start multiple implementation workstreams unless explicit pa
 - **THEN** each additional worker starts only if dependencies are complete, write scopes are disjoint, unsupported glob overlap is treated as unsafe, runtime locks are acquired, isolated branches or worktrees are available, and the WIP limit is not exceeded
 - **AND** tasks that fail any check remain unstarted with a machine-readable reason
 - **AND** `selection.mode` is `parallel_implementation` only when explicit opt-in is active
+- **AND** harness worktree evidence is accepted only for relative `autopilot/...` paths owned by the task id
 
 ### Requirement: Blocker Answers Match Pending Questions
 
@@ -78,6 +88,46 @@ Autopilot SHALL accept blocker answers only for plugin-owned pending questions.
 - **WHEN** `autopilot_answer_blocker` is called with `questionId` `Q`
 - **THEN** the tool returns a clear failed or blocked result
 - **AND** no state is advanced
+
+#### Scenario: Pending blocker answer is validation-only in MVP
+
+- **GIVEN** a plugin-owned pending blocker question has matching id, task id, label, and action
+- **WHEN** `autopilot_answer_blocker` receives that answer envelope
+- **THEN** it accepts the envelope and recommends status inspection
+- **AND** it does not record an answered state in MVP
+- **AND** no protected ledger state is mutated
+
+### Requirement: Worker Report Collection Is Idempotent And Legal
+
+Autopilot SHALL consume plugin-owned worker reports at most once per report id and SHALL advance only ledger-valid legal transitions.
+
+#### Scenario: Repeated collect does not advance the same report twice
+
+- **GIVEN** a Ready task ledger and a plugin-owned worker report that advances it from `Ready` to `Analyze`
+- **WHEN** `autopilot_collect` is called twice against the same plugin-owned runtime state
+- **THEN** the first call may report validation-only `advanced` evidence for the accepted in-memory transition
+- **AND** the runtime records the worker report id as consumed
+- **AND** the second call reports that the worker report was already consumed without adding `tasksAdvanced`
+- **AND** no protected ledger state is mutated by either call
+
+#### Scenario: Illegal worker report transition is rejected
+
+- **GIVEN** a Ready task ledger
+- **AND** a plugin-owned worker report tries to advance the task from `Ready` to `Review`
+- **WHEN** `autopilot_collect` evaluates the report
+- **THEN** Autopilot returns `runtime_evidence_conflict` with `Ready -> Review` validation evidence
+- **AND** no `tasksAdvanced` entry is emitted
+- **AND** no protected ledger state is mutated
+
+#### Scenario: Duplicate worker report ids are rejected in one collect operation
+
+- **GIVEN** two Ready task ledgers
+- **AND** two plugin-owned worker reports share the same report id while targeting different tasks
+- **WHEN** `autopilot_collect` evaluates the reports in one operation
+- **THEN** Autopilot returns `runtime_evidence_conflict` with duplicate report-id evidence
+- **AND** no `tasksAdvanced` entry is emitted
+- **AND** the shared report id is not recorded as consumed
+- **AND** no protected ledger state is mutated
 
 ### Requirement: Runtime Evidence Conflicts Stop Advancement
 

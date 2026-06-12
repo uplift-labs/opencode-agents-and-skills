@@ -12,13 +12,13 @@ Every completed OpenSpec change should produce a small, evidence-backed retrospe
 - Require every new OpenSpec `tasks.md` to end with a final retrospective task before archive.
 - Define a standard `retrospective.md` artifact for each change.
 - Require retrospectives to inspect the full reachable context of the change: artifacts, task history, validation, reviewer outputs, tool outputs, blockers, waiting time, repeated operations, token-heavy steps, and handoff quality.
-- Require retrospectives to produce one of three outcomes: `No findings`, project-local OpenSpec follow-up changes, or reusable improvement proposals for `opencode-dev-kit`.
-- Add deterministic validation/helper design for checking the retro archive gate.
-- Integrate the retro gate into future updates of `openspec-archive-change`, `openspec-propose`, `openspec-apply-change`, `openspec-autopilot`, templates, and evidence-pack workflows.
+- Require retrospectives to produce one of three outcomes: `No findings`, project-local OpenSpec follow-up changes, or reusable improvement proposals for `opencode-dev-kit`, with actionable findings backed by real generated OpenSpec changes before archive.
+- Add deterministic helper implementation for generating retrospective follow-up changes and checking the retro archive gate.
+- Integrate the retro gate into `openspec-archive-change`, `openspec-propose`, `openspec-apply-change`, `openspec-autopilot`, templates, and evidence-pack workflows.
 
 ## Non-Goals
 
-- Do not implement the gate, helper, skills, templates, or automation in this design-only change without separate implementation approval.
+- Do not implement remote PR/MR creation, cross-repository writes, or non-deterministic retrospective summarization.
 - Do not require a long narrative retrospective for tiny changes; the artifact can be short when evidence supports `No findings`.
 - Do not replace reviewer gates, tests, or validation; retrospectives look for process improvements after those gates have run.
 - Do not force all findings into `opencode-dev-kit`; project-local findings stay in the current project.
@@ -41,4 +41,4 @@ Every completed OpenSpec change should produce a small, evidence-backed retrospe
 
 - `openspec validate --all`
 - `npm run validate`
-- Future implementation should also add and run a deterministic retro-gate helper test suite.
+- Run the deterministic retro follow-up and retro-gate helper test suites.

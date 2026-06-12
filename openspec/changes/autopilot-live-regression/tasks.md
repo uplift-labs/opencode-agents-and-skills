@@ -49,5 +49,14 @@
 - [x] Rerun `npm test`.
 - [x] Rerun `openspec validate --all`.
 - [x] Rerun relevant `npm run autopilot:validate -- <task-ledger.json>` commands.
-- [ ] Run relevant reviewer gates: `instruction-artifact-reviewer`, `test-coverage-reviewer`, `code-quality-reviewer`, and `deployment-config-reviewer` by signal.
+- [x] Run relevant reviewer gates: `instruction-artifact-reviewer`, `test-coverage-reviewer`, and `code-quality-reviewer` by signal; no deployment-config signal in this slice.
 - [ ] Report changed files, scenarios completed/skipped, findings fixed, follow-up changes created, validation results, residual risks, and ready-to-land status.
+
+## Retrospective Before Archive
+
+- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
+- [ ] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision.
+- [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
+- [ ] Create or update reusable `opencode-dev-kit` OpenSpec proposals/changes for Autopilot, skill, agent, instruction, validator, or evidence-pack findings.
+- [ ] Run `npm run openspec:retro-followups -- autopilot-live-regression` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
+- [ ] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded.

@@ -196,11 +196,30 @@ Validate OpenSpec Autopilot task ledgers with:
 npm run autopilot:validate -- <task-ledger.json>
 ```
 
+Collect deterministic Autopilot evidence packs for a change with:
+
+```sh
+npm run autopilot:evidence -- --change <change-id> --mode collect
+npm run autopilot:evidence -- --change <change-id> --mode validate
+npm run autopilot:evidence -- --change <change-id> --mode report --report openspec/changes/<change-id>/evidence-report.md
+```
+
+The evidence pack emits JSON or Markdown with stable schema/order plus a generated timestamp for ledgers, validation plans/results, reviewer routing, freshness, scenario skeletons, retrospective evidence, and residual risks. `collect` is read-only and does not run validation commands. `validate` runs the planned local validation commands and returns compact redacted summaries. `report` writes only to a new approved report path under `openspec/changes/<change-id>/` outside protected automation paths.
+
 Validate all OpenSpec changes with the first-class package gate:
 
 ```sh
 npm run openspec:validate
 ```
+
+Before archiving a completed OpenSpec change, validate its retrospective archive gate with:
+
+```sh
+npm run openspec:retro-followups -- <change-id>
+npm run openspec:retro-gate -- <change-id>
+```
+
+The follow-up helper reads actionable `retrospective.md` `Problems Found` rows and creates/updates OpenSpec follow-up changes before archive. The retro gate then checks that `tasks.md` ends with `Retrospective Before Archive`, `retrospective.md` exists, evidence/output/archive-decision sections are present, approved skips include reason and approver, and actionable findings reference real follow-up changes with `proposal.md` and `tasks.md`.
 
 For Autopilot contract changes, run the direct source-equivalent bundle smoke and report freshness checks when those surfaces are in scope:
 
@@ -268,8 +287,10 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
-- Agent-oriented OpenSpec Autopilot continuation, explicit `/autopilot`, `autopilot`, ready Autopilot task ledgers/queues, strict task-type phase enforcement, safe parallel OpenSpec work with plugin/runtime selection evidence, or `работай` inside an active Autopilot context -> `openspec-autopilot`; the agent should call `autopilot_run_next` first, pass explicit user or command scope as `changeId`/`taskId`, treat the plugin as the authoritative process/state machine, prefer `nextActions`, `reasonCode`, `taskSummaries`, `selection`, and `loopGuard`, use `nextRecommendedCall` only as a compatibility fallback, and respect current MVP `reasonCode: "ready_runtime_deferred"` or no-op outputs instead of inferring dispatch, MR sync, worker starts, or ledger mutation. Plugin-owned runtime harness output may report `advanced` for validated in-memory claim/collect/stop transitions without protected-file mutation. `selection.candidates[].parallelDecision: "parallel_ready"` is visibility evidence only; `parallel_started` requires explicit parallel runtime output plus matching `tasksStarted` evidence.
-- Existing OpenSpec continuation or "what next" work -> `next-step` from the `advanced` profile; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
+- Agent-oriented OpenSpec Autopilot continuation, explicit `/autopilot`, `autopilot`, ready OpenSpec task ledgers/queues, strict task-type phase enforcement, safe parallel OpenSpec work with plugin/runtime selection evidence, or `работай` inside an active Autopilot context -> `openspec-autopilot`; the agent should call `autopilot_run_next` first, pass explicit user or command scope as `changeId`/`taskId`, treat the plugin as the authoritative process/state machine, prefer `nextActions`, `reasonCode`, `taskSummaries`, `selection`, and `loopGuard`, use `nextRecommendedCall` only as a compatibility fallback, and respect current MVP `reasonCode: "ready_runtime_deferred"` or no-op outputs instead of inferring dispatch, MR sync, worker starts, or ledger mutation. Plugin-owned runtime harness output may report `advanced` for validated in-memory claim/collect/stop transitions without protected-file mutation; claim can record active runtime state and collect consumes accepted worker report ids so repeated calls report already-consumed/no-progress instead of advancing again. `selection.candidates[].parallelDecision: "parallel_ready"` is visibility evidence only; `parallel_started` requires explicit parallel runtime output plus matching `tasksStarted` evidence.
+- Autopilot escape hatch -> for `ready_runtime_deferred`, `no_ledgers`, `no_actionable_tasks`, stale evidence, or evidence conflict, do not repeat equivalent no-progress Autopilot calls; hand off to `next-step`, `openspec-apply-change`, manual direct work, `orchestrator`, or a follow-up OpenSpec change according to the state reported by `nextActions[]` and local validation.
+- Existing OpenSpec continuation or "what next" work without ready Autopilot ledgers -> `next-step` from the `advanced` profile; accepted OpenSpec implementation that does not need queue/runtime orchestration -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
+- Casual codebase questions and one obvious small edit -> use direct search/edit workflow unless an active Autopilot context or ready ledger requires the control plane.
 - Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
 - Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
@@ -302,6 +323,12 @@ This repository's OpenSpec guide starts at `openspec/project.md`; active changes
 - Create or update OpenSpec files only when the repository already has an OpenSpec workflow or the user approved adding one; otherwise return grouped follow-up candidates as continuation items.
 - Reviewer agents remain read-only: they recommend OpenSpec follow-up tracking in `Actionable Continuation Items`; the main session owns any file writes and `next-step` continuation.
 
+## OpenSpec Retrospective Gate
+
+Before archiving a completed OpenSpec change, write `openspec/changes/<change-id>/retrospective.md`, run `npm run openspec:retro-followups -- <change-id>` when available to create/update follow-up OpenSpec changes for actionable findings, then run `npm run openspec:retro-gate -- <change-id>`. New `tasks.md` files should end with `Retrospective Before Archive` so the final learning step is machine-checkable.
+
+`retrospective.md` should stay concise but evidence-backed. Include `Evidence Reviewed`, `Problems Found`, `Outputs`, and `Archive Gate Decision`. Actionable project-local or reusable Autopilot/skill/agent/instruction/validator/evidence-pack findings must become real OpenSpec follow-up changes referenced from `Outputs`; otherwise use `Target` `none` only for findings fixed in scope, intentionally non-actionable items, or justified no-follow-up decisions. Approved skips must include a reason and approver.
+
 ## Skill Catalog
 
 ### Planning And Workflow
@@ -331,7 +358,7 @@ This repository's OpenSpec guide starts at `openspec/project.md`; active changes
 
 ### OpenSpec
 
-- `openspec-autopilot`: agent-oriented OpenSpec Autopilot control plane for ready task ledgers/queues, safe parallel OpenSpec work with plugin/runtime selection evidence, and strict task-type phases; call `autopilot_run_next` to inspect/continue until blocker, MR wait, limit, or the current MVP `reasonCode: "ready_runtime_deferred"`/no-op boundary.
+- `openspec-autopilot`: agent-oriented OpenSpec Autopilot control plane for ready task ledgers/queues, safe parallel OpenSpec work with plugin/runtime selection evidence, idempotent worker-report collect checks, and strict task-type phases; call `autopilot_run_next` to inspect/continue until blocker, MR wait, limit, or the current MVP `reasonCode: "ready_runtime_deferred"`/no-op boundary.
 - `openspec-explore`: explore requirements/options before a change.
 - `openspec-propose`: draft proposal/design/spec/tasks, including lightweight follow-up backlog changes from audit/retro/reviewer evidence.
 - `openspec-apply-change`: implement accepted OpenSpec changes with TDD-first task execution.

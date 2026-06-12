@@ -1,6 +1,6 @@
 # Live Regression Report
 
-Status: Historical regression evidence retained for traceability; not ready to land until the unchecked live smoke tasks are rerun in a restarted OpenCode session and this report is refreshed with current tool output.
+Status: Local implementation, evidence-pack, validation, reviewer, and retro-gate refresh completed on 2026-06-12; not ready to land until the unchecked live smoke tasks are rerun in a restarted OpenCode session and this report is refreshed with current first-turn `/autopilot` tool output, including routing escape-hatch behavior for `ready_runtime_deferred`, `no_ledgers`, `no_actionable_tasks`, stale evidence, and evidence conflict.
 
 ## Turn 1 `/autopilot` Smoke
 
@@ -16,11 +16,13 @@ Status: Historical regression evidence retained for traceability; not ready to l
 | P0 | Core tools status/collect/stop | completed | `autopilot_status` found `total: 1`, `valid: 1`, `byStatus.Ready: 1`, `byTaskType.research: 1`; `autopilot_collect` returned idle/no-op; `autopilot_stop` returned idle/no active state changed. | No unsafe loop or destructive action observed. Runtime no-op coverage tracked by `improve-autopilot-runtime-e2e-harness`. |
 | P0 | Current ledger discovery | completed | `openspec/changes/*/automation/task.json` discovery found only `openspec/changes/autopilot-live-regression/automation/task.json`; `.autopilot/prototype/tasks/*.json` had no files. | Missing plugin-owned prototype/e2e harness tracked by `improve-autopilot-runtime-e2e-harness`. |
 | P0 | Baseline validation | completed | Initial and final required commands passed: `npm run validate`, `npm test`, `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`, `openspec validate --all`. | none |
+| P0 | Evidence pack collect | completed local collect; live smoke still pending | `npm run autopilot:evidence -- --change autopilot-live-regression --mode collect` returned schemaVersion 1, one valid Ready research ledger, validation plan, code-quality/instruction reviewer plan, report freshness unknown, and missing live retrospective. | Reuse after OpenCode restart to compare current live tool output with deterministic evidence. |
 | P1 | Bugfix workflow | completed with finding | Skill requires reproduction/characterization-first; `tools/autopilot-ledger.ts` has no bugfix-specific reproduction check; in-memory `bugfix` probe without reproduction returned `valid: true`. | Missing gate tracked by `tighten-autopilot-ledger-type-gates`. |
 | P1 | Research workflow | completed | `fixtures/autopilot-ledger/valid-research.json` validates; validator enforces `Analyze -> Review` only for research/planning with `artifact` and no-implementation reason. Regression ledger itself is `taskType: "research"` with `testDecision: not-applicable` and no product-code implementation. | none |
 | P1 | Small feature workflow | completed with limitation | `fixtures/autopilot-ledger/valid-feature.json` validates deep Analyze, test-first implementation, code/test reviewers, and MR wait status. Runtime `autopilot_run_next` did not claim or advance a Ready ledger. | Runtime usefulness for small features is blocked until advancement/dispatch exists; tracked by `improve-autopilot-runtime-e2e-harness`. |
 | P1 | Large epic workflow | blocked by MVP runtime | Skill and design route ready OpenSpec queues/parallel workstreams to Autopilot, but plugin source and runtime output show dispatch, collection, and mutation are deferred. No plugin-owned queue/harness state exists. | Tracked by `improve-autopilot-runtime-e2e-harness`. |
-| P1 | Codebase exploration routing | completed | Skill says not to use Autopilot for casual codebase questions, one obvious small edit, OpenSpec discovery with no ready work, or non-OpenSpec fan-out; current session only used Autopilot because the user explicitly requested it and a ready ledger exists. | none |
+| P1 | Codebase exploration routing | completed, needs fresh rerun after routing update | Skill says not to use Autopilot for casual codebase questions, one obvious small edit, OpenSpec discovery with no ready work, or non-OpenSpec fan-out; current session only used Autopilot because the user explicitly requested it and a ready ledger exists. Fresh rerun must verify explicit escape-hatch wording and handoffs. | Routing expectations tracked by `tighten-autopilot-routing-and-escape-hatch`. |
+| P1 | Routing escape hatch | pending fresh rerun | Current routing contract requires `ready_runtime_deferred`, `no_ledgers`, `no_actionable_tasks`, stale evidence, and evidence conflict to stop or hand off without repeating equivalent no-progress `autopilot_run_next`. | Verify after OpenCode restart with current skill/command/plugin loaded. |
 | P1 | Docs/typo workflow | completed | `fixtures/autopilot-ledger/valid-typo.json` validates cheap `autoMinimalAnalyze`, `testDecision: not-applicable`, skipped validation reason, secret-scan placeholder, and explicit reviewer skip reasons. | none |
 | P1 | Tooling/config workflow | completed with finding | Validator reviewer routing covers `config` with `deployment-config-reviewer` and `tooling` with code/test reviewers, but in-memory `tooling` and `config` probes without fixture/schema/validator gate evidence returned `valid: true`. | Missing deterministic gate tracked by `tighten-autopilot-ledger-type-gates`. |
 | P1 | Performance/protocol-style gates | completed with finding | Validator routes performance/protocol reviewers, but in-memory `performance` and `protocol` probes without benchmark/golden evidence returned `valid: true`. | Missing benchmark/golden gate tracked by `tighten-autopilot-ledger-type-gates`. |
@@ -49,27 +51,28 @@ Evidence: in-memory probes returned `valid: true` for `bugfix`, `tooling`, `conf
 
 ## Validation
 
-- `git status --short`: clean before regression edits.
-- `npm run validate`: passed before follow-up changes and passed after follow-up changes with `OK: skills=34 agents=12 markdown=75 warnings=0`.
-- `npm test`: passed before follow-up changes and passed after follow-up changes with `OK: library tests=57`, `OK: code-quality inventory tests=4`, `15 autopilot ledger tests passed`, and `OK: pre-push validation tests=3`.
-- `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`: passed before and after follow-up changes with `valid: true`, no errors, no warnings.
-- `openspec validate --all`: passed before follow-up changes for one change; passed after follow-up changes for three changes: `autopilot-live-regression`, `improve-autopilot-runtime-e2e-harness`, and `tighten-autopilot-ledger-type-gates`.
-- Targeted fixture validation: valid feature/research/typo fixtures passed; intentionally invalid fixtures failed as expected for missing `testDecision`, silent reviewer skip, and missing MR merge evidence.
-- In-memory missing-gate probes: `bugfix`, `tooling`, `config`, `performance`, and `protocol` probes without type-specific evidence returned `valid: true`, confirming the validator gap.
+- `npm run autopilot:evidence -- --change autopilot-live-regression --mode collect`: passed read-only on 2026-06-12; found one valid Ready research ledger and planned validation/reviewer/freshness evidence.
+- `npm run validate:strict`: passed on 2026-06-12 with `OK: skills=34 agents=12 markdown=108 warnings=0`.
+- `npm test`: passed on 2026-06-12, including library, validation-script, code-quality inventory, Autopilot ledger/contract/bundle/instruction/freshness/output/collect/control, retro-gate, evidence-pack, and pre-push tests.
+- `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`: passed on 2026-06-12 with `valid: true`, no errors, no warnings.
+- `openspec validate --all`: passed on 2026-06-12 with 8 items passed and 0 failed.
+- `npm run openspec:retro-gate -- add-autopilot-evidence-pack-workflow`, `improve-autopilot-runtime-e2e-harness`, `require-openspec-change-retro-gate`, and `tighten-autopilot-routing-and-escape-hatch`: all passed with `archiveAllowed: true`.
+- `autopilot_status`: inspected one valid Ready research ledger, returned `reasonCode: "ready_runtime_deferred"`, selected `autopilot-live-regression`, and recommended manual continuation without repeating equivalent no-progress calls.
 
 ## Reviewer Gates
 
-- `instruction-artifact-reviewer`: skipped. This run did not change `.opencode/**`, `instructions/**`, `README.md`, agents, or skills; instruction changes are tracked for future only if runtime behavior changes.
-- `test-coverage-reviewer`: skipped for current regression artifacts. No implementation/test code was changed; test coverage gaps are tracked in `tighten-autopilot-ledger-type-gates` and `improve-autopilot-runtime-e2e-harness`.
-- `code-quality-reviewer`: skipped. No runtime/tooling implementation code was changed.
-- `deployment-config-reviewer`: skipped. No config/deployment code or schema was changed; config gate gap is tracked as follow-up.
+- `instruction-artifact-reviewer`: run after skill, README, command, prompt, and task wording changes; final recheck passed with no blockers.
+- `test-coverage-reviewer`: run after evidence-pack and runtime safety test changes; final recheck passed with no blockers.
+- `code-quality-reviewer`: run after TypeScript helper/runtime changes; final recheck passed with no blockers.
+- `deployment-config-reviewer`: skipped because this slice did not change deployment config, schema, service process model, installer behavior, or operational configuration.
 
 ## Usability Assessment
 
 - Autopilot is useful as a process-control contract when the user explicitly invokes `/autopilot`, when a ready OpenSpec ledger exists, or when strict phase/reviewer/MR gates need to be made visible.
 - Autopilot is currently less useful than `openspec-apply-change` for a single small feature because runtime advancement and worker dispatch are not implemented.
 - Autopilot is better than prompt-only `orchestrator` for future large epics only after plugin-owned runtime state can claim tasks, dispatch workers, collect reports, and preserve legal transitions.
-- `next-step` remains better for open-ended discovery when no ready ledger exists; the Autopilot skill correctly says not to over-trigger for casual exploration.
+- `next-step` remains better for open-ended discovery when no ready ledger exists; the Autopilot skill correctly says not to over-trigger for casual exploration and now names explicit escape-hatch handoffs for deferred or conflicting runtime evidence.
+- `autopilot:evidence` should reduce manual synthesis for future live regression runs by producing compact validation, reviewer, freshness, scenario, and retrospective evidence before report editing.
 - The MVP output is safe and non-destructive, but the `idle` result for a valid Ready ledger is not actionable enough for an agent workflow.
 
 ## Residual Risks
@@ -81,4 +84,4 @@ Evidence: in-memory probes returned `valid: true` for `bugfix`, `tooling`, `conf
 
 ## Landing Status
 
-Not ready to land as current live-regression evidence. The unchecked setup/live-smoke/scenario tasks remain intentionally open until a restarted OpenCode session recaptures current Autopilot tool output and reconciles the historical findings with implemented follow-up changes.
+Not ready to land as current live-regression evidence. The unchecked setup/live-smoke/scenario tasks remain intentionally open until a restarted OpenCode session recaptures current Autopilot tool output and reconciles the historical findings with implemented follow-up changes, including the routing escape-hatch contract.

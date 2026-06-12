@@ -27,7 +27,10 @@ const requiredScripts = {
   "instruction:inventory": "node tools/instruction-artifacts-inventory.ts",
   "code-quality:inventory": "node tools/code-quality-inventory.ts",
   "autopilot:validate": "node tools/autopilot-ledger.ts",
+  "autopilot:evidence": "node tools/autopilot-evidence.ts",
   "openspec:validate": "openspec validate --all",
+  "openspec:retro-gate": "node tools/openspec-retro-gate.ts",
+  "openspec:retro-followups": "node tools/openspec-retro-followups.ts",
   "prepush:validate": "node tools/pre-push-validate.ts",
   validate: "node tools/validate-library.ts",
   "validate:strict": "node tools/validate-library.ts --fail-on-warnings",
@@ -112,6 +115,17 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validator rejects missing documented Autopilot evidence script",
+    run: () => {
+      withTempDir("missing-autopilot-evidence-script", (fixture) => {
+        writePackageJson(fixture, withoutScript("autopilot:evidence"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Missing documented Autopilot evidence script should fail validation.");
+        assertOutputContains(result, "autopilot:evidence", "Missing Autopilot evidence script should name the required script.");
+      });
+    },
+  },
+  {
     name: "validator rejects wrong documented OpenSpec validation script",
     run: () => {
       withTempDir("wrong-openspec-validation-script", (fixture) => {
@@ -120,6 +134,28 @@ const tests: TestCase[] = [
         assertFailure(result, "Wrong documented OpenSpec validation script should fail validation.");
         assertOutputContains(result, "openspec:validate", "Wrong OpenSpec validation script should name the script.");
         assertOutputContains(result, "openspec validate --all", "Wrong OpenSpec validation script should name the required command.");
+      });
+    },
+  },
+  {
+    name: "validator rejects missing documented OpenSpec retro gate script",
+    run: () => {
+      withTempDir("missing-openspec-retro-gate-script", (fixture) => {
+        writePackageJson(fixture, withoutScript("openspec:retro-gate"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Missing documented OpenSpec retro gate script should fail validation.");
+        assertOutputContains(result, "openspec:retro-gate", "Missing OpenSpec retro gate script should name the required script.");
+      });
+    },
+  },
+  {
+    name: "validator rejects missing documented OpenSpec retro followups script",
+    run: () => {
+      withTempDir("missing-openspec-retro-followups-script", (fixture) => {
+        writePackageJson(fixture, withoutScript("openspec:retro-followups"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Missing documented OpenSpec retro followups script should fail validation.");
+        assertOutputContains(result, "openspec:retro-followups", "Missing OpenSpec retro followups script should name the required script.");
       });
     },
   },

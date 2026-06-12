@@ -18,7 +18,25 @@ For broad or unclear user work where it is not yet known whether OpenSpec is req
 - Define problem, goals, non-goals, risks, rollout/migration, and validation.
 - Write normative requirements as scenarios with observable outcomes.
 - Create tasks that map to requirements, tests, docs, and validation gates; order behavior-changing tasks as test/characterization first, implementation second, validation third.
+- End every `tasks.md` with the final retrospective section below so archive readiness is checkable.
 - Keep future-scope work out unless explicitly accepted for this change.
+
+## Required Task Tail
+
+Every new OpenSpec `tasks.md` must end with:
+
+```md
+## Retrospective Before Archive
+
+- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
+- [ ] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision.
+- [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
+- [ ] For reusable findings, create or update `opencode-dev-kit` OpenSpec proposals/changes only when the current repository owns them; otherwise record a local handoff and do not write cross-repo without explicit approval.
+- [ ] Run `npm run openspec:retro-followups -- <change-id>` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
+- [ ] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded.
+```
+
+Keep this section final because it depends on completed implementation, validation, reviewer, and handoff evidence.
 
 ## Follow-Up Backlog Mode
 
@@ -37,7 +55,7 @@ Return or create, depending on user mode:
 - `proposal.md`: why, what changes, impact, non-goals.
 - `design.md`: decisions, alternatives, risks, compatibility, operational model.
 - `specs/<capability>/spec.md`: added/modified/removed requirements and scenarios.
-- `tasks.md`: implementation and validation checklist.
+- `tasks.md`: implementation and validation checklist ending with `Retrospective Before Archive`.
 - `traceability.md` when the repository uses one.
 - `Validation`: OpenSpec commands run or skipped with reason.
 

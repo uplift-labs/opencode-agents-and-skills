@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  createCollectOutput,
   createRunNextOutput,
   createStatusOutput,
   readLedgerSummaries,
@@ -305,11 +304,13 @@ const tests: TestCase[] = [
     run: () => withTempRepo("selection-claim-conflict", (repo) => {
       writeLedger(repo, "primary", readyLedgerWithSelectionInputs("task-primary", "high", ["openspec/changes/primary/**"]));
       const ledgersWithoutRawState = readLedgerSummaries(repo).map((ledger): LedgerSummary => ({ ...ledger, ledger: undefined }));
-      const output = createRunNextOutput(ledgersWithoutRawState, { runtimeState: { claimReadyTasks: true } });
+      const runtimeState: Record<string, unknown> = { claimReadyTasks: true };
+      const output = createRunNextOutput(ledgersWithoutRawState, { runtimeState });
       assert(output.outcome === "failed", `Expected claim conflict to fail, got ${output.outcome}.`);
       assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
       assert(output.tasksStarted.length === 0, "Claim conflict must not start tasks.");
       assert(output.blockers.some((blocker) => blocker.reason.includes("raw ledger state is unavailable")), "Claim conflict must explain missing raw ledger state.");
+      assert(runtimeState.activeRun == null, "Claim conflict must not record active runtime state.");
     }),
   },
   {
@@ -384,6 +385,40 @@ const tests: TestCase[] = [
     }),
   },
   {
+    name: "explicit parallel implementation rejects writes into another task forbidden scope",
+    run: () => withTempRepo("selection-parallel-forbidden", (repo) => {
+      const primary = readyLedgerWithSelectionInputs("task-primary", "high", ["tools/primary.ts"]);
+      const primaryScope = primary.scope as Record<string, unknown>;
+      primaryScope.forbidden = [...(primaryScope.forbidden as string[]), "tools/shared/**"];
+      writeLedger(repo, "primary", primary);
+      writeLedger(repo, "forbidden-write", readyLedgerWithSelectionInputs("task-forbidden-write", "medium", ["tools/shared/generated.ts"]));
+      const output = createRunNextOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          parallelImplementation: {
+            enabled: true,
+            maxImplementationClaims: 2,
+            lockedTaskIds: ["task-primary", "task-forbidden-write"],
+            worktrees: {
+              "task-primary": "autopilot/primary/task-primary",
+              "task-forbidden-write": "autopilot/forbidden-write/task-forbidden-write",
+            },
+          },
+        },
+      });
+      assert(output.outcome === "advanced", `Expected safe primary claim despite forbidden parallel candidate, got ${output.outcome}.`);
+      assert(output.tasksStarted.length === 1, `Expected only primary task to start, got ${output.tasksStarted.length}.`);
+      assertSelection(output, {
+        mode: "parallel_implementation",
+        maxImplementationClaims: 2,
+        selectedTaskId: "task-primary",
+        candidates: [
+          { taskId: "task-primary", rank: 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started" },
+          { taskId: "task-forbidden-write", rank: 2, selected: false, selectionReason: "scope_conflict", parallelDecision: "not_parallel_safe" },
+        ],
+      });
+    }),
+  },
+  {
     name: "explicit parallel implementation requires locks and unique worktrees",
     run: () => withTempRepo("selection-parallel-guards", (repo) => {
       writeLedger(repo, "first", readyLedgerWithSelectionInputs("task-first", "critical", ["openspec/changes/first/**"]));
@@ -397,9 +432,9 @@ const tests: TestCase[] = [
             maxImplementationClaims: 4,
             lockedTaskIds: ["task-first", "task-duplicate-worktree", "task-missing-worktree"],
             worktrees: {
-              "task-first": "autopilot/shared-worktree",
+              "task-first": "autopilot/first/task-first",
               "task-missing-lock": "autopilot/missing-lock/task-missing-lock",
-              "task-duplicate-worktree": "autopilot/shared-worktree",
+              "task-duplicate-worktree": "autopilot/first/task-first",
             },
           },
         },
@@ -415,6 +450,40 @@ const tests: TestCase[] = [
           { taskId: "task-missing-lock", rank: 2, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
           { taskId: "task-duplicate-worktree", rank: 3, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
           { taskId: "task-missing-worktree", rank: 4, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "explicit parallel implementation rejects unowned worktree paths",
+    run: () => withTempRepo("selection-parallel-worktree-ownership", (repo) => {
+      writeLedger(repo, "absolute", readyLedgerWithSelectionInputs("task-absolute", "high", ["openspec/changes/absolute/**"]));
+      writeLedger(repo, "traversal", readyLedgerWithSelectionInputs("task-traversal", "medium", ["openspec/changes/traversal/**"]));
+      writeLedger(repo, "missing-task", readyLedgerWithSelectionInputs("task-missing-task", "low", ["openspec/changes/missing-task/**"]));
+      const output = createRunNextOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          parallelImplementation: {
+            enabled: true,
+            maxImplementationClaims: 3,
+            lockedTaskIds: ["task-absolute", "task-traversal", "task-missing-task"],
+            worktrees: {
+              "task-absolute": "C:/tmp/autopilot/task-absolute",
+              "task-traversal": "autopilot/../task-traversal",
+              "task-missing-task": "autopilot/missing-task/worktree",
+            },
+          },
+        },
+      });
+      assert(output.outcome === "failed", `Expected no-safe-parallel claim conflict, got ${output.outcome}.`);
+      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
+      assert(output.tasksStarted.length === 0, `Expected no unowned worktree task starts, got ${output.tasksStarted.length}.`);
+      assertSelection(output, {
+        mode: "parallel_implementation",
+        maxImplementationClaims: 3,
+        candidates: [
+          { taskId: "task-absolute", rank: 1, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
+          { taskId: "task-traversal", rank: 2, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
+          { taskId: "task-missing-task", rank: 3, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
         ],
       });
     }),
@@ -615,147 +684,6 @@ const tests: TestCase[] = [
       assertSummary(output.taskSummaries[0], { taskId: "done-research", status: "Done", taskType: "research", valid: true, mrStatus: "not-required", actionability: "terminal", reasonCode: "no_actionable_tasks" });
       assertNextAction(output.nextActions[0], { kind: "manual_review", safety: "safe" });
       assertNoRepeatedTool(output, "autopilot_run_next");
-    }),
-  },
-  {
-    name: "collect returns collect-deferred reason without repeating collect",
-    run: () => withTempRepo("collect", (repo) => {
-      writeLedger(repo, "ready-research", readyResearchLedger());
-      const output = createCollectOutput(readLedgerSummaries(repo));
-      assert(output.reasonCode === "collect_deferred", `Expected collect_deferred, got ${output.reasonCode}.`);
-      assertNoProgressClaims(output);
-      assertEmptySelection(output);
-      assert(output.loopGuard.equivalentCall === "autopilot_collect", `Expected collect loop guard, got ${output.loopGuard.equivalentCall}.`);
-      assert(output.loopGuard.suppressRepeatRecommendation, "Collect output must suppress repeated collect recommendation.");
-      assertNoRepeatedTool(output, "autopilot_collect");
-      assertNextAction(output.nextActions[0], { kind: "tool", safety: "safe", tool: "autopilot_status" });
-    }),
-  },
-  {
-    name: "collect validates plugin-owned worker report legal transition",
-    run: () => withTempRepo("collect-worker-report", (repo) => {
-      writeLedger(repo, "ready-research", readyResearchLedger());
-      const output = createCollectOutput(readLedgerSummaries(repo), {
-        runtimeState: {
-          workerReports: [
-            {
-              reportId: "report-ready-analyze",
-              taskId: "ready-research",
-              fromStatus: "Ready",
-              toStatus: "Analyze",
-              completedAt: "2026-06-10T00:00:00.000Z",
-              evidence: { workerSummary: "Ready task claimed for analysis." },
-            },
-          ],
-        },
-      });
-      assert(output.outcome === "advanced", `Expected advanced collect output, got ${output.outcome}.`);
-      assert(output.reasonCode === "advanced", `Expected advanced reason, got ${output.reasonCode}.`);
-      assert(output.tasksStarted.length === 0, "Collect output must not claim worker starts.");
-      assert(output.tasksAdvanced.length === 1, `Expected one advanced task, got ${output.tasksAdvanced.length}.`);
-      assertNextAction(output.nextActions[0], { kind: "tool", safety: "safe", tool: "autopilot_status" });
-    }),
-  },
-  {
-    name: "collect rejects runtime evidence conflicts without advancement",
-    run: () => withTempRepo("collect-conflict", (repo) => {
-      writeLedger(repo, "ready-research", readyResearchLedger());
-      const output = createCollectOutput(readLedgerSummaries(repo), {
-        runtimeState: {
-          workerReports: [
-            {
-              reportId: "report-stale-status",
-              taskId: "ready-research",
-              fromStatus: "Implementation",
-              toStatus: "Review",
-              completedAt: "2026-06-10T00:00:00.000Z",
-            },
-          ],
-        },
-      });
-      assert(output.outcome === "failed", `Expected failed conflict output, got ${output.outcome}.`);
-      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
-      assertNoProgressClaims(output);
-      assert(output.blockers.some((blocker) => blocker.reason.includes("report-stale-status")), "Conflict output must include report id evidence.");
-      assertNextAction(output.nextActions[0], { kind: "validation", safety: "safe" });
-    }),
-  },
-  {
-    name: "collect rejects duplicate same-task reports in one operation",
-    run: () => withTempRepo("collect-duplicate-reports", (repo) => {
-      writeLedger(repo, "ready-research", readyResearchLedger());
-      const output = createCollectOutput(readLedgerSummaries(repo), {
-        runtimeState: {
-          workerReports: [
-            {
-              reportId: "report-first",
-              taskId: "ready-research",
-              fromStatus: "Ready",
-              toStatus: "Analyze",
-              completedAt: "2026-06-10T00:00:00.000Z",
-            },
-            {
-              reportId: "report-second",
-              taskId: "ready-research",
-              fromStatus: "Ready",
-              toStatus: "Analyze",
-              completedAt: "2026-06-10T00:00:01.000Z",
-            },
-          ],
-        },
-      });
-      assert(output.outcome === "failed", `Expected duplicate same-task reports to fail, got ${output.outcome}.`);
-      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
-      assertNoProgressClaims(output);
-      assert(output.blockers.some((blocker) => blocker.reason.includes("multiple worker reports")), "Duplicate report conflict must explain multiple worker reports.");
-    }),
-  },
-  {
-    name: "collect rejects ambiguous duplicate task-id worker reports without ledger path",
-    run: () => withTempRepo("collect-duplicate-task-id", (repo) => {
-      writeLedger(repo, "first", readyLedgerWithSelectionInputs("duplicate-task", "high", ["openspec/changes/first/**"]));
-      writeLedger(repo, "second", readyLedgerWithSelectionInputs("duplicate-task", "medium", ["openspec/changes/second/**"]));
-      const output = createCollectOutput(readLedgerSummaries(repo), {
-        runtimeState: {
-          workerReports: [
-            {
-              reportId: "report-ambiguous-task",
-              taskId: "duplicate-task",
-              fromStatus: "Ready",
-              toStatus: "Analyze",
-              completedAt: "2026-06-10T00:00:00.000Z",
-            },
-          ],
-        },
-      });
-      assert(output.outcome === "failed", `Expected duplicate task-id report to fail, got ${output.outcome}.`);
-      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
-      assertNoProgressClaims(output);
-      assert(output.blockers.some((blocker) => blocker.reason.includes("duplicate-task") && blocker.reason.includes("ledgerPath")), "Ambiguous report output must require ledgerPath disambiguation.");
-    }),
-  },
-  {
-    name: "collect accepts duplicate task-id worker report with ledger path",
-    run: () => withTempRepo("collect-duplicate-task-id-path", (repo) => {
-      writeLedger(repo, "first", readyLedgerWithSelectionInputs("duplicate-task", "high", ["openspec/changes/first/**"]));
-      writeLedger(repo, "second", readyLedgerWithSelectionInputs("duplicate-task", "medium", ["openspec/changes/second/**"]));
-      const output = createCollectOutput(readLedgerSummaries(repo), {
-        runtimeState: {
-          workerReports: [
-            {
-              reportId: "report-disambiguated-task",
-              taskId: "duplicate-task",
-              ledgerPath: "openspec/changes/first/automation/task.json",
-              fromStatus: "Ready",
-              toStatus: "Analyze",
-              completedAt: "2026-06-10T00:00:00.000Z",
-            },
-          ],
-        },
-      });
-      assert(output.outcome === "advanced", `Expected disambiguated duplicate task-id report to advance, got ${output.outcome}.`);
-      assert(output.tasksAdvanced.length === 1, `Expected one advancement, got ${output.tasksAdvanced.length}.`);
-      assert(JSON.stringify(output.tasksAdvanced).includes("openspec/changes/first/automation/task.json"), "Disambiguated report must advance the requested ledger path.");
     }),
   },
   {

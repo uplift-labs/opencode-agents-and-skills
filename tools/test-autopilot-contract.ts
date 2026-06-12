@@ -466,6 +466,8 @@ const tests: TestCase[] = [
       assert(starts.length === 1, `Expected one started task in claim mode, got ${starts.length}.`);
       assert(starts[0]?.taskId === "task-a", `Expected claim mode to start task-a, got ${String(starts[0]?.taskId)}.`);
       assert((claimedRunNext.payload.selection as Record<string, unknown>).selectedTaskId === "task-a", "claimed run_next must preserve selected task-a evidence.");
+      const claimedTaskStop = await executePluginTool(claimingTools, "autopilot_stop", { target: "task", id: "task-a", reason: ignoredStopReason });
+      assertStopApplied(claimedTaskStop, [{ target: "task", taskId: "task-a" }], { acknowledged: ["target", "id"], ignored: ["reason"] }, "claimed task stop continuity");
 
       const status = await executePluginTool(tools, "autopilot_status", { changeId: "change-b" });
       assert(status.payload.reasonCode === "waiting_for_mr", `Expected scoped status waiting_for_mr, got ${String(status.payload.reasonCode)}.`);
@@ -499,6 +501,11 @@ const tests: TestCase[] = [
       assert(advancements.length === 1, `Expected one collect advancement, got ${advancements.length}.`);
       assert(advancements[0]?.taskId === "task-a", `Expected collect advancement for task-a, got ${String(advancements[0]?.taskId)}.`);
       assert(advancements[0]?.from === "Ready" && advancements[0]?.to === "Analyze", `Expected Ready -> Analyze advancement, got ${String(advancements[0]?.from)} -> ${String(advancements[0]?.to)}.`);
+
+      const repeatedCollectedReport = await executePluginTool(toolsWithWorkerReport, "autopilot_collect", { taskId: "task-a" });
+      assert(repeatedCollectedReport.payload.reasonCode === "collect_deferred", `Expected repeated collect to defer consumed report, got ${String(repeatedCollectedReport.payload.reasonCode)}.`);
+      assertNoProgressClaims(repeatedCollectedReport.payload, "repeated collect consumed report");
+      assert(String(repeatedCollectedReport.payload.summary).includes("already consumed"), "repeated collect must explain consumed worker report idempotency.");
 
       const toolsWithConflictingReport = await pluginTools(repo, {
         runtimeState: {
@@ -610,6 +617,38 @@ const tests: TestCase[] = [
 
       const after = snapshotFiles(repo);
       assert(JSON.stringify(after) === JSON.stringify(before), "MVP plugin tools must not create, delete, or mutate temp repo files in this runtime-deferred/no-op slice.");
+    }),
+  },
+  {
+    name: "plugin collect rejects duplicate report ids across tasks",
+    run: () => withTempRepo("plugin-collect-duplicate-report-id", async (repo) => {
+      writeLedger(repo, "change-a", readyResearchLedger("task-a"));
+      writeLedger(repo, "change-b", readyResearchLedger("task-b"));
+      const runtimeState = {
+        workerReports: [
+          {
+            reportId: "report-shared",
+            taskId: "task-a",
+            fromStatus: "Ready",
+            toStatus: "Analyze",
+            completedAt: "2026-06-10T00:00:00.000Z",
+          },
+          {
+            reportId: "report-shared",
+            taskId: "task-b",
+            fromStatus: "Ready",
+            toStatus: "Analyze",
+            completedAt: "2026-06-10T00:00:01.000Z",
+          },
+        ],
+      };
+      const tools = await pluginTools(repo, { runtimeState });
+      const result = await executePluginTool(tools, "autopilot_collect", {});
+      assert(result.payload.outcome === "failed", `Expected duplicate report id collect to fail, got ${String(result.payload.outcome)}.`);
+      assert(result.payload.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${String(result.payload.reasonCode)}.`);
+      assertNoProgressClaims(result.payload, "duplicate report id collect");
+      assert(JSON.stringify(result.payload.blockers).includes("report-shared"), "duplicate report id conflict must include report evidence.");
+      assert(!JSON.stringify(runtimeState).includes("consumedWorkerReportIds"), "Failed duplicate report-id collect must not mark any report consumed.");
     }),
   },
 ];
