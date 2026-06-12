@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  createCollectOutput,
   createRunNextOutput,
   createStatusOutput,
   readLedgerSummaries,
@@ -75,6 +76,32 @@ function readyLedgerWithSelectionInputs(id: string, priority: string, writeScope
   return ledger;
 }
 
+function readyLedgerWithTaskType(id: string, taskType: string, priority: string, writeScope: string[]): Record<string, unknown> {
+  const ledger = readyLedgerWithSelectionInputs(id, priority, writeScope);
+  ledger.taskType = taskType;
+  if (["feature", "bugfix", "refactor", "tooling"].includes(taskType)) {
+    ledger.testDecision = { decision: "required", reason: "Implementation-bearing task requires focused test evidence." };
+    ledger.phaseProfile = {
+      analyze: { required: true, depth: "deep" },
+      implementation: { required: true, mode: "test-first" },
+      review: { required: true, mode: "code-test-review" },
+      acceptance: { required: true, mr: "policy" },
+    };
+    ledger.reviewPolicy = {
+      required: [
+        { reviewer: "code-quality-reviewer", status: "pending", reason: "Implementation-bearing task requires code-quality review." },
+        { reviewer: "test-coverage-reviewer", status: "pending", reason: "Implementation-bearing task requires test coverage review." },
+      ],
+      skipped: [],
+    };
+  }
+  if (taskType === "docs") {
+    ledger.testDecision = { decision: "not-applicable", reason: "Documentation-only task has no executable behavior." };
+    ledger.reviewPolicy = { required: [], skipped: [] };
+  }
+  return ledger;
+}
+
 function readyLedgerWithDependencies(id: string, dependencies: string[]): Record<string, unknown> {
   const ledger = readyLedgerWithSelectionInputs(id, "critical", ["openspec/changes/dependent/**"]);
   ledger.dependencies = dependencies;
@@ -106,6 +133,22 @@ function doneResearchLedger(): Record<string, unknown> {
     evidence: { noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR." },
   });
   revisionOf(ledger).number = 4;
+  return ledger;
+}
+
+function acceptanceResearchLedger(id: string, writeScope: string[]): Record<string, unknown> {
+  const ledger = readFixture("valid-research.json");
+  ledger.id = id;
+  ledger.scope = {
+    read: ["docs/**", "openspec/**"],
+    write: writeScope,
+    forbidden: ["src/**", "openspec/changes/*/automation/**", ".autopilot/**"],
+  };
+  ledger.mr = {
+    required: false,
+    status: "not-required",
+    noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR.",
+  };
   return ledger;
 }
 
@@ -433,9 +476,9 @@ const tests: TestCase[] = [
             maxImplementationClaims: 4,
             lockedTaskIds: ["task-first", "task-duplicate-worktree", "task-missing-worktree"],
             worktrees: {
-              "task-first": "autopilot/first/task-first",
+              "task-first": "autopilot/shared/task-first/task-duplicate-worktree",
               "task-missing-lock": "autopilot/missing-lock/task-missing-lock",
-              "task-duplicate-worktree": "autopilot/first/task-first",
+              "task-duplicate-worktree": "autopilot/shared/task-first/task-duplicate-worktree",
             },
           },
         },

@@ -1,6 +1,6 @@
 ---
 name: openspec-autopilot
-description: Use when the user explicitly says /autopilot or autopilot, asks to inspect or continue an Autopilot/OpenSpec queue with ready ledgers or unfinished active changes, needs strict typed phases, safe parallel OpenSpec work with plugin/runtime selection evidence, or says работай inside an active Autopilot context.
+description: Use when the user explicitly says /autopilot or autopilot, asks to inspect or continue an Autopilot/OpenSpec queue with ready ledgers, has unfinished active changes during explicit Autopilot handoff, needs strict typed phases, safe parallel OpenSpec work with plugin/runtime selection evidence, or says работай inside an active Autopilot context.
 license: MIT
 ---
 
@@ -55,7 +55,7 @@ Protected paths are plugin-owned: `openspec/changes/*/automation/task.json`, `op
 
 | Tool | Use |
 | --- | --- |
-| `autopilot_run_next` | Main control-plane call: discover/classify current ledgers or unfinished active OpenSpec changes in `tasks.md` and return authoritative actionability. Default MVP behavior stops with deferred/no-op output when mutation would be needed; `active_change_handoff` routes to `openspec-apply-change`; explicit claim harness state may return `advanced`/`tasksStarted` evidence and record active runtime state without protected-file mutation. |
+| `autopilot_run_next` | Main control-plane call: discover/classify current ledgers or unfinished active OpenSpec changes in `tasks.md` and return authoritative actionability. Default MVP behavior stops with deferred/no-op output when mutation would be needed; `active_change_handoff` routes to `openspec-apply-change`; explicit claim, fixed parallel, or auto parallel harness state may return `advanced`/`tasksStarted` evidence and record active runtime state without protected-file mutation. |
 | `autopilot_status` | Concise tasks/runs/workers/blockers/MRs status, including active-change handoff summaries when no applicable ledger exists. |
 | `autopilot_collect` | Gather plugin-owned worker reports, validate legal advancement, and track consumed report ids for idempotent repeated calls; may return validation-only `advanced` evidence for accepted in-memory report transitions, `collect_deferred` when scoped reports were already consumed, or `runtime_evidence_conflict` without protected mutation when report evidence is stale or invalid. |
 | `autopilot_answer_blocker` | Validate the user's selected blocker option envelope against plugin-owned pending questions; current MVP records no mutation and recommends status before continuing. |
@@ -102,9 +102,20 @@ Expected shared Autopilot tool output. Optional fields such as `taskSummaries[].
     }
   ],
   "selection": {
-    "mode": "serial_default|parallel_implementation",
+    "mode": "serial_default|parallel_implementation|auto_parallel_implementation",
     "selectedTaskId": "...",
     "maxImplementationClaims": 1,
+    "autoDecision": {
+      "policy": "auto",
+      "resolvedMaxImplementationClaims": 2,
+      "maxAutoClaims": 3,
+      "conflictTolerance": "none|small",
+      "fanInValidationRequired": true,
+      "decisionReason": "...",
+      "riskClass": "serial_required|standard_parallel|low_risk_parallel|soft_conflict_parallel",
+      "acceptedSoftConflictScopes": [],
+      "rejectedReasons": []
+    },
     "candidates": [
       {
         "taskId": "...",
@@ -126,7 +137,11 @@ Expected shared Autopilot tool output. Optional fields such as `taskSummaries[].
 
 When `reasonCode` is `active_change_handoff`, continue the selected unfinished active OpenSpec change through `openspec-apply-change`; do not repeat the equivalent no-progress tool call. When `reasonCode` is `ready_runtime_deferred`, `collect_deferred`, `stop_no_active_state`, `no_ledgers`, or `no_actionable_tasks`, do not repeat the equivalent no-progress tool call unless `nextActions[]` explicitly says it is safe. Use `selection` to identify the deterministic primary Ready task or active change and serial-default non-selected candidates; use `taskSummaries[]` to explain which discovered task is actionable, invalid, blocked, waiting for MR, terminal, or runtime-deferred without re-reading full ledgers.
 
-Current MVP-vNext default selection is `serial_default` with `maxImplementationClaims: 1`. The selected primary candidate has `parallelDecision: "not_evaluated"`; non-selected Ready candidates may be `parallel_ready` when deterministic write-scope prefixes are disjoint or `not_parallel_safe` when scopes overlap, are empty, or cannot be compared safely. `parallel_ready` is visibility evidence only and does not prove dispatch, claims, worker starts, or ledger mutation. Explicit plugin-owned parallel implementation harness state may return `parallel_implementation`, `parallel_started`, `scope_conflict`, `missing_parallel_guard`, or `wip_limit`; treat `parallel_started` as authoritative start evidence only when returned with matching `tasksStarted` evidence, and treat non-start safety reasons as authoritative not-started safety decisions when returned in `selection.candidates[]`.
+Current MVP-vNext default selection is `serial_default` with `maxImplementationClaims: 1`; no explicit fixed or auto policy still means serial implementation. The selected primary candidate has `parallelDecision: "not_evaluated"`; non-selected Ready candidates may be `parallel_ready` when deterministic write-scope prefixes are disjoint or `not_parallel_safe` when scopes overlap, are empty, or cannot be compared safely. `parallel_ready` is visibility evidence only and does not prove dispatch, claims, worker starts, or ledger mutation.
+
+Explicit plugin-owned fixed parallel state may return `parallel_implementation`. Explicit auto policy, via `parallelImplementation.enabled: true` plus either `parallelImplementation.mode: "auto"` or `parallelImplementation.maxImplementationClaims: "auto"`, may return `auto_parallel_implementation`; `selection.maxImplementationClaims` remains the resolved numeric WIP, while `selection.autoDecision` explains `riskClass`, `maxAutoClaims`, `conflictTolerance`, accepted soft conflict scopes, rejected reasons, and whether fan-in validation is required. `standard_parallel` uses disjoint implementation scopes, `low_risk_parallel` is bounded for docs/typo/research/planning/fixture/example-like work, `soft_conflict_parallel` is capped at `2` and only accepts configured `softConflictScopes`, and `serial_required` preserves WIP `1` for central/protected/source/config/unknown/guard-risk cases. Treat `parallel_started` as authoritative start evidence only when returned with matching `tasksStarted` evidence; started parallel candidates must include task-to-`worktreePath` evidence for fan-in, MR, archive, and cleanup gates. Treat `scope_conflict`, `missing_parallel_guard`, and `wip_limit` as authoritative not-started safety decisions in `selection.candidates[]`.
+
+When auto mode starts more than one task or accepts a soft conflict, terminal readiness requires passed fan-in integration evidence; `autopilot_collect` must block `Done` advancement with `runtime_evidence_conflict` if that evidence is missing. Archive-ready and MR-ready handoffs must require the same fan-in evidence through agent/reviewer gates until a first-class plugin archive/MR readiness surface exists. Fan-in evidence must prove combined validation, idempotent worker-report collection, no protected ledger mutation by agents/workers, and soft-conflict resolution when accepted soft scopes exist. Parallel implementation streams must be isolated in one owned `autopilot/...` git worktree per stream before implementation, integrated back through MR, and cleaned up only after MR merged evidence and archived-change evidence exist; use programmatic lifecycle helpers/actions instead of relying on prose reminders.
 
 Tool result metadata may include `metadata.argumentContext` for no-op/runtime-only tools such as `autopilot_answer_blocker` and `autopilot_stop`. Treat `acknowledged`, `ignored`, and `mutation` as a sanitized argument-handling note only; ignored argument values are not echoed. `mutation: "none"` means no ledger/runtime mutation occurred. `mutation: "plugin-owned-runtime-only"` means the tool used only plugin-owned in-memory runtime state without protected-file mutation; read `summary`, `tasksStarted`, and `tasksAdvanced` to distinguish validation-only evidence from an observable active-state change. `autopilot_answer_blocker` may return `outcome: "failed"` when the `questionId`, `taskId`, label, or action does not match a plugin-owned pending question.
 
@@ -155,6 +170,8 @@ Critical evidence gates:
 - `Implementation -> Review` needs changed files or no-op reason, validation evidence or skipped reason, and secret scan status or placeholder.
 - `Review -> Acceptance` needs reviewer decisions or explicit reviewer skip reasons.
 - `Acceptance -> Done` needs MR merged evidence, or explicit no-MR policy for non-file-changing research/planning.
+- Auto-parallel runs that started multiple tasks or accepted soft conflict scopes need passed fan-in integration evidence before `Done`; archive-ready and MR-ready handoffs require the same evidence through agent/reviewer gates until first-class plugin handoff checks exist.
+- Parallel implementation worktrees need MR merged evidence plus archived-change evidence before cleanup; cleanup must be limited to owned `autopilot/...` worktrees.
 - Any transition to `Blocked` needs blocker reason and recommended options when user action is required.
 
 ## Retrospective Archive Gate

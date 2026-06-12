@@ -148,6 +148,32 @@ function assertActiveChangeTriggerBoundary(text: string, label: string): void {
   assert(/direct[\s\S]{0,120}openspec-apply-change|openspec-apply-change[\s\S]{0,120}direct/i.test(text), `${label} must preserve direct openspec-apply-change routing for direct accepted changes.`);
 }
 
+function assertAutoParallelDocs(text: string, label: string): void {
+  for (const phrase of [
+    "auto_parallel_implementation",
+    "autoDecision",
+    "riskClass",
+    "conflictTolerance",
+    "accepted soft",
+    "rejected",
+    "fan-in",
+    "parallel_ready",
+    "parallel_started",
+    "tasksStarted",
+    "worktreePath",
+    "MR merged",
+    "archive",
+    "cleanup",
+  ]) {
+    assert(text.toLowerCase().includes(phrase.toLowerCase()), `${label} must document auto-parallel phrase: ${phrase}.`);
+  }
+  assert(/maxImplementationClaims[\s\S]{0,120}(numeric|resolved)|resolved[\s\S]{0,120}maxImplementationClaims/i.test(text), `${label} must state auto maxImplementationClaims is resolved numeric output.`);
+  assert(/enabled:\s*true[\s\S]{0,160}(mode|maxImplementationClaims)|mode[\s\S]{0,160}enabled:\s*true/i.test(text), `${label} must state explicit auto policy still requires parallelImplementation.enabled=true.`);
+  assert(/terminal[\s\S]{0,120}fan-in|fan-in[\s\S]{0,120}terminal/i.test(text), `${label} must document fan-in before terminal readiness.`);
+  assert(/archive-ready[\s\S]{0,80}MR-ready[\s\S]{0,120}(agent\/reviewer|reviewer\/agent|reviewer gates|agent gates)|MR-ready[\s\S]{0,80}archive-ready[\s\S]{0,120}(agent\/reviewer|reviewer\/agent|reviewer gates|agent gates)/i.test(text), `${label} must document archive-ready and MR-ready fan-in handoffs through agent/reviewer gates.`);
+  assert(/worktree[\s\S]{0,180}(MR|merged)[\s\S]{0,180}(archive|cleanup)|cleanup[\s\S]{0,180}(MR|merged)[\s\S]{0,180}archive/i.test(text), `${label} must document worktree cleanup after MR merged and archive evidence.`);
+}
+
 function extractLineContaining(text: string, needle: string, label: string): string {
   const line = text.split(/\r?\n/).find((candidate) => candidate.includes(needle));
   assert(line != null, `${label} must contain ${needle}.`);
@@ -231,6 +257,13 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "openspec-autopilot skill documents auto parallel contract",
+    run: () => {
+      const skill = readText(".opencode/skills/openspec-autopilot/SKILL.md");
+      assertAutoParallelDocs(extractMarkdownSection(skill, "## Public Tools"), "openspec-autopilot Public Tools auto-parallel docs");
+    },
+  },
+  {
     name: "README Autopilot routing section documents current output fields",
     run: () => {
       const readme = readText("README.md");
@@ -261,6 +294,13 @@ const tests: TestCase[] = [
       const line = extractLineContaining(openSpecCatalog, "`openspec-autopilot`", "README OpenSpec Skill Catalog");
       assertActiveChangeHandoff(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
       assert(line.includes("openspec-apply-change"), "README OpenSpec Skill Catalog entry must mention openspec-apply-change continuation for active_change_handoff.");
+    },
+  },
+  {
+    name: "README documents auto parallel contract",
+    run: () => {
+      const readme = readText("README.md");
+      assertAutoParallelDocs(`${extractAutopilotRoutingBullet(readme)}\n${extractLineContaining(extractMarkdownSection(extractMarkdownSection(readme, "## Skill Catalog"), "### OpenSpec"), "`openspec-autopilot`", "README OpenSpec Skill Catalog")}`, "README auto-parallel docs");
     },
   },
   {

@@ -60,8 +60,35 @@ Autopilot SHALL require fan-in validation before completing auto-parallel implem
 #### Scenario: Auto-parallel work cannot complete without fan-in evidence
 
 - **GIVEN** auto parallel implementation started more than one task or accepted a soft conflict scope
-- **WHEN** Autopilot evaluates terminal readiness, archive readiness, or MR-ready handoff
+- **WHEN** Autopilot evaluates `Done` readiness
 - **THEN** it requires integration validation evidence for the combined result
 - **AND** it requires legal worker report collection and idempotent report consumption evidence
 - **AND** it requires accepted soft conflicts to be resolved and recorded
 - **AND** missing or failed fan-in evidence blocks terminal readiness instead of being treated as Done
+
+#### Scenario: Archive and MR handoffs require fan-in evidence
+
+- **GIVEN** auto parallel implementation started more than one task or accepted a soft conflict scope
+- **WHEN** an agent or reviewer evaluates archive-ready or MR-ready handoff before first-class plugin handoff checks exist
+- **THEN** the handoff requires the same fan-in evidence as `Done` readiness
+- **AND** missing or failed fan-in evidence blocks the handoff instead of being treated as ready
+
+### Requirement: Parallel Worktree Lifecycle
+
+Autopilot SHALL require every parallel implementation stream to have its own owned git worktree and SHALL require cleanup after the corresponding change is archived.
+
+#### Scenario: Parallel starts carry worktree evidence
+
+- **GIVEN** fixed or auto parallel implementation starts more than one task
+- **WHEN** `autopilot_run_next` emits `parallel_started` candidates
+- **THEN** every started task has a unique owned `autopilot/...` worktree path
+- **AND** `selection.candidates[]`, `tasksStarted[]`, and active runtime state preserve task-to-worktree evidence for fan-in, MR, archive, and cleanup gates
+- **AND** missing, duplicate, absolute, traversal-based, or task-mismatched worktree paths block the candidate from starting
+
+#### Scenario: Worktrees are cleaned up only after MR and archive gates
+
+- **GIVEN** a parallel implementation stream has a plugin-owned worktree
+- **WHEN** Autopilot evaluates post-archive cleanup
+- **THEN** cleanup emits remove/prune actions only after MR merged evidence and archived-change evidence exist
+- **AND** missing MR merged evidence or missing archive evidence blocks cleanup
+- **AND** cleanup is limited to owned `autopilot/...` worktree paths

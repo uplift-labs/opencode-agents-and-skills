@@ -73,7 +73,7 @@ export default {
           async execute(args) {
             const root = repoRoot(ctx);
             const queue = readAutopilotQueueSummaries(root, resolvedOptions, { changeId: args.changeId });
-            return jsonOutput(createStatusOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph }));
+            return jsonOutput(createStatusOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph, runtimeState: resolvedOptions.runtimeState }));
           },
         }),
         autopilot_collect: tool({

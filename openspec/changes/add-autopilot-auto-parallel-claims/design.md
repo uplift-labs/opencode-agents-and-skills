@@ -69,6 +69,7 @@ Rules:
 - `selection.maxImplementationClaims` is always the resolved numeric WIP limit.
 - `autoDecision.fanInValidationRequired` is `true` when more than one task starts or any soft conflict is accepted.
 - `parallel_started` remains authoritative only when matching `tasksStarted` evidence exists.
+- Started parallel candidates include `worktreePath` evidence; `tasksStarted[]` and active runtime state preserve the same task-to-worktree mapping for fan-in, MR, archive, and cleanup gates.
 - `parallel_ready` remains visibility evidence only and does not imply dispatch.
 
 ## Auto Decision Pipeline
@@ -172,6 +173,23 @@ Disallowed conflicts:
 
 When soft conflicts are accepted, output must include `acceptedSoftConflictScopes` and `fanInValidationRequired: true`.
 
+## Worktree Lifecycle
+
+Parallel implementation is only safe when each stream is isolated in its own git worktree and then integrated through normal MR review.
+
+Programmatic lifecycle helpers should provide deterministic plans, not prose-only reminders:
+
+- before a parallel claim, derive or validate one unique owned relative path per stream, using `autopilot/<change-id>/<task-id>` by default;
+- create actions use argv-shaped commands such as `git worktree add -b autopilot/<change-id>/<task-id> autopilot/<change-id>/<task-id> <base-ref>`;
+- absolute paths, traversal segments, duplicate paths, unsafe identifiers, paths outside `autopilot/`, or paths missing the task id are blockers;
+- started selection evidence, `tasksStarted[]`, and active runtime state must retain the worktree path for each started task;
+- implementation from each worktree is integrated back through an MR; auto-parallel cleanup requires MR merged evidence;
+- after the change is archived, cleanup actions are limited to `git worktree remove <owned-path>` plus `git worktree prune`;
+- cleanup must block unless both MR merged evidence and archived-change evidence exist.
+- the `autopilot:worktree-plan` script provides JSON-in/JSON-out dry-run planning for create or cleanup modes and does not execute git commands itself.
+
+Workers may edit inside assigned worktrees, but the control plane owns worktree creation, lifecycle tracking, MR/fan-in evidence, and cleanup decisions.
+
 ## Fan-In Validation
 
 Any auto-parallel run with more than one started implementation task must require a fan-in gate before Done/archive readiness.
@@ -211,6 +229,8 @@ Failure to run or pass fan-in validation keeps the run out of `Done` and should 
 - Runtime tests for soft conflict acceptance only when `conflictTolerance: "small"` and `softConflictScopes` match.
 - Runtime tests proving soft conflict candidates are capped at WIP `2`.
 - Runtime tests proving `parallel_ready` does not become `parallel_started` without locks/worktrees.
+- Runtime tests proving started tasks carry worktree evidence for cleanup.
+- Deterministic helper tests proving worktree creation and archive cleanup plans block unsafe paths, missing MR merged evidence, and missing archive evidence.
 - Fan-in validation tests proving auto-parallel tasks cannot complete without integration evidence.
 
 ## Risks
@@ -219,3 +239,4 @@ Failure to run or pass fan-in validation keeps the run out of `Done` and should 
 - Auto WIP may increase review burden. Mitigation: low default caps and reviewer/fan-in gates.
 - Soft conflicts could normalize risky overlap. Mitigation: explicit `softConflictScopes`, source/config overlap ban, WIP cap `2`, and mandatory conflict reporting.
 - Output could confuse agents if `auto` is not clearly distinguished from visibility-only `parallel_ready`. Mitigation: `autoDecision`, resolved numeric WIP, and `parallel_started` plus `tasksStarted` as the only start proof.
+- Worktrees could accumulate if archive cleanup is manual. Mitigation: programmatic cleanup plans require MR merged plus archived-change evidence and emit only owned `autopilot/...` remove/prune actions.

@@ -4,19 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import autopilotPlugin from "../.opencode/plugins/openspec-autopilot.ts";
-import {
-  autopilotActionabilityValues,
-  autopilotMrStatuses,
-  autopilotMrWaitStatuses,
-  autopilotProtectedPathPatterns,
-  autopilotReasonCodes,
-  autopilotSelectionModes,
-  autopilotParallelDecisions,
-  autopilotSelectionReasons,
-  autopilotTaskStatuses,
-  autopilotTaskTypes,
-  autopilotToolNames,
-} from "./autopilot-contract.ts";
+import { autopilotActionabilityValues, autopilotAutoConflictTolerances, autopilotAutoRiskClasses, autopilotMrStatuses, autopilotMrWaitStatuses, autopilotProtectedPathPatterns, autopilotReasonCodes, autopilotSelectionModes, autopilotParallelDecisions, autopilotSelectionReasons, autopilotTaskStatuses, autopilotTaskTypes, autopilotToolNames } from "./autopilot-contract.ts";
 import { autopilotLedgerPolicy, taskStatuses, taskTypes } from "./autopilot-ledger.ts";
 import { autopilotOutputContract } from "./openspec-autopilot-output.ts";
 
@@ -151,6 +139,22 @@ function doneResearchLedger(id: string): Record<string, unknown> {
     evidence: { noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR." },
   });
   revisionOf(ledger).number = 4;
+  return ledger;
+}
+
+function acceptanceResearchLedger(id: string, writeScope: string[]): Record<string, unknown> {
+  const ledger = readFixture("valid-research.json");
+  ledger.id = id;
+  ledger.scope = {
+    read: ["docs/**", "openspec/**"],
+    write: writeScope,
+    forbidden: ["src/**", "openspec/changes/*/automation/**", ".autopilot/**"],
+  };
+  ledger.mr = {
+    required: false,
+    status: "not-required",
+    noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR.",
+  };
   return ledger;
 }
 
@@ -353,6 +357,8 @@ const tests: TestCase[] = [
       assertArrayEqual(autopilotOutputContract.selectionModes, autopilotSelectionModes, "output selection modes");
       assertArrayEqual(autopilotOutputContract.parallelDecisions, autopilotParallelDecisions, "output parallel decisions");
       assertArrayEqual(autopilotOutputContract.selectionReasons, autopilotSelectionReasons, "output selection reasons");
+      assertArrayEqual(autopilotOutputContract.autoRiskClasses, autopilotAutoRiskClasses, "output auto risk classes");
+      assertArrayEqual(autopilotOutputContract.autoConflictTolerances, autopilotAutoConflictTolerances, "output auto conflict tolerances");
     },
   },
   {

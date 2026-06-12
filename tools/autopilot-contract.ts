@@ -35,7 +35,7 @@ export const autopilotReasonCodes = [
 
 export const autopilotActionabilityValues = ["actionable", "invalid", "waiting_for_mr", "blocked_for_user", "runtime_deferred", "terminal", "not_selected"] as const;
 
-export const autopilotSelectionModes = ["serial_default", "parallel_implementation"] as const;
+export const autopilotSelectionModes = ["serial_default", "parallel_implementation", "auto_parallel_implementation"] as const;
 
 export const autopilotParallelDecisions = ["not_evaluated", "parallel_ready", "not_parallel_safe", "parallel_started"] as const;
 
@@ -50,6 +50,10 @@ export const autopilotSelectionReasons = [
   "missing_parallel_guard",
   "wip_limit",
 ] as const;
+
+export const autopilotAutoRiskClasses = ["serial_required", "standard_parallel", "low_risk_parallel", "soft_conflict_parallel"] as const;
+
+export const autopilotAutoConflictTolerances = ["none", "small"] as const;
 
 export const autopilotToolNames = ["autopilot_run_next", "autopilot_status", "autopilot_collect", "autopilot_answer_blocker", "autopilot_stop"] as const;
 
@@ -69,4 +73,6 @@ export type AutopilotActionability = (typeof autopilotActionabilityValues)[numbe
 export type AutopilotSelectionMode = (typeof autopilotSelectionModes)[number];
 export type AutopilotParallelDecision = (typeof autopilotParallelDecisions)[number];
 export type AutopilotSelectionReason = (typeof autopilotSelectionReasons)[number];
+export type AutopilotAutoRiskClass = (typeof autopilotAutoRiskClasses)[number];
+export type AutopilotAutoConflictTolerance = (typeof autopilotAutoConflictTolerances)[number];
 export type AutopilotToolName = (typeof autopilotToolNames)[number];

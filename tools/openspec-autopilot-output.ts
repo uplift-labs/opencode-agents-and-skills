@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   autopilotActionabilityValues,
+  autopilotAutoConflictTolerances,
+  autopilotAutoRiskClasses,
   autopilotMrWaitStatuses,
   autopilotParallelDecisions,
   autopilotReasonCodes,
@@ -9,12 +11,15 @@ import {
   autopilotSelectionModes,
   autopilotToolNames,
   type AutopilotActionability,
+  type AutopilotAutoConflictTolerance,
+  type AutopilotAutoRiskClass,
   type AutopilotParallelDecision,
   type AutopilotReasonCode as ContractAutopilotReasonCode,
   type AutopilotSelectionReason,
   type AutopilotSelectionMode,
 } from "./autopilot-contract.ts";
 import { validateTaskLedger } from "./autopilot-ledger.ts";
+import { activeRunState } from "./autopilot-active-run.ts";
 import {
   claimSelectedReadyTasks,
   collectWorkerReports,
@@ -122,11 +127,24 @@ export type AutopilotSelectionCandidate = {
   selected: boolean;
   selectionReason: AutopilotSelectionReason;
   parallelDecision: AutopilotParallelDecision;
+  worktreePath?: string;
+};
+export type AutopilotAutoParallelDecision = {
+  policy: "auto";
+  resolvedMaxImplementationClaims: number;
+  maxAutoClaims: number;
+  conflictTolerance: AutopilotAutoConflictTolerance;
+  fanInValidationRequired: boolean;
+  decisionReason: string;
+  riskClass: AutopilotAutoRiskClass;
+  acceptedSoftConflictScopes: string[];
+  rejectedReasons: string[];
 };
 export type AutopilotSelection = {
   mode: AutopilotSelectionMode;
   selectedTaskId?: string;
   maxImplementationClaims: number;
+  autoDecision?: AutopilotAutoParallelDecision;
   candidates: AutopilotSelectionCandidate[];
 };
 export type AutopilotOutput = {
@@ -158,6 +176,8 @@ export const autopilotOutputContract = {
   selectionModes: autopilotSelectionModes,
   parallelDecisions: autopilotParallelDecisions,
   selectionReasons: autopilotSelectionReasons,
+  autoRiskClasses: autopilotAutoRiskClasses,
+  autoConflictTolerances: autopilotAutoConflictTolerances,
 } as const;
 
 type LedgerClassification = {
@@ -199,14 +219,25 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function safeRelativeRoot(value: string | undefined, fallback: string, label: string): string {
+  if (value == null) {
+    return fallback;
+  }
+  const normalized = value.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+  if (normalized.length === 0 || normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized) || normalized.split("/").includes("..")) {
+    throw new Error(`Autopilot ${label} must be a safe relative repository path.`);
+  }
+  return normalized;
+}
+
 export function toRelative(root: string, filePath: string): string {
   return path.relative(root, filePath).split(path.sep).join("/");
 }
 
 export function listTaskLedgerFiles(root: string, options: AutopilotOptions = {}): string[] {
   const files: string[] = [];
-  const ledgerRoot = path.join(root, options.ledgerRoot ?? defaultLedgerRoot);
-  const prototypeRoot = path.join(root, options.prototypeLedgerRoot ?? defaultPrototypeLedgerRoot);
+  const ledgerRoot = path.join(root, safeRelativeRoot(options.ledgerRoot, defaultLedgerRoot, "ledgerRoot"));
+  const prototypeRoot = path.join(root, safeRelativeRoot(options.prototypeLedgerRoot, defaultPrototypeLedgerRoot, "prototypeLedgerRoot"));
 
   if (fs.existsSync(ledgerRoot) && fs.statSync(ledgerRoot).isDirectory()) {
     for (const change of fs.readdirSync(ledgerRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
@@ -243,12 +274,21 @@ export function readAutopilotQueueSummaries(root: string, options: AutopilotOpti
   if (ledgers.length > 0 || normalizedFilter.taskId != null) {
     return { ledgers, dependencyGraph };
   }
-  const activeChanges = readActiveChangeSummaries(root, options.ledgerRoot ?? defaultLedgerRoot, normalizedFilter);
+  const activeChanges = readActiveChangeSummaries(root, safeRelativeRoot(options.ledgerRoot, defaultLedgerRoot, "ledgerRoot"), normalizedFilter);
   return { ledgers: activeChanges, dependencyGraph: activeChanges };
 }
 
+function changeIdForLedgerPath(ledger: LedgerSummary): string | undefined {
+  if (ledger.sourceKind === "active-change") {
+    return ledger.id;
+  }
+  const parts = ledger.path.split("/");
+  const automationIndex = parts.lastIndexOf("automation");
+  return automationIndex > 0 && parts[automationIndex + 1] === "task.json" ? parts[automationIndex - 1] : undefined;
+}
+
 function ledgerMatchesFilter(ledger: LedgerSummary, filter: LedgerFilter): boolean {
-  if (filter.changeId && !ledger.path.startsWith(`openspec/changes/${filter.changeId}/`)) {
+  if (filter.changeId && changeIdForLedgerPath(ledger) !== filter.changeId) {
     return false;
   }
   if (filter.taskId && ledger.id !== filter.taskId) {
@@ -527,7 +567,30 @@ function outputFor(ledgers: LedgerSummary[], summary: string, reasonCode: Autopi
     taskSummaries: taskSummaries(ledgers),
     nextActions: nextActionsFor(reasonCode),
     loopGuard: loopGuardFor(reasonCode, equivalentCall),
-    selection: selectionFor(ledgers, selectableLedgers(ledgers), reasonCode, dependencyGraph),
+    selection: selectionFor(ledgers, selectableLedgers(ledgers), reasonCode, dependencyGraph, outputOptions.runtimeState),
+  };
+}
+
+function selectionWithoutStartedEvidence(selection: AutopilotSelection, rejectedReason: string): AutopilotSelection {
+  return {
+    ...selection,
+    selectedTaskId: undefined,
+    autoDecision: selection.autoDecision == null
+      ? undefined
+      : {
+        ...selection.autoDecision,
+        fanInValidationRequired: false,
+        acceptedSoftConflictScopes: [],
+        rejectedReasons: Array.from(new Set([...selection.autoDecision.rejectedReasons, rejectedReason])).sort(),
+      },
+    candidates: selection.candidates.map((candidate) => {
+      if (!(candidate.parallelDecision === "parallel_started" || candidate.selectionReason === "parallel_started" || candidate.selected)) {
+        return candidate;
+      }
+      const demotedCandidate: AutopilotSelectionCandidate = { ...candidate };
+      delete demotedCandidate.worktreePath;
+      return { ...demotedCandidate, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" };
+    }),
   };
 }
 
@@ -562,7 +625,7 @@ export function createRunNextOutput(ledgers: LedgerSummary[], outputOptions: Aut
             { dependencyGraph },
           ),
           blockers: claimed.conflicts,
-          selection,
+          selection: selectionWithoutStartedEvidence(selection, "runtime evidence conflict prevented selected task claim"),
         };
       }
       if (claimed.started.length > 0) {
@@ -589,15 +652,19 @@ export function createRunNextOutput(ledgers: LedgerSummary[], outputOptions: Aut
       { dependencyGraph },
     );
   }
-  return outputFor(ledgers, `Autopilot inspected ${ledgers.length} ${sourceSummaryLabel(ledgers)}.`, reasonCode, "autopilot_run_next", null, { dependencyGraph });
+  return outputFor(ledgers, `Autopilot inspected ${ledgers.length} ${sourceSummaryLabel(ledgers)}.`, reasonCode, "autopilot_run_next", null, { dependencyGraph, runtimeState: outputOptions.runtimeState });
 }
 
 export function createStatusOutput(ledgers: LedgerSummary[], outputOptions: AutopilotOutputOptions = {}): AutopilotOutput & { status: Record<string, unknown> } {
   const dependencyGraph = outputOptions.dependencyGraph ?? ledgers;
   const reasonCode = runNextReasonCode(ledgers, dependencyGraph);
+  const activeRun = activeRunState(outputOptions.runtimeState);
   return {
-    ...outputFor(ledgers, `Autopilot status inspected ${ledgers.length} ${sourceSummaryLabel(ledgers)}.`, reasonCode, "autopilot_status", null, { dependencyGraph }),
-    status: summarizeLedgers(ledgers),
+    ...outputFor(ledgers, `Autopilot status inspected ${ledgers.length} ${sourceSummaryLabel(ledgers)}.`, reasonCode, "autopilot_status", null, { dependencyGraph, runtimeState: outputOptions.runtimeState }),
+    status: {
+      ...summarizeLedgers(ledgers),
+      ...(activeRun == null ? {} : { activeRun }),
+    },
   };
 }
 

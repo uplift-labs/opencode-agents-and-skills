@@ -1,15 +1,28 @@
-import {
-  autopilotProtectedPathPatterns,
-  type AutopilotParallelDecision,
-  type AutopilotSelectionReason,
-} from "./autopilot-contract.ts";
+import { type AutopilotParallelDecision, type AutopilotSelectionReason } from "./autopilot-contract.ts";
 import { validateTaskLedger } from "./autopilot-ledger.ts";
+import { validateOwnedWorktreePath } from "./autopilot-worktree-lifecycle.ts";
+import { activeRunState, applyStopToRuntimeState, fanInConflictFor, recordClaimedTasks, stoppedRuntimeEntries } from "./autopilot-active-run.ts";
+import {
+  ledgerHasIndependentPrimaryScope,
+  ledgerWritesCentralScope,
+  lowRiskLedger,
+  lowRiskTypeWritesUnsafeScope,
+  scopeCompatibilityFor,
+  scopesAreParallelCompatible,
+  writeScopeComparable,
+} from "./autopilot-scope-policy.ts";
 import type {
+  AutopilotAutoParallelDecision,
   AutopilotSelection,
   AutopilotSelectionCandidate,
   BlockerSummary,
   LedgerSummary,
 } from "./openspec-autopilot-output.ts";
+export {
+  applyStopToRuntimeState,
+  stoppedRuntimeEntries,
+  type AutopilotActiveRunState,
+} from "./autopilot-active-run.ts";
 
 export type AutopilotBlockerQuestionOption = {
   label: string;
@@ -57,14 +70,13 @@ export type AutopilotWorkerReport = {
 
 export type AutopilotParallelImplementationState = {
   enabled?: boolean;
-  maxImplementationClaims?: number;
+  mode?: "fixed" | "auto";
+  maxImplementationClaims?: number | "auto";
+  maxAutoClaims?: number;
+  conflictTolerance?: "none" | "small";
+  softConflictScopes?: string[];
   lockedTaskIds?: string[];
   worktrees?: Record<string, string>;
-};
-
-export type AutopilotActiveRunState = {
-  runId: string;
-  taskIds?: string[];
 };
 
 export type CollectWorkerReportResult = {
@@ -205,80 +217,6 @@ function compareReadyLedgers(left: LedgerSummary, right: LedgerSummary): number 
     || left.path.localeCompare(right.path);
 }
 
-type ScopePattern = {
-  prefix: string;
-  exact: boolean;
-};
-
-function normalizeScopePattern(pattern: string): ScopePattern | null {
-  const normalized = pattern.trim().replaceAll("\\", "/").replace(/^\.\//, "");
-  if (normalized.length === 0) {
-    return null;
-  }
-  const globIndex = normalized.search(/[!?*[\]{}]/);
-  if (globIndex < 0) {
-    return { prefix: normalized, exact: true };
-  }
-  const rawPrefix = normalized.slice(0, globIndex);
-  const prefix = rawPrefix.endsWith("/") ? rawPrefix : rawPrefix.slice(0, rawPrefix.lastIndexOf("/") + 1);
-  return prefix.length > 0 ? { prefix, exact: false } : null;
-}
-
-function scopePatternsMayOverlap(left: ScopePattern, right: ScopePattern): boolean {
-  if (left.exact && right.exact) {
-    return left.prefix === right.prefix || left.prefix.startsWith(`${right.prefix}/`) || right.prefix.startsWith(`${left.prefix}/`);
-  }
-  if (left.exact) {
-    return left.prefix.startsWith(right.prefix);
-  }
-  if (right.exact) {
-    return right.prefix.startsWith(left.prefix);
-  }
-  return left.prefix.startsWith(right.prefix) || right.prefix.startsWith(left.prefix);
-}
-
-function writeScopesAreDisjoint(left: LedgerSummary, right: LedgerSummary): boolean {
-  if (left.writeScope.length === 0 || right.writeScope.length === 0) {
-    return false;
-  }
-  const leftPatterns = left.writeScope.map(normalizeScopePattern);
-  const rightPatterns = right.writeScope.map(normalizeScopePattern);
-  if (leftPatterns.some((pattern) => pattern == null) || rightPatterns.some((pattern) => pattern == null)) {
-    return false;
-  }
-  return leftPatterns.every((leftPattern) => rightPatterns.every((rightPattern) => !scopePatternsMayOverlap(leftPattern, rightPattern)));
-}
-
-const commonProtectedForbiddenScopes = new Set<string>([...autopilotProtectedPathPatterns, "openspec/changes/*/automation/**"]);
-
-function taskSpecificForbiddenScope(ledger: LedgerSummary): string[] {
-  return ledger.forbiddenScope.filter((scope) => !commonProtectedForbiddenScopes.has(scope));
-}
-
-function writesAvoidForbidden(writeLedger: LedgerSummary, forbiddenLedger: LedgerSummary): boolean {
-  const forbiddenScope = taskSpecificForbiddenScope(forbiddenLedger);
-  if (forbiddenScope.length === 0) {
-    return true;
-  }
-  if (writeLedger.writeScope.length === 0) {
-    return false;
-  }
-  const writePatterns = writeLedger.writeScope.map(normalizeScopePattern);
-  const forbiddenPatterns = forbiddenScope.map(normalizeScopePattern);
-  if (writePatterns.some((pattern) => pattern == null) || forbiddenPatterns.some((pattern) => pattern == null)) {
-    return false;
-  }
-  return writePatterns.every((writePattern) => forbiddenPatterns.every((forbiddenPattern) => !scopePatternsMayOverlap(writePattern, forbiddenPattern)));
-}
-
-function scopesAreParallelCompatible(left: LedgerSummary, right: LedgerSummary): boolean {
-  return writeScopesAreDisjoint(left, right) && writesAvoidForbidden(left, right) && writesAvoidForbidden(right, left);
-}
-
-function writeScopeComparable(ledger: LedgerSummary): boolean {
-  return ledger.writeScope.length > 0 && ledger.writeScope.every((scope) => normalizeScopePattern(scope) != null);
-}
-
 function parallelDecisionFor(ledger: LedgerSummary, selectedPrimary: LedgerSummary | undefined): AutopilotParallelDecision {
   if (selectedPrimary == null || ledger.id === selectedPrimary.id && ledger.path === selectedPrimary.path) {
     return "not_evaluated";
@@ -291,19 +229,36 @@ function parallelImplementationState(runtimeState: unknown): AutopilotParallelIm
     return null;
   }
   const raw = runtimeState.parallelImplementation;
+  const rawMode = raw.mode === "fixed" || raw.mode === "auto" ? raw.mode : undefined;
+  const rawMaxImplementationClaims = typeof raw.maxImplementationClaims === "number" && Number.isInteger(raw.maxImplementationClaims) && raw.maxImplementationClaims > 0
+    ? raw.maxImplementationClaims
+    : raw.maxImplementationClaims === "auto"
+    ? "auto"
+    : undefined;
+  if (rawMode == null && rawMaxImplementationClaims == null) {
+    return null;
+  }
   const worktrees = isRecord(raw.worktrees)
     ? Object.fromEntries(Object.entries(raw.worktrees).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0))
     : undefined;
   return {
     enabled: true,
-    maxImplementationClaims: typeof raw.maxImplementationClaims === "number" && Number.isInteger(raw.maxImplementationClaims) && raw.maxImplementationClaims > 0 ? raw.maxImplementationClaims : undefined,
+    mode: rawMode,
+    maxImplementationClaims: rawMaxImplementationClaims,
+    maxAutoClaims: typeof raw.maxAutoClaims === "number" && Number.isInteger(raw.maxAutoClaims) && raw.maxAutoClaims > 0 ? raw.maxAutoClaims : undefined,
+    conflictTolerance: raw.conflictTolerance === "small" ? "small" : "none",
+    softConflictScopes: asStringArray(raw.softConflictScopes),
     lockedTaskIds: asStringArray(raw.lockedTaskIds),
     worktrees,
   };
 }
 
 function maxParallelImplementationClaims(state: AutopilotParallelImplementationState): number {
-  return state.maxImplementationClaims ?? 2;
+  return typeof state.maxImplementationClaims === "number" ? state.maxImplementationClaims : 2;
+}
+
+function autoParallelImplementationEnabled(state: AutopilotParallelImplementationState): boolean {
+  return state.mode === "auto" || state.maxImplementationClaims === "auto";
 }
 
 function parallelWorktreeFor(ledger: LedgerSummary, state: AutopilotParallelImplementationState): string | null {
@@ -311,11 +266,7 @@ function parallelWorktreeFor(ledger: LedgerSummary, state: AutopilotParallelImpl
   if (typeof worktree !== "string") {
     return null;
   }
-  const normalized = worktree.trim().replaceAll("\\", "/");
-  if (!normalized.startsWith("autopilot/") || normalized.includes("..") || normalized.split("/").some((segment) => segment.length === 0)) {
-    return null;
-  }
-  return normalized.split("/").includes(ledger.id) ? normalized : null;
+  return validateOwnedWorktreePath(worktree, ledger.id).path ?? null;
 }
 
 function hasParallelLock(ledger: LedgerSummary, state: AutopilotParallelImplementationState): boolean {
@@ -339,7 +290,7 @@ function parallelSelectionFor(rankedCandidates: LedgerSummary[], dependencyBlock
     }
     startedLedgers.push(ledger);
     usedWorktrees.add(worktree);
-    return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started" };
+    return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started", worktreePath: worktree };
   }).concat(dependencyBlockedCandidates.map((ledger): AutopilotSelectionCandidate => ({
     taskId: ledger.id,
     path: ledger.path,
@@ -357,7 +308,284 @@ function parallelSelectionFor(rankedCandidates: LedgerSummary[], dependencyBlock
   };
 }
 
+type AutoRiskPlan = {
+  riskClass: AutopilotAutoParallelDecision["riskClass"];
+  resolvedMaxImplementationClaims: number;
+  acceptedSoftConflictScopes: string[];
+  rejectedReasons: string[];
+  decisionReason: string;
+  maxAutoClaims: number;
+};
+
+function candidateGuardReason(ledger: LedgerSummary, state: AutopilotParallelImplementationState): AutopilotSelectionReason | null {
+  if (!writeScopeComparable(ledger)) {
+    return "scope_conflict";
+  }
+  if (!hasParallelLock(ledger, state) || parallelWorktreeFor(ledger, state) == null) {
+    return "missing_parallel_guard";
+  }
+  return null;
+}
+
+function effectiveMaxAutoClaims(state: AutopilotParallelImplementationState): number {
+  return state.maxAutoClaims ?? 3;
+}
+
+function autoHardStopSelection(state: AutopilotParallelImplementationState, rejectedReason: string): AutopilotSelection {
+  return {
+    mode: "auto_parallel_implementation",
+    maxImplementationClaims: 1,
+    autoDecision: {
+      policy: "auto",
+      resolvedMaxImplementationClaims: 1,
+      maxAutoClaims: effectiveMaxAutoClaims(state),
+      conflictTolerance: state.conflictTolerance ?? "none",
+      fanInValidationRequired: false,
+      decisionReason: `Auto policy started no work because ${rejectedReason}.`,
+      riskClass: "serial_required",
+      acceptedSoftConflictScopes: [],
+      rejectedReasons: [rejectedReason],
+    },
+    candidates: [],
+  };
+}
+
+function globalAutoHardStopReason(reasonCode: string): string | null {
+  if (reasonCode === "invalid_ledgers") {
+    return "invalid ledgers block auto parallel evaluation";
+  }
+  if (reasonCode === "blocked_for_user") {
+    return "user blockers block auto parallel evaluation";
+  }
+  if (reasonCode === "waiting_for_mr") {
+    return "MR wait state blocks auto parallel evaluation";
+  }
+  if (reasonCode === "runtime_evidence_conflict") {
+    return "runtime evidence conflict blocks auto parallel evaluation";
+  }
+  return null;
+}
+
+function resolveAutoWip(riskClass: AutopilotAutoParallelDecision["riskClass"], candidateCount: number, maxAutoClaims: number): number {
+  if (riskClass === "serial_required") {
+    return 1;
+  }
+  if (riskClass === "standard_parallel") {
+    return Math.min(maxAutoClaims, 2);
+  }
+  if (riskClass === "soft_conflict_parallel") {
+    return Math.min(maxAutoClaims, 2);
+  }
+  return Math.min(candidateCount, Math.min(maxAutoClaims, 4));
+}
+
+function autoRiskPlanFor(rankedCandidates: LedgerSummary[], dependencyBlockedCandidates: LedgerSummary[], state: AutopilotParallelImplementationState): AutoRiskPlan {
+  const rejectedReasons = new Set<string>();
+  const acceptedSoftConflictScopes = new Set<string>();
+  const maxAutoClaims = effectiveMaxAutoClaims(state);
+  const guardedCandidates = rankedCandidates.filter((ledger) => {
+    const guardReason = candidateGuardReason(ledger, state);
+    if (guardReason === "scope_conflict") {
+      rejectedReasons.add(`candidate ${ledger.id} has unknown or unsupported write scope`);
+    }
+    if (guardReason === "missing_parallel_guard") {
+      rejectedReasons.add(`candidate ${ledger.id} is missing plugin-owned lock or worktree evidence`);
+    }
+    return guardReason == null;
+  });
+
+  if (dependencyBlockedCandidates.length > 0) {
+    rejectedReasons.add("dependency gaps exist for one or more Ready candidates");
+    return {
+      riskClass: "serial_required",
+      resolvedMaxImplementationClaims: 1,
+      acceptedSoftConflictScopes: [],
+      rejectedReasons: Array.from(rejectedReasons).sort(),
+      decisionReason: "Auto policy resolved to serial because dependency gaps exist in the Ready queue.",
+      maxAutoClaims,
+    };
+  }
+  if (guardedCandidates.length <= 1) {
+    rejectedReasons.add(guardedCandidates.length === 0 ? "no candidates passed auto parallel guards" : "only one candidate passed auto parallel guards");
+    return {
+      riskClass: "serial_required",
+      resolvedMaxImplementationClaims: 1,
+      acceptedSoftConflictScopes: [],
+      rejectedReasons: Array.from(rejectedReasons).sort(),
+      decisionReason: "Auto policy resolved to serial because fewer than two candidates were eligible.",
+      maxAutoClaims,
+    };
+  }
+  if (guardedCandidates.some(lowRiskTypeWritesUnsafeScope)) {
+    rejectedReasons.add("low-risk task type writes source/config/protected or unsupported scope");
+    return {
+      riskClass: "serial_required",
+      resolvedMaxImplementationClaims: 1,
+      acceptedSoftConflictScopes: [],
+      rejectedReasons: Array.from(rejectedReasons).sort(),
+      decisionReason: "Auto policy resolved to serial because a low-risk task type writes unsafe scope.",
+      maxAutoClaims,
+    };
+  }
+  if (guardedCandidates.some(ledgerWritesCentralScope)) {
+    rejectedReasons.add("central coordination or protected scope requires serial implementation");
+    return {
+      riskClass: "serial_required",
+      resolvedMaxImplementationClaims: 1,
+      acceptedSoftConflictScopes: [],
+      rejectedReasons: Array.from(rejectedReasons).sort(),
+      decisionReason: "Auto policy resolved to serial because a candidate writes central coordination scope.",
+      maxAutoClaims,
+    };
+  }
+
+  let hasHardConflict = false;
+  for (let leftIndex = 0; leftIndex < guardedCandidates.length; leftIndex++) {
+    for (let rightIndex = leftIndex + 1; rightIndex < guardedCandidates.length; rightIndex++) {
+      const compatibility = scopeCompatibilityFor(guardedCandidates[leftIndex], guardedCandidates[rightIndex], state);
+      for (const scope of compatibility.acceptedSoftConflictScopes) {
+        acceptedSoftConflictScopes.add(scope);
+      }
+      if (!compatibility.compatible) {
+        hasHardConflict = true;
+        for (const reason of compatibility.rejectedReasons) {
+          rejectedReasons.add(reason);
+        }
+      }
+    }
+  }
+
+  if (hasHardConflict) {
+    return {
+      riskClass: "serial_required",
+      resolvedMaxImplementationClaims: 1,
+      acceptedSoftConflictScopes: [],
+      rejectedReasons: Array.from(rejectedReasons).sort(),
+      decisionReason: "Auto policy resolved to serial because candidate scopes are not parallel safe.",
+      maxAutoClaims,
+    };
+  }
+
+  if (acceptedSoftConflictScopes.size > 0) {
+    const acceptedScopes = Array.from(acceptedSoftConflictScopes).sort();
+    if (!guardedCandidates.every((ledger) => ledgerHasIndependentPrimaryScope(ledger, acceptedScopes))) {
+      rejectedReasons.add("soft conflict candidates need independent primary write scopes");
+      return {
+        riskClass: "serial_required",
+        resolvedMaxImplementationClaims: 1,
+        acceptedSoftConflictScopes: [],
+        rejectedReasons: Array.from(rejectedReasons).sort(),
+        decisionReason: "Auto policy resolved to serial because soft conflicts lacked independent primary scopes.",
+        maxAutoClaims,
+      };
+    }
+    const resolvedMaxImplementationClaims = resolveAutoWip("soft_conflict_parallel", guardedCandidates.length, maxAutoClaims);
+    if (resolvedMaxImplementationClaims < 2) {
+      rejectedReasons.add("maxAutoClaims cap limits soft conflict work to serial execution");
+      return {
+        riskClass: "serial_required",
+        resolvedMaxImplementationClaims: 1,
+        acceptedSoftConflictScopes: [],
+        rejectedReasons: Array.from(rejectedReasons).sort(),
+        decisionReason: "Auto policy resolved to serial because the configured cap prevents soft-conflict parallelism.",
+        maxAutoClaims,
+      };
+    }
+    return {
+      riskClass: "soft_conflict_parallel",
+      resolvedMaxImplementationClaims,
+      acceptedSoftConflictScopes: acceptedScopes,
+      rejectedReasons: Array.from(rejectedReasons).sort(),
+      decisionReason: `Auto policy accepted only configured small soft conflicts and resolved WIP ${resolvedMaxImplementationClaims}.`,
+      maxAutoClaims,
+    };
+  }
+
+  const riskClass: AutopilotAutoParallelDecision["riskClass"] = guardedCandidates.every(lowRiskLedger) ? "low_risk_parallel" : "standard_parallel";
+  const resolvedMaxImplementationClaims = resolveAutoWip(riskClass, guardedCandidates.length, maxAutoClaims);
+  return {
+    riskClass,
+    resolvedMaxImplementationClaims,
+    acceptedSoftConflictScopes: [],
+    rejectedReasons: Array.from(rejectedReasons).sort(),
+    decisionReason: riskClass === "low_risk_parallel"
+      ? `Auto policy resolved WIP ${resolvedMaxImplementationClaims} for low-risk documentation/evidence work.`
+      : `Auto policy resolved WIP ${resolvedMaxImplementationClaims} for disjoint implementation candidates.`,
+    maxAutoClaims,
+  };
+}
+
+function autoParallelSelectionFor(rankedCandidates: LedgerSummary[], dependencyBlockedCandidates: LedgerSummary[], state: AutopilotParallelImplementationState): AutopilotSelection {
+  const riskPlan = autoRiskPlanFor(rankedCandidates, dependencyBlockedCandidates, state);
+  const startedLedgers: LedgerSummary[] = [];
+  const acceptedSoftConflictScopes = new Set<string>();
+  const usedWorktrees = new Set<string>();
+  const candidates = rankedCandidates.map((ledger, index): AutopilotSelectionCandidate => {
+    const guardReason = candidateGuardReason(ledger, state);
+    if (guardReason != null) {
+      return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: false, selectionReason: guardReason, parallelDecision: "not_parallel_safe" };
+    }
+    const worktree = parallelWorktreeFor(ledger, state);
+    if (worktree == null || usedWorktrees.has(worktree)) {
+      return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" };
+    }
+    const compatibilityResults = startedLedgers.map((started) => scopeCompatibilityFor(started, ledger, state));
+    if (compatibilityResults.some((compatibility) => !compatibility.compatible)) {
+      return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: false, selectionReason: "scope_conflict", parallelDecision: "not_parallel_safe" };
+    }
+    if (startedLedgers.length >= riskPlan.resolvedMaxImplementationClaims) {
+      return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: false, selectionReason: "wip_limit", parallelDecision: "not_parallel_safe" };
+    }
+    for (const compatibility of compatibilityResults) {
+      if (riskPlan.riskClass === "soft_conflict_parallel") {
+        for (const scope of compatibility.acceptedSoftConflictScopes) {
+          acceptedSoftConflictScopes.add(scope);
+        }
+      }
+    }
+    startedLedgers.push(ledger);
+    usedWorktrees.add(worktree);
+    return { taskId: ledger.id, path: ledger.path, rank: index + 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started", worktreePath: worktree };
+  }).concat(dependencyBlockedCandidates.map((ledger): AutopilotSelectionCandidate => ({
+    taskId: ledger.id,
+    path: ledger.path,
+    rank: null,
+    selected: false,
+    selectionReason: "dependency_blocked",
+    parallelDecision: "not_evaluated",
+  })));
+
+  const finalAcceptedSoftConflictScopes = Array.from(acceptedSoftConflictScopes).sort();
+  const autoDecision: AutopilotAutoParallelDecision = {
+    policy: "auto",
+    resolvedMaxImplementationClaims: riskPlan.resolvedMaxImplementationClaims,
+    maxAutoClaims: riskPlan.maxAutoClaims,
+    conflictTolerance: state.conflictTolerance ?? "none",
+    fanInValidationRequired: startedLedgers.length > 1 || finalAcceptedSoftConflictScopes.length > 0,
+    decisionReason: riskPlan.decisionReason,
+    riskClass: riskPlan.riskClass,
+    acceptedSoftConflictScopes: finalAcceptedSoftConflictScopes,
+    rejectedReasons: riskPlan.rejectedReasons,
+  };
+
+  return {
+    mode: "auto_parallel_implementation",
+    selectedTaskId: candidates.find((candidate) => candidate.selected)?.taskId,
+    maxImplementationClaims: riskPlan.resolvedMaxImplementationClaims,
+    autoDecision,
+    candidates,
+  };
+}
+
 export function selectionFor(ledgers: LedgerSummary[], readyLedgers: LedgerSummary[], reasonCode: string, dependencyGraph: LedgerSummary[], runtimeState?: unknown): AutopilotSelection {
+  const parallelState = parallelImplementationState(runtimeState);
+  if (parallelState != null && autoParallelImplementationEnabled(parallelState)) {
+    const hardStopReason = globalAutoHardStopReason(reasonCode);
+    if (hardStopReason != null && ledgers.length > 0) {
+      return autoHardStopSelection(parallelState, hardStopReason);
+    }
+  }
+
   if (reasonCode !== "ready_runtime_deferred" && reasonCode !== "active_change_handoff" && reasonCode !== "no_actionable_tasks") {
     return emptySelection();
   }
@@ -369,7 +597,9 @@ export function selectionFor(ledgers: LedgerSummary[], readyLedgers: LedgerSumma
 
   const rankedCandidates = readyCandidates.filter((ledger) => dependenciesSatisfied(ledger, dependencyGraph));
   const dependencyBlockedCandidates = readyCandidates.filter((ledger) => !dependenciesSatisfied(ledger, dependencyGraph));
-  const parallelState = parallelImplementationState(runtimeState);
+  if (parallelState != null && autoParallelImplementationEnabled(parallelState)) {
+    return autoParallelSelectionFor(rankedCandidates, dependencyBlockedCandidates, parallelState);
+  }
   if (parallelState != null && rankedCandidates.length > 0) {
     return parallelSelectionFor(rankedCandidates, dependencyBlockedCandidates, parallelState);
   }
@@ -460,26 +690,14 @@ function applyWorkerReportToLedger(ledger: LedgerSummary, report: AutopilotWorke
   return { advanced: { taskId: ledger.id, path: ledger.path, reportId: report.reportId, from: report.fromStatus, to: report.toStatus, mutation: "plugin-owned-runtime-only" } };
 }
 
-function recordClaimedTasks(runtimeState: unknown, started: Array<Record<string, unknown>>): void {
-  if (!isRecord(runtimeState) || started.length === 0) {
-    return;
-  }
-  const startedTaskIds = started.flatMap((entry) => typeof entry.taskId === "string" ? [entry.taskId] : []);
-  if (startedTaskIds.length === 0) {
-    return;
-  }
-  const existingRun = isRecord(runtimeState.activeRun) ? runtimeState.activeRun : {};
-  const existingTaskIds = asStringArray(existingRun.taskIds);
-  const taskIds = Array.from(new Set([...existingTaskIds, ...startedTaskIds])).sort();
-  runtimeState.activeRun = {
-    runId: typeof existingRun.runId === "string" && existingRun.runId.trim().length > 0 ? existingRun.runId : `claim-${taskIds.join("-")}`,
-    taskIds,
-  };
-}
-
 export function claimSelectedReadyTasks(ledgers: LedgerSummary[], selection: AutopilotSelection, runtimeState?: unknown): { started: Array<Record<string, unknown>>; conflicts: BlockerSummary[] } {
   const selectedCandidates = selection.candidates.filter((candidate) => candidate.selected);
   const result: { started: Array<Record<string, unknown>>; conflicts: BlockerSummary[] } = { started: [], conflicts: [] };
+  const activeRun = activeRunState(runtimeState);
+  if ((activeRun?.taskIds ?? []).length > 0) {
+    result.conflicts.push({ reason: `active runtime run ${activeRun?.runId ?? "unknown"} already has claimed tasks; collect or stop it before claiming more Ready work` });
+    return result;
+  }
   if (selectedCandidates.length === 0) {
     result.conflicts.push({ reason: "claim mode found no selected Ready task candidate" });
     return result;
@@ -504,10 +722,18 @@ export function claimSelectedReadyTasks(ledgers: LedgerSummary[], selection: Aut
       result.conflicts.push(applied.conflict);
       continue;
     }
-    result.started.push({ taskId: ledger.id, path: ledger.path, workerInstructionId: report.reportId, from: report.fromStatus, to: report.toStatus, mutation: "plugin-owned-runtime-only" });
+    result.started.push({
+      taskId: ledger.id,
+      path: ledger.path,
+      workerInstructionId: report.reportId,
+      from: report.fromStatus,
+      to: report.toStatus,
+      mutation: "plugin-owned-runtime-only",
+      ...(typeof selected.worktreePath === "string" ? { worktreePath: selected.worktreePath } : {}),
+    });
   }
   if (result.conflicts.length === 0) {
-    recordClaimedTasks(runtimeState, result.started);
+    recordClaimedTasks(runtimeState, result.started, selection);
   }
   return result;
 }
@@ -539,6 +765,11 @@ export function collectWorkerReports(ledgers: LedgerSummary[], runtimeState: unk
       result.conflicts.push({ taskId: report.taskId, reason: `worker report ${report.reportId} targets duplicate task id ${report.taskId}; ledgerPath is required to disambiguate` });
       continue;
     }
+    const fanInConflict = fanInConflictFor(report, runtimeState);
+    if (fanInConflict != null) {
+      result.conflicts.push(fanInConflict);
+      continue;
+    }
     const ledger = matches[0];
     if (consumedLedgerPaths.has(ledger.path)) {
       result.conflicts.push({ taskId: ledger.id, path: ledger.path, reason: `multiple worker reports target ${ledger.id} at ${ledger.path} in one collect operation` });
@@ -562,55 +793,4 @@ export function collectWorkerReports(ledgers: LedgerSummary[], runtimeState: unk
   }
 
   return result;
-}
-
-function activeRunState(runtimeState: unknown): AutopilotActiveRunState | null {
-  if (!isRecord(runtimeState) || !isRecord(runtimeState.activeRun) || typeof runtimeState.activeRun.runId !== "string" || runtimeState.activeRun.runId.trim().length === 0) {
-    return null;
-  }
-  return {
-    runId: runtimeState.activeRun.runId,
-    taskIds: asStringArray(runtimeState.activeRun.taskIds),
-  };
-}
-
-export function stoppedRuntimeEntries(target: string | undefined, id: string | undefined, runtimeState: unknown): Array<Record<string, unknown>> {
-  const activeRun = activeRunState(runtimeState);
-  if (activeRun == null) {
-    return [];
-  }
-  const normalizedTarget = target ?? "run";
-  if (normalizedTarget === "all") {
-    return [
-      { target: "run", runId: activeRun.runId, action: "stopped", mutation: "plugin-owned-runtime-only" },
-      ...(activeRun.taskIds ?? []).map((taskId) => ({ target: "task", taskId, action: "stopped", mutation: "plugin-owned-runtime-only" })),
-    ];
-  }
-  if (normalizedTarget === "task" && id != null && (activeRun.taskIds ?? []).includes(id)) {
-    return [{ target: "task", taskId: id, runId: activeRun.runId, action: "stopped", mutation: "plugin-owned-runtime-only" }];
-  }
-  if (normalizedTarget === "run" && (id == null || id === activeRun.runId)) {
-    return [{ target: "run", runId: activeRun.runId, action: "stopped", mutation: "plugin-owned-runtime-only" }];
-  }
-  return [];
-}
-
-export function applyStopToRuntimeState(target: string | undefined, id: string | undefined, runtimeState: unknown): Array<Record<string, unknown>> {
-  const stopped = stoppedRuntimeEntries(target, id, runtimeState);
-  if (stopped.length === 0 || !isRecord(runtimeState) || !isRecord(runtimeState.activeRun)) {
-    return stopped;
-  }
-  if (stopped.some((entry) => entry.target === "run")) {
-    delete runtimeState.activeRun;
-    return stopped;
-  }
-  const stoppedTaskIds = new Set(stopped.flatMap((entry) => typeof entry.taskId === "string" ? [entry.taskId] : []));
-  if (stoppedTaskIds.size === 0 || !Array.isArray(runtimeState.activeRun.taskIds)) {
-    return stopped;
-  }
-  runtimeState.activeRun.taskIds = runtimeState.activeRun.taskIds.filter((taskId) => typeof taskId !== "string" || !stoppedTaskIds.has(taskId));
-  if (runtimeState.activeRun.taskIds.length === 0) {
-    delete runtimeState.activeRun;
-  }
-  return stopped;
 }
