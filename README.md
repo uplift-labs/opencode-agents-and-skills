@@ -385,7 +385,7 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 ## Agent Catalog
 
 - `code-quality-reviewer`: maintainability/readability reviewer for code smells, file bloat, duplication, boundaries, overengineering, and pragmatic refactoring gates.
-- `test-coverage-reviewer`: requirement-to-test matrix, missing tests, weak assertions.
+- `test-coverage-reviewer`: task/repro/runtime-envelope coverage, requirement-to-test matrix, missing tests, weak assertions.
 - `implementation-readiness-reviewer`: stable scope, decisions, blockers, validation readiness.
 - `openspec-architecture-reviewer`: architecture/OpenSpec consistency and ownership risks.
 - `rust-concurrency-reviewer`: Rust async/concurrency/backpressure/shutdown risks.

@@ -149,6 +149,21 @@ const tests: TestCase[] = [
     }),
   },
   {
+    name: "empty scope arguments do not suppress active OpenSpec fallback",
+    run: () => withTempRepo("empty-scope", (repo) => {
+      writeTasks(repo, "a-change", "# Tasks\n\n- [ ] First task\n");
+      const output = readQueueOutput(repo, { changeId: "", taskId: "" });
+      assert(output.reasonCode === "active_change_handoff", `Expected active_change_handoff for empty scope args, got ${output.reasonCode}.`);
+      assertSummary(output.taskSummaries[0], { taskId: "a-change", actionability: "actionable", reasonCode: "active_change_handoff", sourceKind: "active-change" });
+      assertSelection(output, { selectedTaskId: "a-change", candidates: [{ taskId: "a-change", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" }] });
+
+      const whitespace = readQueueOutput(repo, { changeId: " \t ", taskId: " \n " });
+      assert(whitespace.reasonCode === "active_change_handoff", `Expected active_change_handoff for whitespace scope args, got ${whitespace.reasonCode}.`);
+      assertSummary(whitespace.taskSummaries[0], { taskId: "a-change", actionability: "actionable", reasonCode: "active_change_handoff", sourceKind: "active-change" });
+      assertSelection(whitespace, { selectedTaskId: "a-change", candidates: [{ taskId: "a-change", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" }] });
+    }),
+  },
+  {
     name: "active OpenSpec fallback honors explicit change scope",
     run: () => withTempRepo("scoped", (repo) => {
       writeTasks(repo, "a-change", "# Tasks\n\n- [ ] A task\n");
@@ -159,6 +174,10 @@ const tests: TestCase[] = [
       assert(output.reasonCode === "active_change_handoff", `Expected active_change_handoff, got ${output.reasonCode}.`);
       assertSummary(output.taskSummaries[0], { taskId: "target-change", actionability: "actionable", reasonCode: "active_change_handoff", sourceKind: "active-change", checkedTasks: 1, uncheckedTasks: 1, totalTasks: 2 });
       assertSelection(output, { selectedTaskId: "target-change", candidates: [{ taskId: "target-change", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" }] });
+      const trimmedOutput = readQueueOutput(repo, { changeId: " target-change " });
+      assert(trimmedOutput.reasonCode === "active_change_handoff", `Expected trimmed scope active_change_handoff, got ${trimmedOutput.reasonCode}.`);
+      assertSummary(trimmedOutput.taskSummaries[0], { taskId: "target-change", actionability: "actionable", reasonCode: "active_change_handoff", sourceKind: "active-change", checkedTasks: 1, uncheckedTasks: 1, totalTasks: 2 });
+      assertSelection(trimmedOutput, { selectedTaskId: "target-change", candidates: [{ taskId: "target-change", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" }] });
       for (const changeId of ["missing-change", "complete-change", "archived-change"]) {
         const scoped = readQueueOutput(repo, { changeId });
         assert(scoped.reasonCode === "no_ledgers", `Expected ${changeId} to return no_ledgers, got ${scoped.reasonCode}.`);

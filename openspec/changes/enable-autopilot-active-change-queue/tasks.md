@@ -7,6 +7,9 @@
 - [x] Add precedence tests proving existing Autopilot ledgers remain authoritative over `tasks.md` fallback for the same change.
 - [x] Add output contract tests for `active_change_handoff`, active-change task summaries, selection candidates, loop guard behavior, and next action wording.
 - [x] Add plugin tool tests proving `autopilot_run_next` and `autopilot_status` expose active-change fallback output through `.opencode/plugins/openspec-autopilot.ts`.
+- [x] Add regression tests proving empty-string and whitespace scope arguments from live tool calls do not suppress active-change fallback.
+- [x] Add regression tests proving plugin context falls back to `directory` when `worktree` is blank.
+- [x] Add validator regression coverage requiring `test-coverage-reviewer` to review task/repro/runtime-envelope baseline scenarios.
 - [x] Add instruction drift tests proving `/autopilot`, `openspec-autopilot`, and README routing describe active-change handoff and do not tell agents to stop at `no_ledgers` when unfinished active changes exist.
 
 ## Implementation
@@ -19,11 +22,14 @@
 - [x] Ensure fallback output never emits `tasksStarted` or `tasksAdvanced` and never mutates protected Autopilot paths.
 - [x] Ensure `no_ledgers` remains reserved for the state where neither applicable ledgers nor unfinished active OpenSpec changes exist.
 - [x] Wire fallback summaries and selection evidence into `autopilot_status` so users can inspect why a change was or was not selected.
+- [x] Normalize optional `changeId` and `taskId` filters before ledger and active-change discovery so blank arguments are equivalent to omitted arguments.
+- [x] Split-or-justify for touched split-candidate files: `tools/validate-library.ts` and `tools/test-library.ts` were touched only to add a narrow validator contract and regression test; local bloat was reduced with a named text-contract table and README catalog helper, while broader validator/test harness splitting remains outside this Autopilot fix.
 
 ## Documentation And Routing
 
 - [x] Update `openspec-autopilot` skill guidance so `active_change_handoff` immediately continues through `openspec-apply-change` for the selected change.
 - [x] Update `/autopilot` command wording in `opencode.json` so active-change handoff is treated as actionable continuation, not a final stop.
+- [x] Update `test-coverage-reviewer` so coverage review starts from the user task, logs/repro, runtime envelope, and fresh-session baseline scenario instead of only the code diff.
 - [x] Update README routing/catalog guidance to distinguish ledger-backed Autopilot, active-change handoff, `next-step`, and direct `openspec-apply-change`.
 - [x] Review relevant artifact frontmatter and command descriptions for discoverability after wording changes.
 
@@ -41,7 +47,7 @@
 - [x] `npm run openspec:validate`
 - [x] `openspec validate --all`
 - [x] `npm run autopilot:validate -- <task-ledger.json>` for any new or modified Autopilot ledger fixtures; not applicable because no ledger fixtures were added or modified.
-- [ ] Manual smoke: run `/autopilot` in a repository with unfinished active OpenSpec changes and no active Autopilot ledgers; confirm the first output is `active_change_handoff` or the final chosen equivalent, not `no_ledgers`. Source-equivalent plugin smoke passed in the current repo; live command smoke requires an OpenCode restart to reload plugin/command files.
+- [ ] Manual smoke: run `/autopilot` in a repository with unfinished active OpenSpec changes and no active Autopilot ledgers; confirm the first output is `active_change_handoff` or the final chosen equivalent, not `no_ledgers`. Source-equivalent plugin smoke passed in the current repo after the empty-scope regression fix; live command smoke requires an OpenCode restart to reload plugin/command files.
 - [ ] Manual scoped smoke: run `/autopilot <change-id>` for an unfinished active change with no ledger; confirm the selected id matches the scope and the agent continues via `openspec-apply-change`. Source-equivalent scoped plugin smoke passed for `enable-autopilot-active-change-queue`; live command smoke requires an OpenCode restart.
 
 ## Acceptance Criteria

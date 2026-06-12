@@ -63,7 +63,17 @@ function newTempDir(name: string): string {
 
 function writeText(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content.replace(/\n/g, os.EOL), "utf8");
+  fs.writeFileSync(filePath, content.replace(/\r?\n/g, os.EOL), "utf8");
+}
+
+function appendReadmeAgentCatalogEntry(fixture: string, entry: string): void {
+  const readmePath = path.join(fixture, "README.md");
+  const readmeText = fs.readFileSync(readmePath, "utf8");
+  const marker = "- `demo-reviewer`: Demo reviewer.";
+  if (!readmeText.includes(marker)) {
+    throw new Error(`Fixture README missing agent catalog marker: ${marker}`);
+  }
+  writeText(readmePath, readmeText.replace(marker, `${marker}\n${entry}`));
 }
 
 function lines(values: string[]): string {
@@ -564,6 +574,45 @@ const tests: TestCase[] = [
       const result = invokeValidator(fixture);
       assertFailure(result, "Incomplete reviewer permissions should fail validation.");
       assertOutputContains(result, "webfetch: deny", "Incomplete reviewer permissions should name the missing deny key.");
+    },
+  },
+  {
+    name: "validator rejects missing test-coverage reviewer task context contract",
+    run: () => {
+      const fixture = newLibraryFixture("test-coverage-context-contract");
+      writeText(path.join(fixture, ".opencode", "agents", "test-coverage-reviewer.md"), lines([
+        "---",
+        "description: Reviews acceptance and test coverage.",
+        "mode: subagent",
+        "permission:",
+        "  read: allow",
+        "  glob: allow",
+        "  grep: allow",
+        "  list: allow",
+        "  bash: deny",
+        "  edit: deny",
+        "  task: deny",
+        "  question: deny",
+        "  skill: deny",
+        "  webfetch: deny",
+        "  websearch: deny",
+        "  todowrite: deny",
+        "  external_directory: deny",
+        "  lsp: deny",
+        "  doom_loop: deny",
+        "---",
+        "",
+        "You are a read-only reviewer for test coverage.",
+        "",
+        "## Checks",
+        "",
+        "- Map requirements to tests.",
+        "",
+      ]));
+      appendReadmeAgentCatalogEntry(fixture, "- `test-coverage-reviewer`: Test coverage reviewer.");
+      const result = invokeValidator(fixture);
+      assertFailure(result, "Missing test-coverage reviewer task context contract should fail validation.");
+      assertOutputContains(result, "test-coverage-reviewer must require task/repro/runtime-envelope coverage", "Validation output should name the missing reviewer contract.");
     },
   },
   {

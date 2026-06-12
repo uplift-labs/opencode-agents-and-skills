@@ -176,6 +176,21 @@ function asString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value : fallback;
 }
 
+function optionalNonEmptyString(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeLedgerFilter(filter: LedgerFilter = {}): LedgerFilter {
+  return {
+    changeId: optionalNonEmptyString(filter.changeId),
+    taskId: optionalNonEmptyString(filter.taskId),
+  };
+}
+
 function asRecordArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? value.filter(isRecord) : [];
 }
@@ -222,12 +237,13 @@ export type AutopilotQueueSummaries = {
 };
 
 export function readAutopilotQueueSummaries(root: string, options: AutopilotOptions = {}, filter: LedgerFilter = {}): AutopilotQueueSummaries {
+  const normalizedFilter = normalizeLedgerFilter(filter);
   const dependencyGraph = readLedgerSummaries(root, options);
-  const ledgers = filterLedgerSummaries(dependencyGraph, filter);
-  if (ledgers.length > 0 || filter.taskId != null) {
+  const ledgers = filterLedgerSummaries(dependencyGraph, normalizedFilter);
+  if (ledgers.length > 0 || normalizedFilter.taskId != null) {
     return { ledgers, dependencyGraph };
   }
-  const activeChanges = readActiveChangeSummaries(root, options.ledgerRoot ?? defaultLedgerRoot, filter);
+  const activeChanges = readActiveChangeSummaries(root, options.ledgerRoot ?? defaultLedgerRoot, normalizedFilter);
   return { ledgers: activeChanges, dependencyGraph: activeChanges };
 }
 
@@ -242,7 +258,8 @@ function ledgerMatchesFilter(ledger: LedgerSummary, filter: LedgerFilter): boole
 }
 
 export function filterLedgerSummaries(ledgers: LedgerSummary[], filter: LedgerFilter = {}): LedgerSummary[] {
-  return ledgers.filter((ledger) => ledgerMatchesFilter(ledger, filter));
+  const normalizedFilter = normalizeLedgerFilter(filter);
+  return ledgers.filter((ledger) => ledgerMatchesFilter(ledger, normalizedFilter));
 }
 
 export function readLedgerSummaries(root: string, options: AutopilotOptions = {}, filter: LedgerFilter = {}): LedgerSummary[] {

@@ -226,10 +226,14 @@ function assertAutopilotOutputShape(output: Record<string, unknown>, label: stri
   }
 }
 
-async function pluginTools(repo: string, options: Record<string, unknown> = {}): Promise<Record<string, PluginToolDefinition>> {
-  const hooks = await autopilotPlugin.server({ directory: repo, worktree: repo } as never, options as never);
+async function pluginToolsWithContext(ctx: { directory?: string; worktree?: string }, options: Record<string, unknown> = {}): Promise<Record<string, PluginToolDefinition>> {
+  const hooks = await autopilotPlugin.server(ctx as never, options as never);
   assert(typeof hooks.tool === "object" && hooks.tool != null && !Array.isArray(hooks.tool), "Autopilot plugin server must return a tool map.");
   return hooks.tool as Record<string, PluginToolDefinition>;
+}
+
+async function pluginTools(repo: string, options: Record<string, unknown> = {}): Promise<Record<string, PluginToolDefinition>> {
+  return pluginToolsWithContext({ directory: repo, worktree: repo }, options);
 }
 
 async function executePluginTool(tools: Record<string, PluginToolDefinition>, name: string, args: Record<string, unknown>): Promise<{ payload: Record<string, unknown>; metadata: Record<string, unknown> }> {
@@ -426,6 +430,11 @@ const tests: TestCase[] = [
       assert(runNextByTask.payload.reasonCode === "waiting_for_mr", `Expected scoped waiting task to stop at waiting_for_mr, got ${String(runNextByTask.payload.reasonCode)}.`);
       assert(((runNextByTask.payload.selection as Record<string, unknown>).candidates as unknown[]).length === 0, "run_next taskId scope must not select MR-wait tasks as Ready primary candidates.");
       assertNoProgressClaims(runNextByTask.payload, "scoped MR-wait run_next");
+
+      const runNextByTrimmedTask = await executePluginTool(tools, "autopilot_run_next", { taskId: " task-b " });
+      assert(taskIds(runNextByTrimmedTask.payload).join(",") === "task-b", `run_next trimmed taskId scope must select only task-b, got ${taskIds(runNextByTrimmedTask.payload).join(",")}.`);
+      assert(runNextByTrimmedTask.payload.reasonCode === "waiting_for_mr", `Expected trimmed taskId waiting_for_mr, got ${String(runNextByTrimmedTask.payload.reasonCode)}.`);
+      assertNoProgressClaims(runNextByTrimmedTask.payload, "trimmed scoped MR-wait run_next");
 
       const runNextByInvalidTask = await executePluginTool(tools, "autopilot_run_next", { taskId: "task-invalid" });
       assert(runNextByInvalidTask.payload.reasonCode === "invalid_ledgers", `Expected scoped invalid task to return invalid_ledgers, got ${String(runNextByInvalidTask.payload.reasonCode)}.`);
@@ -641,11 +650,46 @@ const tests: TestCase[] = [
       assertNoProgressClaims(runNext.payload, "active-change run_next");
       assertLoopGuard(runNext.payload, "autopilot_run_next");
 
+      const runNextWithEmptyScope = await executePluginTool(tools, "autopilot_run_next", { changeId: "", taskId: "" });
+      assert(runNextWithEmptyScope.payload.reasonCode === "active_change_handoff", `Expected empty-scope active_change_handoff, got ${String(runNextWithEmptyScope.payload.reasonCode)}.`);
+      assert(taskIds(runNextWithEmptyScope.payload).join(",") === "a-change,z-change", `Expected empty-scope active change summaries, got ${taskIds(runNextWithEmptyScope.payload).join(",")}.`);
+      assert((runNextWithEmptyScope.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "empty-scope run_next must preserve deterministic active change primary.");
+      assertNoProgressClaims(runNextWithEmptyScope.payload, "empty-scope active-change run_next");
+
+      const runNextWithWhitespaceScope = await executePluginTool(tools, "autopilot_run_next", { changeId: " \t ", taskId: " \n " });
+      assert(runNextWithWhitespaceScope.payload.reasonCode === "active_change_handoff", `Expected whitespace-scope active_change_handoff, got ${String(runNextWithWhitespaceScope.payload.reasonCode)}.`);
+      assert(taskIds(runNextWithWhitespaceScope.payload).join(",") === "a-change,z-change", `Expected whitespace-scope active change summaries, got ${taskIds(runNextWithWhitespaceScope.payload).join(",")}.`);
+      assert((runNextWithWhitespaceScope.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "whitespace-scope run_next must preserve deterministic active change primary.");
+      assertNoProgressClaims(runNextWithWhitespaceScope.payload, "whitespace-scope active-change run_next");
+
       const scopedStatus = await executePluginTool(tools, "autopilot_status", { changeId: "z-change" });
       assert(scopedStatus.payload.reasonCode === "active_change_handoff", `Expected scoped status active_change_handoff, got ${String(scopedStatus.payload.reasonCode)}.`);
       assert(taskIds(scopedStatus.payload).join(",") === "z-change", `Expected scoped status z-change summary, got ${taskIds(scopedStatus.payload).join(",")}.`);
       assert((scopedStatus.payload.selection as Record<string, unknown>).selectedTaskId === "z-change", "status must preserve scoped active-change selection evidence.");
       assertNoProgressClaims(scopedStatus.payload, "active-change scoped status");
+
+      const statusWithEmptyScope = await executePluginTool(tools, "autopilot_status", { changeId: "" });
+      assert(statusWithEmptyScope.payload.reasonCode === "active_change_handoff", `Expected empty-scope status active_change_handoff, got ${String(statusWithEmptyScope.payload.reasonCode)}.`);
+      assert(taskIds(statusWithEmptyScope.payload).join(",") === "a-change,z-change", `Expected empty-scope status active change summaries, got ${taskIds(statusWithEmptyScope.payload).join(",")}.`);
+
+      const statusWithWhitespaceScope = await executePluginTool(tools, "autopilot_status", { changeId: " \t " });
+      assert(statusWithWhitespaceScope.payload.reasonCode === "active_change_handoff", `Expected whitespace-scope status active_change_handoff, got ${String(statusWithWhitespaceScope.payload.reasonCode)}.`);
+      assert(taskIds(statusWithWhitespaceScope.payload).join(",") === "a-change,z-change", `Expected whitespace-scope status active change summaries, got ${taskIds(statusWithWhitespaceScope.payload).join(",")}.`);
+
+      const scopedStatusWithTrimmedScope = await executePluginTool(tools, "autopilot_status", { changeId: " z-change " });
+      assert(scopedStatusWithTrimmedScope.payload.reasonCode === "active_change_handoff", `Expected trimmed-scope status active_change_handoff, got ${String(scopedStatusWithTrimmedScope.payload.reasonCode)}.`);
+      assert(taskIds(scopedStatusWithTrimmedScope.payload).join(",") === "z-change", `Expected trimmed-scope status z-change summary, got ${taskIds(scopedStatusWithTrimmedScope.payload).join(",")}.`);
+      assert((scopedStatusWithTrimmedScope.payload.selection as Record<string, unknown>).selectedTaskId === "z-change", "trimmed-scope status must preserve scoped active-change selection evidence.");
+
+      const directoryOnlyTools = await pluginToolsWithContext({ directory: repo, worktree: "" });
+      const directoryOnlyRunNext = await executePluginTool(directoryOnlyTools, "autopilot_run_next", { changeId: "", taskId: "" });
+      assert(directoryOnlyRunNext.payload.reasonCode === "active_change_handoff", `Expected directory fallback active_change_handoff, got ${String(directoryOnlyRunNext.payload.reasonCode)}.`);
+      assert(taskIds(directoryOnlyRunNext.payload).join(",") === "a-change,z-change", `Expected directory fallback active change summaries, got ${taskIds(directoryOnlyRunNext.payload).join(",")}.`);
+
+      const whitespaceWorktreeTools = await pluginToolsWithContext({ directory: repo, worktree: " \t " });
+      const whitespaceWorktreeRunNext = await executePluginTool(whitespaceWorktreeTools, "autopilot_run_next", { changeId: "", taskId: "" });
+      assert(whitespaceWorktreeRunNext.payload.reasonCode === "active_change_handoff", `Expected whitespace-worktree directory fallback active_change_handoff, got ${String(whitespaceWorktreeRunNext.payload.reasonCode)}.`);
+      assert(taskIds(whitespaceWorktreeRunNext.payload).join(",") === "a-change,z-change", `Expected whitespace-worktree active change summaries, got ${taskIds(whitespaceWorktreeRunNext.payload).join(",")}.`);
 
       const after = snapshotFiles(repo);
       assert(JSON.stringify(after) === JSON.stringify(before), "Active-change fallback must not create, delete, or mutate repo files.");

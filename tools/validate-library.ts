@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 
 type FrontmatterValue = string | Record<string, never>;
 type FrontmatterMap = Map<string, FrontmatterValue>;
+type TextContract = {
+  fileName: string;
+  label: string;
+  requiredText: string[];
+};
 
 type Options = {
   failOnWarnings: boolean;
@@ -17,6 +22,19 @@ const errors: string[] = [];
 const warnings: string[] = [];
 const forbiddenCodeExtensions = new Set([".cjs", ".js", ".mjs", ".ps1", ".psd1", ".psm1", ".py", ".pyw"]);
 const mutationCapablePermissionKeys = new Set(["bash", "edit", "task", "external_directory"]);
+const agentTextContracts: TextContract[] = [
+  {
+    fileName: "test-coverage-reviewer.md",
+    label: "test-coverage-reviewer must require task/repro/runtime-envelope coverage",
+    requiredText: [
+      "## Review Inputs And Baseline Scenario",
+      "user task, acceptance criteria, logs, and reproduction",
+      "actual runtime envelope",
+      "fresh-session behavior",
+      "Task/Repro Coverage Matrix",
+    ],
+  },
+];
 const legacyToolingReferences = [
   "pwsh -NoProfile -File",
   "validate-library.ps1",
@@ -281,6 +299,18 @@ function requireTextContains(text: string, needle: string, label: string, file: 
   }
 }
 
+function validateTextContracts(file: string, text: string, contracts: TextContract[]): void {
+  const fileName = path.basename(file);
+  for (const contract of contracts) {
+    if (contract.fileName !== fileName) {
+      continue;
+    }
+    for (const requiredText of contract.requiredText) {
+      requireTextContains(text, requiredText, contract.label, file);
+    }
+  }
+}
+
 function requireFile(root: string, relativePath: string, label: string): void {
   const target = path.join(root, ...relativePath.split("/"));
   if (!fileExists(target)) {
@@ -401,6 +431,7 @@ function validateAgents(root: string): string[] {
         addError(`Agent permission must set ${permission}: deny: ${file}`);
       }
     }
+    validateTextContracts(file, text, agentTextContracts);
   }
 
   return agentNames;

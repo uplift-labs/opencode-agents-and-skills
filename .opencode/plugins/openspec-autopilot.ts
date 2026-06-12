@@ -24,8 +24,16 @@ function jsonOutput(payload: AutopilotOutput | Record<string, unknown>, metadata
   };
 }
 
+function optionalNonEmptyString(value?: string): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function repoRoot(ctx: { worktree?: string; directory?: string }): string {
-  return ctx.worktree ?? ctx.directory ?? process.cwd();
+  return optionalNonEmptyString(ctx.worktree) ?? optionalNonEmptyString(ctx.directory) ?? process.cwd();
 }
 
 function stopArgumentContext(args: { target?: string; id?: string; reason?: string }, stopApplied: boolean): { acknowledged: string[]; ignored: string[]; mutation: string } {
