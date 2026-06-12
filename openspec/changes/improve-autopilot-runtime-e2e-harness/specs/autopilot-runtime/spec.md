@@ -10,8 +10,8 @@ Autopilot SHALL provide a plugin-owned way to test runtime states without requir
 
 - **GIVEN** a regression or test needs Ready ledgers, worker reports, blocker questions, or MR waits
 - **WHEN** the test uses the Autopilot runtime harness
-- **THEN** state is created through plugin-owned code or deterministic in-memory fixtures
-- **AND** agents do not manually write `.autopilot/**` or `openspec/changes/*/automation/**`
+- **THEN** state is created through plugin-owned code, deterministic in-memory fixtures, or temp-worktree fixture setup owned by the test process
+- **AND** agents do not manually write `.autopilot/**` or `openspec/changes/*/automation/**` in the user repository
 
 ### Requirement: Ready Ledger Runtime Progress Is Explicit
 
@@ -49,13 +49,13 @@ Autopilot SHALL select at most one primary implementation task by default and SH
 
 Autopilot SHALL NOT start multiple implementation workstreams unless explicit parallel implementation mode is enabled and deterministic independence checks pass.
 
-#### Scenario: Parallel-ready work is visible but not started by default
+#### Scenario: Additional parallel-ready work is visible but not started by default
 
 - **GIVEN** two valid Ready task ledgers have independent write scopes
 - **AND** no explicit parallel implementation mode is enabled
 - **WHEN** `autopilot_run_next` evaluates the queue
 - **THEN** Autopilot may report that the second task is parallel-ready
-- **BUT** it starts only the selected primary task
+- **BUT** default serial implementation starts at most the selected primary task
 - **AND** it marks the other task as not selected because serial default is active
 - **AND** `selection.mode` remains `serial_default`
 

@@ -4,12 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  createAnswerBlockerOutput,
   createCollectOutput,
   createRunNextOutput,
   createStatusOutput,
-  createStopOutput,
   readLedgerSummaries,
+  type LedgerSummary,
   type AutopilotNextAction,
   type AutopilotOutput,
   type TaskActionabilitySummary,
@@ -62,6 +61,24 @@ function readyResearchLedger(): Record<string, unknown> {
   ledger.status = "Ready";
   ledger.history = [];
   ledger.mr = { required: true, status: "none" };
+  return ledger;
+}
+
+function readyLedgerWithSelectionInputs(id: string, priority: string, writeScope: string[]): Record<string, unknown> {
+  const ledger = readyResearchLedger();
+  ledger.id = id;
+  ledger.priority = priority;
+  ledger.scope = {
+    read: ["openspec/**"],
+    write: writeScope,
+    forbidden: ["src/**", "openspec/changes/*/automation/**", ".autopilot/**"],
+  };
+  return ledger;
+}
+
+function readyLedgerWithDependencies(id: string, dependencies: string[]): Record<string, unknown> {
+  const ledger = readyLedgerWithSelectionInputs(id, "critical", ["openspec/changes/dependent/**"]);
+  ledger.dependencies = dependencies;
   return ledger;
 }
 
@@ -130,6 +147,11 @@ function assertNoRepeatedTool(output: AutopilotOutput, toolName: string): void {
   assert(!output.nextActions.some((action) => action.tool === toolName), `nextActions must not recommend repeated ${toolName}.`);
 }
 
+function assertNoProgressClaims(output: AutopilotOutput): void {
+  assert(Array.isArray(output.tasksStarted) && output.tasksStarted.length === 0, "Deferred/no-op output must not claim started tasks.");
+  assert(Array.isArray(output.tasksAdvanced) && output.tasksAdvanced.length === 0, "Deferred/no-op output must not claim advanced tasks.");
+}
+
 function assertNextAction(action: AutopilotNextAction | undefined, expected: { kind: string; safety: string; tool?: string }): void {
   assert(action != null, "Expected a next action.");
   assert(action.kind === expected.kind, `Expected next action kind ${expected.kind}, got ${action.kind}.`);
@@ -154,6 +176,28 @@ function assertSummary(summary: TaskActionabilitySummary | undefined, expected: 
   assert(typeof summary.path === "string" && summary.path.endsWith("automation/task.json"), "Summary must include compact ledger path.");
 }
 
+function assertSelection(output: AutopilotOutput, expected: { mode?: string; maxImplementationClaims?: number; selectedTaskId?: string; candidates: Array<{ taskId: string; rank: number | null; selected: boolean; selectionReason: string; parallelDecision: string }> }): void {
+  assert(typeof output.selection === "object" && output.selection != null && !Array.isArray(output.selection), "Output must include top-level selection evidence.");
+  assert(output.selection.mode === (expected.mode ?? "serial_default"), `Expected selection mode ${expected.mode ?? "serial_default"}, got ${String(output.selection.mode)}.`);
+  assert(output.selection.maxImplementationClaims === (expected.maxImplementationClaims ?? 1), `Expected maxImplementationClaims=${expected.maxImplementationClaims ?? 1}, got ${String(output.selection.maxImplementationClaims)}.`);
+  assert(output.selection.selectedTaskId === expected.selectedTaskId, `Expected selectedTaskId=${expected.selectedTaskId ?? "undefined"}, got ${String(output.selection.selectedTaskId)}.`);
+  assert(Array.isArray(output.selection.candidates), "selection.candidates must be an array.");
+  assert(output.selection.candidates.length === expected.candidates.length, `Expected ${expected.candidates.length} selection candidates, got ${output.selection.candidates.length}.`);
+  for (const [index, expectedCandidate] of expected.candidates.entries()) {
+    const actual = output.selection.candidates[index];
+    assert(actual.taskId === expectedCandidate.taskId, `Expected candidate[${index}].taskId=${expectedCandidate.taskId}, got ${String(actual.taskId)}.`);
+    assert(typeof actual.path === "string" && actual.path.endsWith("automation/task.json"), `candidate[${index}] must include compact ledger path evidence.`);
+    assert(actual.rank === expectedCandidate.rank, `Expected candidate[${index}].rank=${String(expectedCandidate.rank)}, got ${String(actual.rank)}.`);
+    assert(actual.selected === expectedCandidate.selected, `Expected candidate[${index}].selected=${String(expectedCandidate.selected)}, got ${String(actual.selected)}.`);
+    assert(actual.selectionReason === expectedCandidate.selectionReason, `Expected candidate[${index}].selectionReason=${expectedCandidate.selectionReason}, got ${String(actual.selectionReason)}.`);
+    assert(actual.parallelDecision === expectedCandidate.parallelDecision, `Expected candidate[${index}].parallelDecision=${expectedCandidate.parallelDecision}, got ${String(actual.parallelDecision)}.`);
+  }
+}
+
+function assertEmptySelection(output: AutopilotOutput): void {
+  assertSelection(output, { candidates: [] });
+}
+
 const tests: TestCase[] = [
   {
     name: "no ledgers return reason code and compact next action",
@@ -161,7 +205,9 @@ const tests: TestCase[] = [
       const output = readSingleLedgerOutput(repo);
       assert(output.outcome === "idle", `Expected idle, got ${output.outcome}.`);
       assert(output.reasonCode === "no_ledgers", `Expected no_ledgers, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
       assert(output.taskSummaries.length === 0, "No-ledger output must not include task summaries.");
+      assertEmptySelection(output);
       assertNextAction(output.nextActions[0], { kind: "manual_review", safety: "safe" });
       assertNoRepeatedTool(output, "autopilot_run_next");
     }),
@@ -173,6 +219,7 @@ const tests: TestCase[] = [
       const output = readSingleLedgerOutput(repo);
       assert(output.outcome === "idle", `Expected idle, got ${output.outcome}.`);
       assert(output.reasonCode === "ready_runtime_deferred", `Expected ready_runtime_deferred, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
       assert(output.loopGuard.repeatedNoProgress, "Ready runtime-deferred output must set no-progress loop guard.");
       assert(output.loopGuard.suppressRepeatRecommendation, "Ready runtime-deferred output must suppress repeat recommendation.");
       assertSummary(output.taskSummaries[0], {
@@ -185,7 +232,285 @@ const tests: TestCase[] = [
         reasonCode: "ready_runtime_deferred",
       });
       assertNextAction(output.nextActions[0], { kind: "manual_review", safety: "safe" });
+      assert(output.nextActions[0]?.label === "Continue selected OpenSpec change manually", "Ready next action must keep the manual continuation label.");
+      assert(output.nextActions[0]?.expectedResult.includes("selection.selectedTaskId"), "Ready next action must direct agents to selection.selectedTaskId.");
+      assert(output.nextActions[0]?.expectedResult.includes("selection.candidates"), "Ready next action must direct agents to selection.candidates.");
+      assert(output.nextActions[0]?.expectedResult.includes("without repeating autopilot_run_next"), "Ready next action must preserve no-repeat loop guidance.");
       assertNoRepeatedTool(output, "autopilot_run_next");
+      assertSelection(output, {
+        selectedTaskId: "ready-research",
+        candidates: [{ taskId: "ready-research", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" }],
+      });
+    }),
+  },
+  {
+    name: "multiple Ready ledgers expose deterministic serial selection evidence",
+    run: () => withTempRepo("selection", (repo) => {
+      writeLedger(repo, "low-small", readyLedgerWithSelectionInputs("task-low-small", "low", ["openspec/changes/low/**"]));
+      writeLedger(repo, "high-large", readyLedgerWithSelectionInputs("task-high-large", "high", ["openspec/changes/high/**", "tools/**"]));
+      writeLedger(repo, "medium-small", readyLedgerWithSelectionInputs("task-medium-small", "medium", ["openspec/changes/medium/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assert(output.reasonCode === "ready_runtime_deferred", `Expected ready_runtime_deferred, got ${output.reasonCode}.`);
+      assertSelection(output, {
+        selectedTaskId: "task-high-large",
+        candidates: [
+          { taskId: "task-high-large", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "task-medium-small", rank: 2, selected: false, selectionReason: "serial_default", parallelDecision: "parallel_ready" },
+          { taskId: "task-low-small", rank: 3, selected: false, selectionReason: "serial_default", parallelDecision: "parallel_ready" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "default serial selection exposes parallel-ready candidates without starting them",
+    run: () => withTempRepo("selection-parallel-ready", (repo) => {
+      writeLedger(repo, "primary", readyLedgerWithSelectionInputs("task-primary", "high", ["openspec/changes/primary/**"]));
+      writeLedger(repo, "parallel", readyLedgerWithSelectionInputs("task-parallel", "medium", ["openspec/changes/parallel/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assert(output.selection.mode === "serial_default", `Expected serial_default selection mode, got ${String(output.selection.mode)}.`);
+      assert(output.selection.maxImplementationClaims === 1, `Expected maxImplementationClaims=1, got ${String(output.selection.maxImplementationClaims)}.`);
+      assertNoProgressClaims(output);
+      assertSelection(output, {
+        selectedTaskId: "task-primary",
+        candidates: [
+          { taskId: "task-primary", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "task-parallel", rank: 2, selected: false, selectionReason: "serial_default", parallelDecision: "parallel_ready" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "plugin-owned claim mode starts only selected primary Ready task",
+    run: () => withTempRepo("selection-claim-primary", (repo) => {
+      writeLedger(repo, "secondary", readyLedgerWithSelectionInputs("task-secondary", "medium", ["openspec/changes/secondary/**"]));
+      writeLedger(repo, "primary", readyLedgerWithSelectionInputs("task-primary", "high", ["openspec/changes/primary/**"]));
+      const output = createRunNextOutput(readLedgerSummaries(repo), { runtimeState: { claimReadyTasks: true } });
+      assert(output.outcome === "advanced", `Expected claim mode to advance, got ${output.outcome}.`);
+      assert(output.reasonCode === "advanced", `Expected advanced reason, got ${output.reasonCode}.`);
+      assert(output.tasksStarted.length === 1, `Expected one started task, got ${output.tasksStarted.length}.`);
+      assert(output.tasksAdvanced.length === 0, "run_next claim mode must not claim collect advancement.");
+      assert(JSON.stringify(output.tasksStarted).includes("task-primary"), "run_next claim mode must start selected primary task.");
+      assert(!JSON.stringify(output.tasksStarted).includes("task-secondary"), "run_next claim mode must not start non-selected parallel-ready task.");
+      assertSelection(output, {
+        selectedTaskId: "task-primary",
+        candidates: [
+          { taskId: "task-primary", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "task-secondary", rank: 2, selected: false, selectionReason: "serial_default", parallelDecision: "parallel_ready" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "plugin-owned claim mode rejects missing raw ledger state",
+    run: () => withTempRepo("selection-claim-conflict", (repo) => {
+      writeLedger(repo, "primary", readyLedgerWithSelectionInputs("task-primary", "high", ["openspec/changes/primary/**"]));
+      const ledgersWithoutRawState = readLedgerSummaries(repo).map((ledger): LedgerSummary => ({ ...ledger, ledger: undefined }));
+      const output = createRunNextOutput(ledgersWithoutRawState, { runtimeState: { claimReadyTasks: true } });
+      assert(output.outcome === "failed", `Expected claim conflict to fail, got ${output.outcome}.`);
+      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
+      assert(output.tasksStarted.length === 0, "Claim conflict must not start tasks.");
+      assert(output.blockers.some((blocker) => blocker.reason.includes("raw ledger state is unavailable")), "Claim conflict must explain missing raw ledger state.");
+    }),
+  },
+  {
+    name: "explicit parallel implementation starts only guarded candidates within WIP limit",
+    run: () => withTempRepo("selection-parallel-implementation", (repo) => {
+      writeLedger(repo, "first", readyLedgerWithSelectionInputs("task-first", "high", ["openspec/changes/first/**"]));
+      writeLedger(repo, "second", readyLedgerWithSelectionInputs("task-second", "medium", ["openspec/changes/second/**"]));
+      writeLedger(repo, "third", readyLedgerWithSelectionInputs("task-third", "low", ["openspec/changes/third/**"]));
+      const output = createRunNextOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          parallelImplementation: {
+            enabled: true,
+            maxImplementationClaims: 2,
+            lockedTaskIds: ["task-first", "task-second", "task-third"],
+            worktrees: {
+              "task-first": "autopilot/first/task-first",
+              "task-second": "autopilot/second/task-second",
+              "task-third": "autopilot/third/task-third",
+            },
+          },
+        },
+      });
+      assert(output.outcome === "advanced", `Expected parallel implementation to advance, got ${output.outcome}.`);
+      assert(output.tasksStarted.length === 2, `Expected WIP limit to start two tasks, got ${output.tasksStarted.length}.`);
+      assertSelection(output, {
+        mode: "parallel_implementation",
+        maxImplementationClaims: 2,
+        selectedTaskId: "task-first",
+        candidates: [
+          { taskId: "task-first", rank: 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started" },
+          { taskId: "task-second", rank: 2, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started" },
+          { taskId: "task-third", rank: 3, selected: false, selectionReason: "wip_limit", parallelDecision: "not_parallel_safe" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "explicit parallel implementation rejects overlapping and unknown write scopes",
+    run: () => withTempRepo("selection-parallel-unsafe", (repo) => {
+      writeLedger(repo, "primary", readyLedgerWithSelectionInputs("task-primary", "high", ["openspec/changes/shared/**"]));
+      writeLedger(repo, "overlap", readyLedgerWithSelectionInputs("task-overlap", "medium", ["openspec/changes/shared/**"]));
+      writeLedger(repo, "unknown", readyLedgerWithSelectionInputs("task-unknown", "low", []));
+      writeLedger(repo, "unsupported", readyLedgerWithSelectionInputs("task-unsupported", "low", ["**/*.ts"]));
+      const output = createRunNextOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          parallelImplementation: {
+            enabled: true,
+            maxImplementationClaims: 2,
+            lockedTaskIds: ["task-primary", "task-overlap", "task-unknown", "task-unsupported"],
+            worktrees: {
+              "task-primary": "autopilot/primary/task-primary",
+              "task-overlap": "autopilot/overlap/task-overlap",
+              "task-unknown": "autopilot/unknown/task-unknown",
+              "task-unsupported": "autopilot/unsupported/task-unsupported",
+            },
+          },
+        },
+      });
+      assert(output.outcome === "advanced", `Expected safe primary claim despite unsafe parallel candidates, got ${output.outcome}.`);
+      assert(output.tasksStarted.length === 1, `Expected only safe primary task to start, got ${output.tasksStarted.length}.`);
+      assertSelection(output, {
+        mode: "parallel_implementation",
+        maxImplementationClaims: 2,
+        selectedTaskId: "task-primary",
+        candidates: [
+          { taskId: "task-primary", rank: 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started" },
+          { taskId: "task-overlap", rank: 2, selected: false, selectionReason: "scope_conflict", parallelDecision: "not_parallel_safe" },
+          { taskId: "task-unknown", rank: 3, selected: false, selectionReason: "scope_conflict", parallelDecision: "not_parallel_safe" },
+          { taskId: "task-unsupported", rank: 4, selected: false, selectionReason: "scope_conflict", parallelDecision: "not_parallel_safe" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "explicit parallel implementation requires locks and unique worktrees",
+    run: () => withTempRepo("selection-parallel-guards", (repo) => {
+      writeLedger(repo, "first", readyLedgerWithSelectionInputs("task-first", "critical", ["openspec/changes/first/**"]));
+      writeLedger(repo, "missing-lock", readyLedgerWithSelectionInputs("task-missing-lock", "high", ["openspec/changes/missing-lock/**"]));
+      writeLedger(repo, "duplicate-worktree", readyLedgerWithSelectionInputs("task-duplicate-worktree", "medium", ["openspec/changes/duplicate-worktree/**"]));
+      writeLedger(repo, "missing-worktree", readyLedgerWithSelectionInputs("task-missing-worktree", "low", ["openspec/changes/missing-worktree/**"]));
+      const output = createRunNextOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          parallelImplementation: {
+            enabled: true,
+            maxImplementationClaims: 4,
+            lockedTaskIds: ["task-first", "task-duplicate-worktree", "task-missing-worktree"],
+            worktrees: {
+              "task-first": "autopilot/shared-worktree",
+              "task-missing-lock": "autopilot/missing-lock/task-missing-lock",
+              "task-duplicate-worktree": "autopilot/shared-worktree",
+            },
+          },
+        },
+      });
+      assert(output.outcome === "advanced", `Expected guarded primary to advance, got ${output.outcome}.`);
+      assert(output.tasksStarted.length === 1, `Expected only guarded primary task to start, got ${output.tasksStarted.length}.`);
+      assertSelection(output, {
+        mode: "parallel_implementation",
+        maxImplementationClaims: 4,
+        selectedTaskId: "task-first",
+        candidates: [
+          { taskId: "task-first", rank: 1, selected: true, selectionReason: "parallel_started", parallelDecision: "parallel_started" },
+          { taskId: "task-missing-lock", rank: 2, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
+          { taskId: "task-duplicate-worktree", rank: 3, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
+          { taskId: "task-missing-worktree", rank: 4, selected: false, selectionReason: "missing_parallel_guard", parallelDecision: "not_parallel_safe" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "Ready selection ranking uses write scope size then lexical task id after priority",
+    run: () => withTempRepo("selection-ties", (repo) => {
+      writeLedger(repo, "same-b", readyLedgerWithSelectionInputs("task-b", "medium", ["openspec/changes/b/**", "tools/**"]));
+      writeLedger(repo, "same-a", readyLedgerWithSelectionInputs("task-a", "medium", ["openspec/changes/a/**"]));
+      writeLedger(repo, "same-c", readyLedgerWithSelectionInputs("task-c", "medium", ["openspec/changes/c/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assertSelection(output, {
+        selectedTaskId: "task-a",
+        candidates: [
+          { taskId: "task-a", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "task-c", rank: 2, selected: false, selectionReason: "serial_default", parallelDecision: "parallel_ready" },
+          { taskId: "task-b", rank: 3, selected: false, selectionReason: "serial_default", parallelDecision: "parallel_ready" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "Ready selection ranks unknown priorities after known priorities with stable lexical order",
+    run: () => withTempRepo("selection-unknown-priority", (repo) => {
+      writeLedger(repo, "unknown-z", readyLedgerWithSelectionInputs("task-unknown-z", "zeta", ["openspec/changes/z/**"]));
+      writeLedger(repo, "known-low", readyLedgerWithSelectionInputs("task-known-low", "low", ["openspec/changes/low/**"]));
+      writeLedger(repo, "unknown-a", readyLedgerWithSelectionInputs("task-unknown-a", "alpha", ["openspec/changes/a/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assertSelection(output, {
+        selectedTaskId: "task-known-low",
+        candidates: [
+          { taskId: "task-known-low", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "task-unknown-a", rank: 2, selected: false, selectionReason: "serial_default_unknown_priority", parallelDecision: "parallel_ready" },
+          { taskId: "task-unknown-z", rank: 3, selected: false, selectionReason: "serial_default_unknown_priority", parallelDecision: "parallel_ready" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "Ready selection marks selected unknown priority with warning-style reason",
+    run: () => withTempRepo("selection-selected-unknown-priority", (repo) => {
+      writeLedger(repo, "unknown-z", readyLedgerWithSelectionInputs("task-unknown-z", "zeta", ["openspec/changes/z/**"]));
+      writeLedger(repo, "unknown-a", readyLedgerWithSelectionInputs("task-unknown-a", "alpha", ["openspec/changes/a/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assertSelection(output, {
+        selectedTaskId: "task-unknown-a",
+        candidates: [
+          { taskId: "task-unknown-a", rank: 1, selected: true, selectionReason: "selected_primary_unknown_priority", parallelDecision: "not_evaluated" },
+          { taskId: "task-unknown-z", rank: 2, selected: false, selectionReason: "serial_default_unknown_priority", parallelDecision: "parallel_ready" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "Ready selection does not choose dependency-blocked candidates",
+    run: () => withTempRepo("selection-dependency-blocked", (repo) => {
+      writeLedger(repo, "dependent", readyLedgerWithDependencies("task-dependent", ["missing-dependency"]));
+      writeLedger(repo, "independent", readyLedgerWithSelectionInputs("task-independent", "high", ["openspec/changes/independent/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assert(output.reasonCode === "ready_runtime_deferred", `Expected ready_runtime_deferred, got ${output.reasonCode}.`);
+      assertSelection(output, {
+        selectedTaskId: "task-independent",
+        candidates: [
+          { taskId: "task-independent", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "task-dependent", rank: null, selected: false, selectionReason: "dependency_blocked", parallelDecision: "not_evaluated" },
+        ],
+      });
+    }),
+  },
+  {
+    name: "Ready selection reports dependency-blocked only queue without selected primary",
+    run: () => withTempRepo("selection-only-dependency-blocked", (repo) => {
+      writeLedger(repo, "dependent", readyLedgerWithDependencies("task-dependent", ["missing-dependency"]));
+      const output = readSingleLedgerOutput(repo);
+      assert(output.reasonCode === "no_actionable_tasks", `Expected no_actionable_tasks, got ${output.reasonCode}.`);
+      assertSelection(output, {
+        candidates: [{ taskId: "task-dependent", rank: null, selected: false, selectionReason: "dependency_blocked", parallelDecision: "not_evaluated" }],
+      });
+      assertNoProgressClaims(output);
+    }),
+  },
+  {
+    name: "Ready selection exposes path evidence for final duplicate-id tie-breaker",
+    run: () => withTempRepo("selection-path-tie", (repo) => {
+      writeLedger(repo, "z-change", readyLedgerWithSelectionInputs("duplicate-task", "medium", ["openspec/changes/shared/**"]));
+      writeLedger(repo, "a-change", readyLedgerWithSelectionInputs("duplicate-task", "medium", ["openspec/changes/shared/**"]));
+      const output = readSingleLedgerOutput(repo);
+      assertSelection(output, {
+        selectedTaskId: "duplicate-task",
+        candidates: [
+          { taskId: "duplicate-task", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated" },
+          { taskId: "duplicate-task", rank: 2, selected: false, selectionReason: "serial_default", parallelDecision: "not_parallel_safe" },
+        ],
+      });
+      assert(output.selection.candidates[0]?.path === "openspec/changes/a-change/automation/task.json", `Expected a-change path first, got ${String(output.selection.candidates[0]?.path)}.`);
+      assert(output.selection.candidates[1]?.path === "openspec/changes/z-change/automation/task.json", `Expected z-change path second, got ${String(output.selection.candidates[1]?.path)}.`);
     }),
   },
   {
@@ -205,6 +530,8 @@ const tests: TestCase[] = [
       const output = readSingleLedgerOutput(repo);
       assert(output.outcome === "failed", `Expected failed, got ${output.outcome}.`);
       assert(output.reasonCode === "invalid_ledgers", `Expected invalid_ledgers, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assertEmptySelection(output);
       assert(output.blockers[0]?.reason === "invalid task ledger", "Invalid ledger should produce an invalid task blocker.");
       assertSummary(output.taskSummaries[0], {
         taskId: "invalid-ready",
@@ -224,7 +551,10 @@ const tests: TestCase[] = [
       const output = readSingleLedgerOutput(repo);
       assert(output.outcome === "waiting_for_mr", `Expected waiting_for_mr, got ${output.outcome}.`);
       assert(output.reasonCode === "waiting_for_mr", `Expected waiting_for_mr, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assertEmptySelection(output);
       assert(output.mrsWaiting[0]?.taskId === "research-provider-options", "MR wait output should include MR task id.");
+      assert(output.mrsWaiting[0]?.url === "https://example.invalid/mr/research-provider-options", "MR wait output should include MR URL evidence.");
       assertSummary(output.taskSummaries[0], {
         taskId: "research-provider-options",
         taskType: "research",
@@ -248,6 +578,7 @@ const tests: TestCase[] = [
       const output = createStatusOutput(readLedgerSummaries(repo));
       const summaries = summariesByTaskId(output);
       assert(output.taskSummaries.length === 5, `Expected five task summaries, got ${output.taskSummaries.length}.`);
+      assertEmptySelection(output);
       assertSummary(summaries.get("blocked-research"), { taskId: "blocked-research", status: "Blocked", taskType: "research", valid: true, mrStatus: "none", actionability: "blocked_for_user", reasonCode: "blocked_for_user" });
       assertSummary(summaries.get("done-research"), { taskId: "done-research", status: "Done", taskType: "research", valid: true, mrStatus: "not-required", actionability: "terminal", reasonCode: "no_actionable_tasks" });
       assertSummary(summaries.get("invalid-ready"), { taskId: "invalid-ready", status: "Ready", taskType: "research", valid: false, mrStatus: "none", actionability: "invalid", reasonCode: "invalid_ledgers" });
@@ -262,6 +593,8 @@ const tests: TestCase[] = [
       const output = readSingleLedgerOutput(repo);
       assert(output.outcome === "blocked_for_user", `Expected blocked_for_user, got ${output.outcome}.`);
       assert(output.reasonCode === "blocked_for_user", `Expected blocked_for_user, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assertEmptySelection(output);
       assert(output.questions.length === 0, "MVP blocked output must not imply a returned question envelope exists.");
       assert(output.blockers[0]?.taskId === "blocked-research", "Blocked output should identify the blocked task.");
       assertSummary(output.taskSummaries[0], { taskId: "blocked-research", status: "Blocked", taskType: "research", valid: true, mrStatus: "none", actionability: "blocked_for_user", reasonCode: "blocked_for_user" });
@@ -276,6 +609,8 @@ const tests: TestCase[] = [
       const output = readSingleLedgerOutput(repo);
       assert(output.outcome === "idle", `Expected idle, got ${output.outcome}.`);
       assert(output.reasonCode === "no_actionable_tasks", `Expected no_actionable_tasks, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assertEmptySelection(output);
       assert(output.loopGuard.suppressRepeatRecommendation, "Terminal-only output must suppress repeated run-next recommendation.");
       assertSummary(output.taskSummaries[0], { taskId: "done-research", status: "Done", taskType: "research", valid: true, mrStatus: "not-required", actionability: "terminal", reasonCode: "no_actionable_tasks" });
       assertNextAction(output.nextActions[0], { kind: "manual_review", safety: "safe" });
@@ -288,6 +623,8 @@ const tests: TestCase[] = [
       writeLedger(repo, "ready-research", readyResearchLedger());
       const output = createCollectOutput(readLedgerSummaries(repo));
       assert(output.reasonCode === "collect_deferred", `Expected collect_deferred, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assertEmptySelection(output);
       assert(output.loopGuard.equivalentCall === "autopilot_collect", `Expected collect loop guard, got ${output.loopGuard.equivalentCall}.`);
       assert(output.loopGuard.suppressRepeatRecommendation, "Collect output must suppress repeated collect recommendation.");
       assertNoRepeatedTool(output, "autopilot_collect");
@@ -295,28 +632,131 @@ const tests: TestCase[] = [
     }),
   },
   {
-    name: "answer blocker output recommends status without collect wording",
-    run: () => {
-      const output = createAnswerBlockerOutput("question-1");
-      assert(output.outcome === "idle", `Expected idle acknowledgement, got ${output.outcome}.`);
-      assert(output.reasonCode === "blocked_for_user", `Expected blocked_for_user, got ${output.reasonCode}.`);
-      assert(output.loopGuard.equivalentCall === "autopilot_answer_blocker", `Expected answer-blocker loop guard, got ${output.loopGuard.equivalentCall}.`);
-      assert(output.loopGuard.suppressRepeatRecommendation, "Answer-blocker output must suppress repeated answer recommendation.");
+    name: "collect validates plugin-owned worker report legal transition",
+    run: () => withTempRepo("collect-worker-report", (repo) => {
+      writeLedger(repo, "ready-research", readyResearchLedger());
+      const output = createCollectOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          workerReports: [
+            {
+              reportId: "report-ready-analyze",
+              taskId: "ready-research",
+              fromStatus: "Ready",
+              toStatus: "Analyze",
+              completedAt: "2026-06-10T00:00:00.000Z",
+              evidence: { workerSummary: "Ready task claimed for analysis." },
+            },
+          ],
+        },
+      });
+      assert(output.outcome === "advanced", `Expected advanced collect output, got ${output.outcome}.`);
+      assert(output.reasonCode === "advanced", `Expected advanced reason, got ${output.reasonCode}.`);
+      assert(output.tasksStarted.length === 0, "Collect output must not claim worker starts.");
+      assert(output.tasksAdvanced.length === 1, `Expected one advanced task, got ${output.tasksAdvanced.length}.`);
       assertNextAction(output.nextActions[0], { kind: "tool", safety: "safe", tool: "autopilot_status" });
-      assert(!output.nextActions[0]?.reason.includes("Worker report collection"), "Answer-blocker output must not reuse collect-deferred wording.");
-    },
+    }),
   },
   {
-    name: "stop returns no-active-state reason code",
-    run: () => {
-      const output = createStopOutput("task");
-      assert(output.outcome === "idle", `Expected idle, got ${output.outcome}.`);
-      assert(output.reasonCode === "stop_no_active_state", `Expected stop_no_active_state, got ${output.reasonCode}.`);
-      assert(output.loopGuard.equivalentCall === "autopilot_stop", `Expected stop loop guard, got ${output.loopGuard.equivalentCall}.`);
-      assert(output.loopGuard.suppressRepeatRecommendation, "Stop output must suppress repeated stop recommendation.");
-      assertNoRepeatedTool(output, "autopilot_stop");
-      assertNextAction(output.nextActions[0], { kind: "tool", safety: "safe", tool: "autopilot_status" });
-    },
+    name: "collect rejects runtime evidence conflicts without advancement",
+    run: () => withTempRepo("collect-conflict", (repo) => {
+      writeLedger(repo, "ready-research", readyResearchLedger());
+      const output = createCollectOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          workerReports: [
+            {
+              reportId: "report-stale-status",
+              taskId: "ready-research",
+              fromStatus: "Implementation",
+              toStatus: "Review",
+              completedAt: "2026-06-10T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+      assert(output.outcome === "failed", `Expected failed conflict output, got ${output.outcome}.`);
+      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assert(output.blockers.some((blocker) => blocker.reason.includes("report-stale-status")), "Conflict output must include report id evidence.");
+      assertNextAction(output.nextActions[0], { kind: "validation", safety: "safe" });
+    }),
+  },
+  {
+    name: "collect rejects duplicate same-task reports in one operation",
+    run: () => withTempRepo("collect-duplicate-reports", (repo) => {
+      writeLedger(repo, "ready-research", readyResearchLedger());
+      const output = createCollectOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          workerReports: [
+            {
+              reportId: "report-first",
+              taskId: "ready-research",
+              fromStatus: "Ready",
+              toStatus: "Analyze",
+              completedAt: "2026-06-10T00:00:00.000Z",
+            },
+            {
+              reportId: "report-second",
+              taskId: "ready-research",
+              fromStatus: "Ready",
+              toStatus: "Analyze",
+              completedAt: "2026-06-10T00:00:01.000Z",
+            },
+          ],
+        },
+      });
+      assert(output.outcome === "failed", `Expected duplicate same-task reports to fail, got ${output.outcome}.`);
+      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assert(output.blockers.some((blocker) => blocker.reason.includes("multiple worker reports")), "Duplicate report conflict must explain multiple worker reports.");
+    }),
+  },
+  {
+    name: "collect rejects ambiguous duplicate task-id worker reports without ledger path",
+    run: () => withTempRepo("collect-duplicate-task-id", (repo) => {
+      writeLedger(repo, "first", readyLedgerWithSelectionInputs("duplicate-task", "high", ["openspec/changes/first/**"]));
+      writeLedger(repo, "second", readyLedgerWithSelectionInputs("duplicate-task", "medium", ["openspec/changes/second/**"]));
+      const output = createCollectOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          workerReports: [
+            {
+              reportId: "report-ambiguous-task",
+              taskId: "duplicate-task",
+              fromStatus: "Ready",
+              toStatus: "Analyze",
+              completedAt: "2026-06-10T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+      assert(output.outcome === "failed", `Expected duplicate task-id report to fail, got ${output.outcome}.`);
+      assert(output.reasonCode === "runtime_evidence_conflict", `Expected runtime_evidence_conflict, got ${output.reasonCode}.`);
+      assertNoProgressClaims(output);
+      assert(output.blockers.some((blocker) => blocker.reason.includes("duplicate-task") && blocker.reason.includes("ledgerPath")), "Ambiguous report output must require ledgerPath disambiguation.");
+    }),
+  },
+  {
+    name: "collect accepts duplicate task-id worker report with ledger path",
+    run: () => withTempRepo("collect-duplicate-task-id-path", (repo) => {
+      writeLedger(repo, "first", readyLedgerWithSelectionInputs("duplicate-task", "high", ["openspec/changes/first/**"]));
+      writeLedger(repo, "second", readyLedgerWithSelectionInputs("duplicate-task", "medium", ["openspec/changes/second/**"]));
+      const output = createCollectOutput(readLedgerSummaries(repo), {
+        runtimeState: {
+          workerReports: [
+            {
+              reportId: "report-disambiguated-task",
+              taskId: "duplicate-task",
+              ledgerPath: "openspec/changes/first/automation/task.json",
+              fromStatus: "Ready",
+              toStatus: "Analyze",
+              completedAt: "2026-06-10T00:00:00.000Z",
+            },
+          ],
+        },
+      });
+      assert(output.outcome === "advanced", `Expected disambiguated duplicate task-id report to advance, got ${output.outcome}.`);
+      assert(output.tasksAdvanced.length === 1, `Expected one advancement, got ${output.tasksAdvanced.length}.`);
+      assert(JSON.stringify(output.tasksAdvanced).includes("openspec/changes/first/automation/task.json"), "Disambiguated report must advance the requested ledger path.");
+    }),
   },
   {
     name: "compact status output excludes raw ledger bodies",

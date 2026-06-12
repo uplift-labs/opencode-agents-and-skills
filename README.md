@@ -140,14 +140,19 @@ Copy only the reviewers that are useful for the target project. They are read-on
 OpenCode project plugins are loaded from `.opencode/plugins/`. The prototype `openspec-autopilot.ts` plugin exposes the model-facing `autopilot_*` tools and depends on this repository's TypeScript Autopilot output helper and ledger validator during MVP development.
 
 For reusable installation, copy or package the full MVP bundle, then restart OpenCode so config-time plugin files are reloaded.
-
 Autopilot MVP bundle:
+
+After copying `.opencode/package.json`, install or package its `@opencode-ai/plugin` dependency for the target plugin runtime, or use a bundled equivalent that already resolves it. Only merge `command.autopilot` where the Autopilot skill and plugin bundle are available.
+The repository bundle smoke is source-equivalent: it verifies file presence, helper import closure, command config, and plugin server/tool execution without claiming a live OpenCode restart/loader E2E.
 
 - `.opencode/skills/openspec-autopilot/SKILL.md`
 - `.opencode/plugins/openspec-autopilot.ts`
 - `.opencode/package.json`
 - `tools/openspec-autopilot-output.ts` or a bundled equivalent at the plugin's import path
+- `tools/openspec-autopilot-runtime.ts` or a bundled equivalent at the plugin/helper import path
 - `tools/autopilot-ledger.ts` or a bundled equivalent at the plugin's import path
+- `tools/autopilot-contract.ts` or a bundled equivalent at the plugin/helper import path
+- `tools/autopilot-ledger-type-gates.ts` or a bundled equivalent at the plugin/helper import path
 - `opencode.json` `command.autopilot` entry when `/autopilot` should be available
 
 Rollback is the reverse operation: remove the `command.autopilot` config entry, remove the plugin file and Autopilot skill, remove the plugin package dependency if unused, then restart OpenCode.
@@ -190,6 +195,22 @@ Validate OpenSpec Autopilot task ledgers with:
 ```sh
 npm run autopilot:validate -- <task-ledger.json>
 ```
+
+Validate all OpenSpec changes with the first-class package gate:
+
+```sh
+npm run openspec:validate
+```
+
+For Autopilot contract changes, run the direct source-equivalent bundle smoke and report freshness checks when those surfaces are in scope:
+
+```sh
+node tools/test-autopilot-bundle-smoke.ts
+node tools/autopilot-report-freshness.ts <change-id> --mode advisory
+node tools/autopilot-report-freshness.ts <change-id> --mode archive-strict
+```
+
+The bundle smoke checks file presence, helper import paths, `.opencode/package.json`, `command.autopilot`, and plugin server/tool execution in a temp repository. It does not prove a live OpenCode restart or external target dependency installation; use it as the machine-checkable local gate before manual packaging or release notes.
 
 For installer changes, also prove the no-write path before using a real config directory:
 
@@ -247,7 +268,7 @@ The analysis tool reads OpenCode SQLite stores in read-only mode and emits redac
 
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
-- Agent-oriented OpenSpec Autopilot continuation, explicit `/autopilot`, `autopilot`, ready Autopilot task ledgers/queues, strict task-type phase enforcement, safe parallel OpenSpec work, or `работай` inside an active Autopilot context -> `openspec-autopilot`; the agent should call `autopilot_run_next` first and treat the plugin as the authoritative process/state machine.
+- Agent-oriented OpenSpec Autopilot continuation, explicit `/autopilot`, `autopilot`, ready Autopilot task ledgers/queues, strict task-type phase enforcement, safe parallel OpenSpec work with plugin/runtime selection evidence, or `работай` inside an active Autopilot context -> `openspec-autopilot`; the agent should call `autopilot_run_next` first, pass explicit user or command scope as `changeId`/`taskId`, treat the plugin as the authoritative process/state machine, prefer `nextActions`, `reasonCode`, `taskSummaries`, `selection`, and `loopGuard`, use `nextRecommendedCall` only as a compatibility fallback, and respect current MVP `reasonCode: "ready_runtime_deferred"` or no-op outputs instead of inferring dispatch, MR sync, worker starts, or ledger mutation. Plugin-owned runtime harness output may report `advanced` for validated in-memory claim/collect/stop transitions without protected-file mutation. `selection.candidates[].parallelDecision: "parallel_ready"` is visibility evidence only; `parallel_started` requires explicit parallel runtime output plus matching `tasksStarted` evidence.
 - Existing OpenSpec continuation or "what next" work -> `next-step` from the `advanced` profile; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
 - Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
@@ -310,7 +331,7 @@ This repository's OpenSpec guide starts at `openspec/project.md`; active changes
 
 ### OpenSpec
 
-- `openspec-autopilot`: agent-oriented OpenSpec Autopilot control plane for ready task ledgers/queues, strict task-type phases, and parallel OpenSpec work; call `autopilot_run_next` to continue until blocker, MR wait, or limit.
+- `openspec-autopilot`: agent-oriented OpenSpec Autopilot control plane for ready task ledgers/queues, safe parallel OpenSpec work with plugin/runtime selection evidence, and strict task-type phases; call `autopilot_run_next` to inspect/continue until blocker, MR wait, limit, or the current MVP `reasonCode: "ready_runtime_deferred"`/no-op boundary.
 - `openspec-explore`: explore requirements/options before a change.
 - `openspec-propose`: draft proposal/design/spec/tasks, including lightweight follow-up backlog changes from audit/retro/reviewer evidence.
 - `openspec-apply-change`: implement accepted OpenSpec changes with TDD-first task execution.

@@ -36,4 +36,4 @@
 
 - [x] Reconcile this checklist with current source, fixture, and test evidence before archive; mark completed items only with direct evidence.
 - [x] Confirmed pre-existing tests did not cover these task-type gates; validation evidence now comes from the new focused fixtures and probes.
-- [x] Recorded explicit manual consistency review; the `harden-autopilot-contract-validation` freshness/consistency helper is not implemented yet.
+- [x] Recorded explicit manual consistency review; the freshness/consistency helper now exists, and final archive validation confirmed this change remains reconciled.

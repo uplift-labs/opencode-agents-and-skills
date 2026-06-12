@@ -1,26 +1,12 @@
 # Live Regression Report
 
-Status: P0 and P1 regression completed as far as safe runtime/tooling allowed. P2 is blocked by missing provider credentials, missing plugin-owned runtime harness, and the current MVP no-op runtime state.
+Status: Historical regression evidence retained for traceability; not ready to land until the unchecked live smoke tasks are rerun in a restarted OpenCode session and this report is refreshed with current tool output.
 
 ## Turn 1 `/autopilot` Smoke
 
 - Result: `openspec-autopilot` was loaded and the first substantive control-plane action called `autopilot_run_next` for `changeId: "autopilot-live-regression"`.
-- Output:
-
-```json
-{
-  "outcome": "idle",
-  "tasksStarted": [],
-  "tasksAdvanced": [],
-  "mrsWaiting": [],
-  "questions": [],
-  "blockers": [],
-  "nextRecommendedCall": null,
-  "summary": "MVP autopilot inspected 1 task ledger(s). Worker dispatch, MR sync, and ledger mutation are intentionally deferred; use autopilot_status for details."
-}
-```
-
-- Interpretation: command/plugin/tool availability is good. The MVP intentionally does not dispatch workers, sync MRs, or mutate ledgers yet, so the ready regression ledger was inspected but not advanced.
+- Output: omitted from a `json` fence because the captured historical output predated the current public Autopilot output contract and would be stale evidence for archive/release. A fresh restarted OpenCode smoke must recapture `reasonCode`, `taskSummaries`, `nextActions`, `loopGuard`, and `selection` before this report can claim live readiness.
+- Interpretation: historical command/plugin/tool availability was good. The Ready regression ledger remained plugin-owned/protected state and was not advanced; current runtime behavior must be rechecked after OpenCode reloads the updated command, skill, and plugin files.
 
 ## Scenario Matrix
 
@@ -44,6 +30,8 @@ Status: P0 and P1 regression completed as far as safe runtime/tooling allowed. P
 | P2 | Provider/MR/runtime worker behavior | blocked/skipped | No provider credentials, MR target, plugin-owned worker dispatch state, or safe runtime fixture seeding was available. Protected-path policy forbids manual `.autopilot/**` or `automation/**` seeding. | Tracked by `improve-autopilot-runtime-e2e-harness`; provider/MR credentials remain out of scope. |
 
 ## Findings
+
+Freshness note: this section is historical. Some findings are now implemented or partly mitigated by follow-up changes such as `improve-autopilot-runtime-e2e-harness` and `tighten-autopilot-ledger-type-gates`; do not use this report as ready-to-land evidence until the live smoke checklist is rerun and reconciled.
 
 1. Runtime/e2e harness gap.
 Evidence: `autopilot_run_next` inspected one valid Ready ledger but returned `idle`; `autopilot_collect` reported worker report collection and legal state mutation are deferred; `.autopilot/prototype/tasks/*.json` does not exist. Impact: true worker dispatch, parallel queues, blocker, and MR wait scenarios cannot be evaluated end-to-end. Recommendation: add a plugin-owned runtime harness and first real advancement/dispatch slice. Confidence: high. Validation path: runtime/plugin tests plus `npm test` and `openspec validate --all`. Follow-up: `openspec/changes/improve-autopilot-runtime-e2e-harness/`.
@@ -91,6 +79,6 @@ Evidence: in-memory probes returned `valid: true` for `bugfix`, `tooling`, `conf
 - The current validator may allow additional type-specific evidence gaps beyond the five probes tested.
 - The report did not update protected `automation/task.json`; that remains plugin-owned by policy.
 
-## Ready-To-Land Status
+## Landing Status
 
-Ready to land as regression evidence and OpenSpec follow-up tracking. No implementation/config/instruction fixes were made without approval.
+Not ready to land as current live-regression evidence. The unchecked setup/live-smoke/scenario tasks remain intentionally open until a restarted OpenCode session recaptures current Autopilot tool output and reconciles the historical findings with implemented follow-up changes.

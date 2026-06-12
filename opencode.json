@@ -3,7 +3,7 @@
   "command": {
     "autopilot": {
       "description": "Run OpenSpec Autopilot through the openspec-autopilot skill and plugin tools.",
-      "template": "Use the `openspec-autopilot` skill. Then call `autopilot_run_next` with no arguments unless the user supplied an explicit OpenSpec change or task scope. Interpret the JSON output, prefer returned `nextActions[]`, use `nextRecommendedCall` only as a compatibility fallback, report `reasonCode`, ask only returned blocker questions, and do not manually edit automation ledgers or simulate plugin-owned state transitions."
+      "template": "Use the `openspec-autopilot` skill. User-supplied scope from command arguments: `$ARGUMENTS`. If `$ARGUMENTS` is non-empty, map it to an explicit OpenSpec `changeId` or Autopilot `taskId` before calling `autopilot_run_next`; otherwise call `autopilot_run_next` with no arguments. Interpret the JSON output, prefer returned `nextActions[]`, report `reasonCode`, summarize `taskSummaries[]`, explain deterministic `selection`, honor `loopGuard`, use `nextRecommendedCall` only as a compatibility fallback, ask only returned blocker questions, and do not manually edit automation ledgers or simulate plugin-owned state transitions."
     }
   },
   "lsp": true

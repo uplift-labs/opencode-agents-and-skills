@@ -7,9 +7,9 @@
 - [ ] First user turn is exactly `/autopilot`; capture whether the first substantive behavior calls `autopilot_run_next` or reports a tool/plugin blocker.
 - [ ] Second user turn uses `live-regression-prompt.md` continuation instructions for the full regression.
 - [ ] Inspect `git status --short` and preserve existing user/agent changes.
-- [ ] Run `npm run validate` and `npm test` as baseline proof.
-- [ ] Run `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`.
-- [ ] Run `openspec validate --all`.
+- [x] Run `npm run validate` and `npm test` as baseline proof.
+- [x] Run `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json`.
+- [x] Run `openspec validate --all`.
 
 ## Live Smoke
 
@@ -45,9 +45,9 @@
 
 ## Final Validation And Handoff
 
-- [ ] Rerun `npm run validate`.
-- [ ] Rerun `npm test`.
-- [ ] Rerun `openspec validate --all`.
-- [ ] Rerun relevant `npm run autopilot:validate -- <task-ledger.json>` commands.
+- [x] Rerun `npm run validate`.
+- [x] Rerun `npm test`.
+- [x] Rerun `openspec validate --all`.
+- [x] Rerun relevant `npm run autopilot:validate -- <task-ledger.json>` commands.
 - [ ] Run relevant reviewer gates: `instruction-artifact-reviewer`, `test-coverage-reviewer`, `code-quality-reviewer`, and `deployment-config-reviewer` by signal.
 - [ ] Report changed files, scenarios completed/skipped, findings fixed, follow-up changes created, validation results, residual risks, and ready-to-land status.

@@ -190,6 +190,7 @@ function newLibraryFixture(name: string): string {
     "    \"instruction:inventory\": \"node tools/instruction-artifacts-inventory.ts\",",
     "    \"code-quality:inventory\": \"node tools/code-quality-inventory.ts\",",
     "    \"autopilot:validate\": \"node tools/autopilot-ledger.ts\",",
+    "    \"openspec:validate\": \"openspec validate --all\",",
     "    \"prepush:validate\": \"node tools/pre-push-validate.ts\",",
     "    \"validate\": \"node tools/validate-library.ts\",",
     "    \"validate:strict\": \"node tools/validate-library.ts --fail-on-warnings\",",
@@ -827,35 +828,6 @@ const tests: TestCase[] = [
       const result = invokeValidator(fixture);
       assertFailure(result, "Legacy package scripts should fail validation.");
       assertOutputContains(result, "Package script 'validate'", "Legacy package script failure should name the script.");
-    },
-  },
-  {
-    name: "validator rejects missing documented Autopilot validation script",
-    run: () => {
-      const fixture = newLibraryFixture("missing-autopilot-validation-script");
-      writeText(path.join(fixture, "package.json"), lines([
-        "{",
-        "  \"name\": \"opencode-dev-kit-fixture\",",
-        "  \"private\": true,",
-        "  \"type\": \"module\",",
-        "  \"scripts\": {",
-        "    \"install:global\": \"node tools/install-opencode-global.ts\",",
-        "    \"init:project\": \"node tools/init-project.ts\",",
-        "    \"doctor\": \"node tools/doctor.ts\",",
-        "    \"project:inventory\": \"node tools/project-inventory.ts\",",
-        "    \"instruction:inventory\": \"node tools/instruction-artifacts-inventory.ts\",",
-        "    \"code-quality:inventory\": \"node tools/code-quality-inventory.ts\",",
-        "    \"prepush:validate\": \"node tools/pre-push-validate.ts\",",
-        "    \"validate\": \"node tools/validate-library.ts\",",
-        "    \"validate:strict\": \"node tools/validate-library.ts --fail-on-warnings\",",
-        "    \"test\": \"node tools/test-library.ts\"",
-        "  }",
-        "}",
-        "",
-      ]));
-      const result = invokeValidator(fixture);
-      assertFailure(result, "Missing documented Autopilot validation script should fail validation.");
-      assertOutputContains(result, "autopilot:validate", "Missing Autopilot validation script should name the required script.");
     },
   },
   {

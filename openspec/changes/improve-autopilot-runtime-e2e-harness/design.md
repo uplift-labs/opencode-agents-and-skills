@@ -45,7 +45,7 @@ The public output contract should add a top-level `selection` field while keepin
 
 ```ts
 type AutopilotSelection = {
-  mode: "serial_default" | "parallel_readonly" | "parallel_implementation";
+  mode: "serial_default" | "parallel_implementation";
   selectedTaskId?: string;
   maxImplementationClaims: number;
   candidates: Array<{

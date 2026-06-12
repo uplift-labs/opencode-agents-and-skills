@@ -1,19 +1,23 @@
 import { tool } from "@opencode-ai/plugin";
 import type { Plugin } from "@opencode-ai/plugin";
 import type { AutopilotOptions, AutopilotOutput } from "../../tools/openspec-autopilot-output.ts";
+import { applyStopToRuntimeState } from "../../tools/openspec-autopilot-runtime.ts";
 import {
   createAnswerBlockerOutput,
   createCollectOutput,
   createRunNextOutput,
   createStatusOutput,
   createStopOutput,
+  filterLedgerSummaries,
   readLedgerSummaries,
+  validateBlockerAnswer,
 } from "../../tools/openspec-autopilot-output.ts";
 
-function jsonOutput(payload: AutopilotOutput | Record<string, unknown>): { output: string; metadata: Record<string, unknown> } {
+function jsonOutput(payload: AutopilotOutput | Record<string, unknown>, metadata: Record<string, unknown> = {}): { output: string; metadata: Record<string, unknown> } {
   return {
     output: JSON.stringify(payload, null, 2),
     metadata: {
+      ...metadata,
       service: "openspec-autopilot",
       outcome: typeof payload.outcome === "string" ? payload.outcome : "status",
     },
@@ -22,6 +26,16 @@ function jsonOutput(payload: AutopilotOutput | Record<string, unknown>): { outpu
 
 function repoRoot(ctx: { worktree?: string; directory?: string }): string {
   return ctx.worktree ?? ctx.directory ?? process.cwd();
+}
+
+function stopArgumentContext(args: { target?: string; id?: string; reason?: string }, stopApplied: boolean): { acknowledged: string[]; ignored: string[]; mutation: string } {
+  const idProvided = typeof args.id === "string";
+  const idAcknowledged = stopApplied && idProvided && (args.target ?? "run") !== "all";
+  return {
+    acknowledged: stopApplied ? ["target", ...(idAcknowledged ? ["id"] : [])] : ["target"],
+    ignored: [...(idProvided && !idAcknowledged ? ["id"] : []), "reason"],
+    mutation: stopApplied ? "plugin-owned-runtime-only" : "none",
+  };
 }
 
 export default {
@@ -39,8 +53,9 @@ export default {
           },
           async execute(args) {
             const root = repoRoot(ctx);
-            const ledgers = readLedgerSummaries(root, resolvedOptions, { changeId: args.changeId, taskId: args.taskId });
-            return jsonOutput(createRunNextOutput(ledgers));
+            const dependencyGraph = readLedgerSummaries(root, resolvedOptions);
+            const ledgers = filterLedgerSummaries(dependencyGraph, { changeId: args.changeId, taskId: args.taskId });
+            return jsonOutput(createRunNextOutput(ledgers, { dependencyGraph, runtimeState: resolvedOptions.runtimeState }));
           },
         }),
         autopilot_status: tool({
@@ -50,23 +65,24 @@ export default {
           },
           async execute(args) {
             const root = repoRoot(ctx);
-            const ledgers = readLedgerSummaries(root, resolvedOptions, { changeId: args.changeId });
-            return jsonOutput(createStatusOutput(ledgers));
+            const dependencyGraph = readLedgerSummaries(root, resolvedOptions);
+            const ledgers = filterLedgerSummaries(dependencyGraph, { changeId: args.changeId });
+            return jsonOutput(createStatusOutput(ledgers, { dependencyGraph }));
           },
         }),
         autopilot_collect: tool({
-          description: "Collect finished worker reports and attempt legal state advancement. MVP validates ledgers and returns no-op collect status.",
+          description: "Collect plugin-owned worker reports and attempt legal runtime advancement without direct protected-file mutation.",
           args: {
             taskId: tool.schema.string().optional().describe("Optional task id to collect."),
           },
           async execute(args) {
             const root = repoRoot(ctx);
             const ledgers = readLedgerSummaries(root, resolvedOptions, { taskId: args.taskId });
-            return jsonOutput(createCollectOutput(ledgers));
+            return jsonOutput(createCollectOutput(ledgers, { runtimeState: resolvedOptions.runtimeState }));
           },
         }),
         autopilot_answer_blocker: tool({
-          description: "Apply a selected user answer to an autopilot blocker question. MVP accepts the envelope but does not mutate state yet.",
+          description: "Validate a selected user answer envelope for a pending plugin-owned autopilot blocker question. MVP does not mutate state yet.",
           args: {
             questionId: tool.schema.string().describe("Blocker question id."),
             taskId: tool.schema.string().optional().describe("Related task id."),
@@ -74,18 +90,30 @@ export default {
             action: tool.schema.string().optional().describe("Selected blocker action."),
           },
           async execute(args) {
-            return jsonOutput(createAnswerBlockerOutput(args.questionId));
+            const validation = validateBlockerAnswer(resolvedOptions.runtimeState, args);
+            return jsonOutput(createAnswerBlockerOutput(args.questionId, validation), {
+              argumentContext: {
+                acknowledged: validation.accepted ? ["questionId", "taskId", "selectedLabel", "action"] : ["questionId"],
+                ignored: validation.accepted ? [] : ["taskId", "selectedLabel", "action"],
+                mutation: "none",
+              },
+            });
           },
         }),
         autopilot_stop: tool({
-          description: "Pause or cancel an autopilot run/task. MVP returns a safe no-op stop result.",
+          description: "Acknowledge a pause or cancel request for an autopilot run/task and report whether plugin-owned active runtime state changed.",
           args: {
             target: tool.schema.string().optional().describe("run, task, or all."),
             id: tool.schema.string().optional().describe("Run id or task id."),
             reason: tool.schema.string().optional().describe("Reason for pause or cancel."),
           },
           async execute(args) {
-            return jsonOutput(createStopOutput(args.target));
+            const stoppedEntries = applyStopToRuntimeState(args.target, args.id, resolvedOptions.runtimeState);
+            const output = createStopOutput(args.target, { id: args.id, stoppedEntries });
+            const stopApplied = output.reasonCode === "stop_applied";
+            return jsonOutput(output, {
+              argumentContext: stopArgumentContext(args, stopApplied),
+            });
           },
         }),
       },

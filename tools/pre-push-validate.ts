@@ -10,6 +10,24 @@ export type ValidationCommand = {
   args: string[];
 };
 
+export type ValidationCommandResult = {
+  status: number | null;
+  signal?: NodeJS.Signals | null;
+  error?: Error | null;
+};
+
+export type ValidationCommandRunner = (root: string, command: ValidationCommand) => ValidationCommandResult;
+
+export type ValidationOutput = {
+  log: (message: string) => void;
+  error: (message: string) => void;
+};
+
+export type RunPrePushValidationOptions = {
+  runner?: ValidationCommandRunner;
+  output?: ValidationOutput;
+};
+
 export function buildPrePushValidationPlan(root: string): ValidationCommand[] {
   const plan: ValidationCommand[] = [
     { label: "Repository validation", command: "npm", args: ["run", "validate"] },
@@ -30,8 +48,7 @@ export function exitCodeFromSpawnResult(result: { status: number | null; signal?
   return result.status;
 }
 
-function runCommand(root: string, command: ValidationCommand): number {
-  console.log(`==> ${command.label}: ${command.command} ${command.args.join(" ")}`);
+function defaultCommandRunner(root: string, command: ValidationCommand): ValidationCommandResult {
   const executable = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : command.command;
   const args = process.platform === "win32" ? ["/d", "/s", "/c", [command.command, ...command.args].join(" ")] : command.args;
   const result = spawnSync(executable, args, {
@@ -39,12 +56,18 @@ function runCommand(root: string, command: ValidationCommand): number {
     encoding: "utf8",
     stdio: "inherit",
   });
+  return { status: result.status, signal: result.signal, error: result.error ?? null };
+}
+
+function runCommand(root: string, command: ValidationCommand, runner: ValidationCommandRunner, output: ValidationOutput): number {
+  output.log(`==> ${command.label}: ${command.command} ${command.args.join(" ")}`);
+  const result = runner(root, command);
   if (result.error) {
-    console.error(`Failed to start ${command.label}: ${result.error.message}`);
+    output.error(`Failed to start ${command.label}: ${result.error.message}`);
     return 1;
   }
   if (result.signal) {
-    console.error(`${command.label} terminated by signal ${result.signal}.`);
+    output.error(`${command.label} terminated by signal ${result.signal}.`);
   }
   return exitCodeFromSpawnResult(result);
 }
@@ -53,17 +76,22 @@ function defaultRoot(): string {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 }
 
-function runCli(): number {
-  const root = defaultRoot();
+export function runPrePushValidation(root: string, options: RunPrePushValidationOptions = {}): number {
+  const runner = options.runner ?? defaultCommandRunner;
+  const output = options.output ?? { log: console.log, error: console.error };
   for (const command of buildPrePushValidationPlan(root)) {
-    const exitCode = runCommand(root, command);
+    const exitCode = runCommand(root, command, runner, output);
     if (exitCode !== 0) {
-      console.error(`Pre-push validation failed at ${command.label}.`);
+      output.error(`Pre-push validation failed at ${command.label}.`);
       return exitCode;
     }
   }
-  console.log("Pre-push validation passed.");
+  output.log("Pre-push validation passed.");
   return 0;
+}
+
+function runCli(): number {
+  return runPrePushValidation(defaultRoot());
 }
 
 function isMainModule(): boolean {
