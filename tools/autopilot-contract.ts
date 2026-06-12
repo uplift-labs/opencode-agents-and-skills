@@ -22,6 +22,7 @@ export const autopilotReasonCodes = [
   "no_ledgers",
   "invalid_ledgers",
   "ready_runtime_deferred",
+  "ledger_materialized",
   "active_change_handoff",
   "waiting_for_mr",
   "blocked_for_user",

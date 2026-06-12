@@ -143,6 +143,16 @@ function assertActiveChangeHandoff(text: string, label: string): void {
   assert(/no_ledgers[\s\S]{0,240}unfinished active OpenSpec changes|unfinished active OpenSpec changes[\s\S]{0,240}no_ledgers/i.test(text), `${label} must state no_ledgers is not the stop state when unfinished active OpenSpec changes exist.`);
 }
 
+function assertAutopilotMaterialization(text: string, label: string): void {
+  const normalized = text.toLowerCase();
+  for (const phrase of ["ledger_materialized", "automation/task.json", "tasksAdvanced", "validation evidence", "nextActions"] as const) {
+    assert(normalized.includes(phrase.toLowerCase()), `${label} must document Autopilot materialization phrase: ${phrase}.`);
+  }
+  assert(text.includes("<ledgerRoot>"), `${label} must document materialized ledger paths with <ledgerRoot> rather than only default openspec/changes.`);
+  assert(/ledger_materialized[\s\S]{0,260}(follow|safe|nextActions|autopilot_run_next)|automation\/task\.json[\s\S]{0,260}(follow|safe|nextActions|autopilot_run_next)/i.test(text), `${label} must explain the safe ledger-backed follow-up after materialization.`);
+  assert(/no implementation worker|worker[^.\n]{0,80}not[^.\n]{0,80}claim|not claim[^.\n]{0,80}worker/i.test(text), `${label} must state materialization does not claim implementation worker work.`);
+}
+
 function assertActiveChangeTriggerBoundary(text: string, label: string): void {
   assert(/unfinished active OpenSpec changes[\s\S]{0,220}(explicit|\/autopilot|handoff)|\/autopilot[\s\S]{0,220}unfinished active OpenSpec changes/i.test(text), `${label} must scope unfinished active OpenSpec change routing to explicit Autopilot or handoff contexts.`);
   assert(/direct[\s\S]{0,120}openspec-apply-change|openspec-apply-change[\s\S]{0,120}direct/i.test(text), `${label} must preserve direct openspec-apply-change routing for direct accepted changes.`);
@@ -233,6 +243,7 @@ const tests: TestCase[] = [
       const escapeHatch = extractMarkdownSection(skill, "## Escape Hatch");
       assertAutopilotEscapeHatch(escapeHatch, "openspec-autopilot Escape Hatch section");
       assertActiveChangeHandoff(skill, "openspec-autopilot skill");
+      assertAutopilotMaterialization(skill, "openspec-autopilot skill");
     },
   },
   {
@@ -263,7 +274,8 @@ const tests: TestCase[] = [
       assertContainsAllValues(outputContractBlock, autopilotParallelDecisions, "openspec-autopilot output contract parallel decision list");
       assertContainsAllValues(outputContractBlock, autopilotSelectionReasons, "openspec-autopilot output contract selection reason list");
       assertContainsAllValues(outputContractBlock, autopilotToolNames, "openspec-autopilot output contract tool list");
-      assert(outputContractBlock.includes("openspec/changes/<change>/tasks.md"), "openspec-autopilot output contract must document active-change tasks.md paths.");
+      assert(outputContractBlock.includes("<ledgerRoot>/<change>/tasks.md"), "openspec-autopilot output contract must document active-change tasks.md paths with ledgerRoot.");
+      assertAutopilotMaterialization(publicTools, "openspec-autopilot Public Tools materialization docs");
       assertContainsAllValues(extractMarkdownSection(skill, "## Authority Boundary"), autopilotProtectedPathPatterns, "openspec-autopilot protected path list");
       assert(
         publicTools.includes("maxImplementationClaims: 1")
@@ -310,17 +322,19 @@ const tests: TestCase[] = [
       assertAutopilotEligibilityBoundaries(routing, "README Routing Map");
       assertAutopilotEscapeHatch(routing, "README Routing Map");
       assertActiveChangeHandoff(routing, "README Routing Map");
+      assertAutopilotMaterialization(routing, "README Routing Map");
       assertActiveChangeTriggerBoundary(routing, "README Routing Map");
     },
   },
   {
-    name: "README skill catalog documents Autopilot active-change handoff",
+    name: "README skill catalog documents Autopilot materialization and handoff",
     run: () => {
       const readme = readText("README.md");
       const catalog = extractMarkdownSection(readme, "## Skill Catalog");
       const openSpecCatalog = extractMarkdownSection(catalog, "### OpenSpec");
       const line = extractLineContaining(openSpecCatalog, "`openspec-autopilot`", "README OpenSpec Skill Catalog");
       assertActiveChangeHandoff(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
+      assertAutopilotMaterialization(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
       assert(line.includes("openspec-apply-change"), "README OpenSpec Skill Catalog entry must mention openspec-apply-change continuation for active_change_handoff.");
     },
   },
@@ -355,6 +369,7 @@ const tests: TestCase[] = [
       assertAutopilotEligibilityBoundaries(template, "opencode.json command.autopilot template");
       assertAutopilotEscapeHatch(template, "opencode.json command.autopilot template");
       assertActiveChangeHandoff(template, "opencode.json command.autopilot template");
+      assertAutopilotMaterialization(template, "opencode.json command.autopilot template");
       assertActiveChangeTriggerBoundary(template, "opencode.json command.autopilot template");
       assert(!template.includes("handoffTarget"), "command.autopilot template must not document a public handoffTarget before the output contract exposes it.");
     },

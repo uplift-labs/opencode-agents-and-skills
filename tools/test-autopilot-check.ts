@@ -105,6 +105,24 @@ function parseJsonOutput(output: string): Record<string, unknown> {
   return JSON.parse(output) as Record<string, unknown>;
 }
 
+function snapshotFiles(rootPath: string, relativePath = ""): string[] {
+  const current = path.join(rootPath, relativePath);
+  if (!fs.existsSync(current)) {
+    return [];
+  }
+  return fs.readdirSync(current, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap((entry) => {
+      const entryRelativePath = path.join(relativePath, entry.name);
+      const normalized = entryRelativePath.split(path.sep).join("/");
+      const entryPath = path.join(rootPath, entryRelativePath);
+      if (entry.isDirectory()) {
+        return [`${normalized}/\n<DIR>`, ...snapshotFiles(rootPath, entryRelativePath)];
+      }
+      return [`${normalized}\n${fs.readFileSync(entryPath, "utf8")}`];
+    });
+}
+
 function commandKey(command: AutopilotCheckCommand): string {
   return `${command.label}:${command.command} ${command.args.join(" ")}`;
 }
@@ -114,6 +132,7 @@ const tests: TestCase[] = [
     name: "cheap check reports no active ledgers as not-applicable",
     run: () => withTempRepo("cheap-no-ledgers", (repo) => {
       writeActiveChange(repo, "change-a");
+      const before = snapshotFiles(repo);
       const output = runAutopilotCheck(repo, { level: "cheap", generatedAt });
       const noLedgers = output.checks.find((check) => check.id === "autopilot-ledgers:none");
 
@@ -123,6 +142,7 @@ const tests: TestCase[] = [
       assertArrayEqual(output.scope.ledgers, [], "No active ledgers should be in scope.");
       assert(noLedgers?.status === "not-applicable", "No-ledger check should be not-applicable.");
       assert(output.checks.every((check) => check.command !== "npm test"), "Cheap checks must not run npm test.");
+      assert(JSON.stringify(snapshotFiles(repo)) === JSON.stringify(before), "Cheap check must not create automation/task.json or .autopilot files for active changes without ledgers.");
     }),
   },
   {

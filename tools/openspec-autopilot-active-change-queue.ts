@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { isSymlinkPath, realPathIsInside } from "./autopilot-path-safety.ts";
 import type { LedgerSummary } from "./openspec-autopilot-output.ts";
 
 type ActiveChangeFilter = {
@@ -100,6 +101,9 @@ function readActiveChange(root: string, changeId: string, taskPath: string): Led
 export function readActiveChangeSummaries(root: string, ledgerRoot: string, filter: ActiveChangeFilter = {}): LedgerSummary[] {
   const changesRoot = path.join(root, ledgerRoot);
   if (!fs.existsSync(changesRoot) || !fs.statSync(changesRoot).isDirectory()) {
+    return [];
+  }
+  if (isSymlinkPath(changesRoot) || !realPathIsInside(root, changesRoot)) {
     return [];
   }
 

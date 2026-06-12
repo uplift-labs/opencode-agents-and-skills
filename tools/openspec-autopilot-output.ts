@@ -20,6 +20,7 @@ import {
 } from "./autopilot-contract.ts";
 import { validateTaskLedger } from "./autopilot-ledger.ts";
 import { activeRunState } from "./autopilot-active-run.ts";
+import { isSymlinkPath, realPathIsInside } from "./autopilot-path-safety.ts";
 import {
   claimSelectedReadyTasks,
   collectWorkerReports,
@@ -240,6 +241,9 @@ export function listTaskLedgerFiles(root: string, options: AutopilotOptions = {}
   const prototypeRoot = path.join(root, safeRelativeRoot(options.prototypeLedgerRoot, defaultPrototypeLedgerRoot, "prototypeLedgerRoot"));
 
   if (fs.existsSync(ledgerRoot) && fs.statSync(ledgerRoot).isDirectory()) {
+    if (isSymlinkPath(ledgerRoot) || !realPathIsInside(root, ledgerRoot)) {
+      return files;
+    }
     for (const change of fs.readdirSync(ledgerRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (!change.isDirectory()) {
         continue;
@@ -252,6 +256,9 @@ export function listTaskLedgerFiles(root: string, options: AutopilotOptions = {}
   }
 
   if (fs.existsSync(prototypeRoot) && fs.statSync(prototypeRoot).isDirectory()) {
+    if (isSymlinkPath(prototypeRoot) || !realPathIsInside(root, prototypeRoot)) {
+      return files;
+    }
     for (const entry of fs.readdirSync(prototypeRoot, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       if (entry.isFile() && entry.name.endsWith(".json")) {
         files.push(path.join(prototypeRoot, entry.name));
@@ -535,6 +542,9 @@ function outcomeForReason(reasonCode: AutopilotReasonCode): AutopilotOutcome {
     return "waiting_for_mr";
   }
   if (reasonCode === "advanced") {
+    return "advanced";
+  }
+  if (reasonCode === "ledger_materialized") {
     return "advanced";
   }
   if (reasonCode === "stop_applied") {

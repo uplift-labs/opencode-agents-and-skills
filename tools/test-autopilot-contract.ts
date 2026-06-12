@@ -644,32 +644,12 @@ const tests: TestCase[] = [
     }),
   },
   {
-    name: "plugin run_next and status expose active-change fallback without ledger mutation",
+    name: "plugin run_next materializes active changes while status stays read-only",
     run: () => withTempRepo("active-change-fallback", async (repo) => {
       writeTasks(repo, "z-change", "# Tasks\n\n- [ ] Later task\n");
       writeTasks(repo, "a-change", "# Tasks\n\n- [ ] First task\n");
       const before = snapshotFiles(repo);
       const tools = await pluginTools(repo);
-
-      const runNext = await executePluginTool(tools, "autopilot_run_next", {});
-      assert(runNext.payload.reasonCode === "active_change_handoff", `Expected active_change_handoff, got ${String(runNext.payload.reasonCode)}.`);
-      assert(taskIds(runNext.payload).join(",") === "a-change,z-change", `Expected active change summaries, got ${taskIds(runNext.payload).join(",")}.`);
-      assert((runNext.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "run_next must select deterministic active change primary.");
-      assert(JSON.stringify(runNext.payload.nextActions).includes("openspec-apply-change"), "run_next active-change next action must mention openspec-apply-change.");
-      assertNoProgressClaims(runNext.payload, "active-change run_next");
-      assertLoopGuard(runNext.payload, "autopilot_run_next");
-
-      const runNextWithEmptyScope = await executePluginTool(tools, "autopilot_run_next", { changeId: "", taskId: "" });
-      assert(runNextWithEmptyScope.payload.reasonCode === "active_change_handoff", `Expected empty-scope active_change_handoff, got ${String(runNextWithEmptyScope.payload.reasonCode)}.`);
-      assert(taskIds(runNextWithEmptyScope.payload).join(",") === "a-change,z-change", `Expected empty-scope active change summaries, got ${taskIds(runNextWithEmptyScope.payload).join(",")}.`);
-      assert((runNextWithEmptyScope.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "empty-scope run_next must preserve deterministic active change primary.");
-      assertNoProgressClaims(runNextWithEmptyScope.payload, "empty-scope active-change run_next");
-
-      const runNextWithWhitespaceScope = await executePluginTool(tools, "autopilot_run_next", { changeId: " \t ", taskId: " \n " });
-      assert(runNextWithWhitespaceScope.payload.reasonCode === "active_change_handoff", `Expected whitespace-scope active_change_handoff, got ${String(runNextWithWhitespaceScope.payload.reasonCode)}.`);
-      assert(taskIds(runNextWithWhitespaceScope.payload).join(",") === "a-change,z-change", `Expected whitespace-scope active change summaries, got ${taskIds(runNextWithWhitespaceScope.payload).join(",")}.`);
-      assert((runNextWithWhitespaceScope.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "whitespace-scope run_next must preserve deterministic active change primary.");
-      assertNoProgressClaims(runNextWithWhitespaceScope.payload, "whitespace-scope active-change run_next");
 
       const scopedStatus = await executePluginTool(tools, "autopilot_status", { changeId: "z-change" });
       assert(scopedStatus.payload.reasonCode === "active_change_handoff", `Expected scoped status active_change_handoff, got ${String(scopedStatus.payload.reasonCode)}.`);
@@ -690,22 +670,41 @@ const tests: TestCase[] = [
       assert(taskIds(scopedStatusWithTrimmedScope.payload).join(",") === "z-change", `Expected trimmed-scope status z-change summary, got ${taskIds(scopedStatusWithTrimmedScope.payload).join(",")}.`);
       assert((scopedStatusWithTrimmedScope.payload.selection as Record<string, unknown>).selectedTaskId === "z-change", "trimmed-scope status must preserve scoped active-change selection evidence.");
 
+      assert(JSON.stringify(snapshotFiles(repo)) === JSON.stringify(before), "Status-only active-change fallback must not create, delete, or mutate repo files.");
+
+      const runNext = await executePluginTool(tools, "autopilot_run_next", {});
+      assert(runNext.payload.reasonCode === "ledger_materialized", `Expected ledger_materialized, got ${String(runNext.payload.reasonCode)}.`);
+      assert(taskIds(runNext.payload).join(",") === "a-change", `Expected materialized ledger summary, got ${taskIds(runNext.payload).join(",")}.`);
+      assert((runNext.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "run_next must select deterministic active change primary.");
+      const advancements = taskAdvancements(runNext.payload);
+      assert(advancements.length === 1 && advancements[0]?.action === "materialized-ledger", "run_next must report materialized-ledger advancement evidence.");
+      assert(JSON.stringify(runNext.payload.nextActions).includes("autopilot_run_next"), "ledger materialization next action must allow a ledger-backed follow-up run.");
+
+      const runNextWithEmptyScope = await executePluginTool(tools, "autopilot_run_next", { changeId: "", taskId: "" });
+      assert(runNextWithEmptyScope.payload.reasonCode === "ready_runtime_deferred", `Expected empty-scope ledger-backed ready_runtime_deferred, got ${String(runNextWithEmptyScope.payload.reasonCode)}.`);
+      assert(taskIds(runNextWithEmptyScope.payload).join(",") === "a-change", `Expected empty-scope ledger summary, got ${taskIds(runNextWithEmptyScope.payload).join(",")}.`);
+
+      const runNextWithWhitespaceScope = await executePluginTool(tools, "autopilot_run_next", { changeId: " \t ", taskId: " \n " });
+      assert(runNextWithWhitespaceScope.payload.reasonCode === "ready_runtime_deferred", `Expected whitespace-scope ledger-backed ready_runtime_deferred, got ${String(runNextWithWhitespaceScope.payload.reasonCode)}.`);
+      assert(taskIds(runNextWithWhitespaceScope.payload).join(",") === "a-change", `Expected whitespace-scope ledger summary, got ${taskIds(runNextWithWhitespaceScope.payload).join(",")}.`);
+
       const directoryOnlyTools = await pluginToolsWithContext({ directory: repo, worktree: "" });
       const directoryOnlyRunNext = await executePluginTool(directoryOnlyTools, "autopilot_run_next", { changeId: "", taskId: "" });
-      assert(directoryOnlyRunNext.payload.reasonCode === "active_change_handoff", `Expected directory fallback active_change_handoff, got ${String(directoryOnlyRunNext.payload.reasonCode)}.`);
-      assert(taskIds(directoryOnlyRunNext.payload).join(",") === "a-change,z-change", `Expected directory fallback active change summaries, got ${taskIds(directoryOnlyRunNext.payload).join(",")}.`);
+      assert(directoryOnlyRunNext.payload.reasonCode === "ready_runtime_deferred", `Expected directory fallback ready_runtime_deferred, got ${String(directoryOnlyRunNext.payload.reasonCode)}.`);
+      assert(taskIds(directoryOnlyRunNext.payload).join(",") === "a-change", `Expected directory fallback ledger summary, got ${taskIds(directoryOnlyRunNext.payload).join(",")}.`);
 
       const whitespaceWorktreeTools = await pluginToolsWithContext({ directory: repo, worktree: " \t " });
       const whitespaceWorktreeRunNext = await executePluginTool(whitespaceWorktreeTools, "autopilot_run_next", { changeId: "", taskId: "" });
-      assert(whitespaceWorktreeRunNext.payload.reasonCode === "active_change_handoff", `Expected whitespace-worktree directory fallback active_change_handoff, got ${String(whitespaceWorktreeRunNext.payload.reasonCode)}.`);
-      assert(taskIds(whitespaceWorktreeRunNext.payload).join(",") === "a-change,z-change", `Expected whitespace-worktree active change summaries, got ${taskIds(whitespaceWorktreeRunNext.payload).join(",")}.`);
+      assert(whitespaceWorktreeRunNext.payload.reasonCode === "ready_runtime_deferred", `Expected whitespace-worktree directory fallback ready_runtime_deferred, got ${String(whitespaceWorktreeRunNext.payload.reasonCode)}.`);
+      assert(taskIds(whitespaceWorktreeRunNext.payload).join(",") === "a-change", `Expected whitespace-worktree ledger summary, got ${taskIds(whitespaceWorktreeRunNext.payload).join(",")}.`);
 
       const after = snapshotFiles(repo);
-      assert(JSON.stringify(after) === JSON.stringify(before), "Active-change fallback must not create, delete, or mutate repo files.");
+      assert(after.some((entry) => entry.startsWith("openspec/changes/a-change/automation/task.json\n")), "run_next must publish selected active-change task ledger.");
+      assert(!after.some((entry) => entry.startsWith("openspec/changes/z-change/automation/task.json\n")), "serial run_next must not publish non-selected active-change task ledger.");
     }),
   },
   {
-    name: "plugin scoped run_next uses active fallback without overriding ledger authority",
+    name: "plugin scoped run_next materializes active changes without overriding ledger authority",
     run: () => withTempRepo("active-change-scoped-precedence", async (repo) => {
       writeLedger(repo, "ledger-change", readyResearchLedger("task-ledger"));
       writeTasks(repo, "ledger-change", "# Tasks\n\n- [ ] Ledger task\n");
@@ -716,10 +715,10 @@ const tests: TestCase[] = [
       const tools = await pluginTools(repo);
 
       const scopedActive = await executePluginTool(tools, "autopilot_run_next", { changeId: "active-change" });
-      assert(scopedActive.payload.reasonCode === "active_change_handoff", `Expected scoped active_change_handoff, got ${String(scopedActive.payload.reasonCode)}.`);
-      assert(taskIds(scopedActive.payload).join(",") === "active-change", `Expected active-change summary, got ${taskIds(scopedActive.payload).join(",")}.`);
+      assert(scopedActive.payload.reasonCode === "ledger_materialized", `Expected scoped ledger_materialized, got ${String(scopedActive.payload.reasonCode)}.`);
+      assert(taskIds(scopedActive.payload).join(",") === "active-change", `Expected materialized active-change summary, got ${taskIds(scopedActive.payload).join(",")}.`);
       assert((scopedActive.payload.selection as Record<string, unknown>).selectedTaskId === "active-change", "scoped active run_next must select active-change.");
-      assertNoProgressClaims(scopedActive.payload, "scoped active run_next");
+      assert(taskAdvancements(scopedActive.payload)[0]?.action === "materialized-ledger", "scoped active run_next must report materialization evidence.");
 
       const scopedLedger = await executePluginTool(tools, "autopilot_run_next", { changeId: "ledger-change" });
       assert(scopedLedger.payload.reasonCode === "ready_runtime_deferred", `Expected scoped ledger ready_runtime_deferred, got ${String(scopedLedger.payload.reasonCode)}.`);
@@ -732,7 +731,9 @@ const tests: TestCase[] = [
       assertNoProgressClaims(scopedInvalidLedger.payload, "scoped invalid ledger run_next");
 
       const after = snapshotFiles(repo);
-      assert(JSON.stringify(after) === JSON.stringify(before), "Scoped active fallback and ledger precedence checks must not mutate repo files or directories.");
+      assert(after.some((entry) => entry.startsWith("openspec/changes/active-change/automation/task.json\n")), "Scoped active run_next must publish a task ledger for active-change.");
+      assert(before.some((entry) => entry.startsWith("openspec/changes/ledger-change/automation/task.json\n")), "Precondition must include existing authoritative ledger.");
+      assert(after.some((entry) => entry.startsWith("openspec/changes/ledger-change/automation/task.json\n")), "Existing authoritative ledger must remain present.");
     }),
   },
   {

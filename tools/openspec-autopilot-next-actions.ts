@@ -23,6 +23,9 @@ export function nextActionsFor(reasonCode: AutopilotReasonCode): AutopilotNextAc
   if (reasonCode === "advanced") {
     return [{ label: "Inspect Autopilot status", kind: "tool", tool: "autopilot_status", reason: "Plugin-owned runtime state accepted a legal claim or worker-report transition.", safety: "safe", expectedResult: "Status confirms the next safe Autopilot action before additional collection or dispatch." }];
   }
+  if (reasonCode === "ledger_materialized") {
+    return [{ label: "Continue ledger-backed Autopilot run", kind: "tool", tool: "autopilot_run_next", reason: "Plugin-owned materialization created a valid task ledger for the selected active change.", safety: "safe", expectedResult: "The follow-up run evaluates the new ledger-backed Ready task instead of active-change handoff." }];
+  }
   if (reasonCode === "waiting_for_mr") {
     return [{ label: "Wait for MR review or merge", kind: "wait", reason: "Autopilot must not merge or bypass MR review gates automatically.", safety: "requires_user", expectedResult: "Reviewer or user merges, updates, or rejects the MR outside Autopilot." }];
   }

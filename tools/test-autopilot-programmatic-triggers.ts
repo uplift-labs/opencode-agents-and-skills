@@ -47,13 +47,14 @@ function assertIgnored(decision: AutopilotTriggerDecision, reasonIncludes: strin
 
 const tests: TestCase[] = [
   {
-    name: "shared controller preserves active-change handoff output shape",
+    name: "shared controller materializes selected active change on run_next",
     run: () => withTempRepo("controller-active-change", async (repo) => {
       writeTasks(repo, "trigger-change", "# Tasks\n\n- [ ] Next task\n");
       const controller = createAutopilotController({ root: repo });
       const result = await controller.runNext({});
-      assert(result.payload.reasonCode === "active_change_handoff", `Expected active_change_handoff, got ${result.payload.reasonCode}.`);
+      assert(result.payload.reasonCode === "ledger_materialized", `Expected ledger_materialized, got ${result.payload.reasonCode}.`);
       assert(result.payload.selection.selectedTaskId === "trigger-change", "Controller must preserve active-change selection evidence.");
+      assert(fs.existsSync(path.join(repo, "openspec", "changes", "trigger-change", "automation", "task.json")), "Controller run_next must publish the selected active-change task ledger.");
       assert(result.metadata.service === "openspec-autopilot", "Controller result metadata must identify the service.");
       assert(result.metadata.outcome === result.payload.outcome, "Controller metadata outcome must mirror payload outcome.");
     }),

@@ -11,6 +11,8 @@ import {
   type AutopilotOptions,
   type AutopilotOutput,
 } from "./openspec-autopilot-output.ts";
+import { createLedgerMaterializationBlockedOutput, createLedgerMaterializedOutput } from "./openspec-autopilot-materialization-output.ts";
+import { materializeActiveChangeLedger } from "./openspec-autopilot-materializer.ts";
 
 export type AutopilotScope = {
   changeId?: string;
@@ -66,6 +68,14 @@ function sourceMetadata(source: TriggerSource | undefined): Record<string, unkno
   };
 }
 
+function optionalNonEmptyString(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function result(payload: AutopilotOutput, metadata: Record<string, unknown> = {}, source?: TriggerSource): AutopilotControllerResult {
   return {
     payload,
@@ -92,7 +102,26 @@ export function createAutopilotController(ctx: ControllerContext, options: Autop
   return {
     async runNext(scope: AutopilotScope = {}, source?: TriggerSource): Promise<AutopilotControllerResult> {
       const queue = readAutopilotQueueSummaries(ctx.root, options, { changeId: scope.changeId, taskId: scope.taskId });
-      return result(createRunNextOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph, runtimeState: options.runtimeState }), {}, source);
+      const output = createRunNextOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph, runtimeState: options.runtimeState });
+      if (output.reasonCode === "active_change_handoff" && output.selection.selectedTaskId != null) {
+        const materialized = materializeActiveChangeLedger(ctx.root, output.selection.selectedTaskId, { ledgerRoot: options.ledgerRoot });
+        if (materialized.created) {
+          const refreshed = readAutopilotQueueSummaries(ctx.root, options, { changeId: materialized.changeId });
+          return result(createLedgerMaterializedOutput(refreshed.ledgers, materialized, output.selection), { materialization: { changeId: materialized.changeId, path: materialized.path, validation: { valid: materialized.validation.valid, warnings: materialized.validation.warnings.length } } }, source);
+        }
+        return result(createLedgerMaterializationBlockedOutput(queue.ledgers, materialized), {}, source);
+      }
+      const scopedChangeId = optionalNonEmptyString(scope.changeId);
+      const scopedTaskId = optionalNonEmptyString(scope.taskId);
+      if (output.reasonCode === "no_ledgers" && scopedChangeId != null && scopedTaskId == null) {
+        const materialized = materializeActiveChangeLedger(ctx.root, scopedChangeId, { ledgerRoot: options.ledgerRoot });
+        if (materialized.created) {
+          const refreshed = readAutopilotQueueSummaries(ctx.root, options, { changeId: materialized.changeId });
+          return result(createLedgerMaterializedOutput(refreshed.ledgers, materialized, output.selection), { materialization: { changeId: materialized.changeId, path: materialized.path, validation: { valid: materialized.validation.valid, warnings: materialized.validation.warnings.length } } }, source);
+        }
+        return result(createLedgerMaterializationBlockedOutput(queue.ledgers, materialized), {}, source);
+      }
+      return result(output, {}, source);
     },
 
     async status(scope: Pick<AutopilotScope, "changeId"> = {}, source?: TriggerSource): Promise<AutopilotControllerResult> {
