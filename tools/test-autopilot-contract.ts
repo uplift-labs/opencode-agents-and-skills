@@ -174,6 +174,12 @@ function writeLedger(repo: string, changeId: string, ledger: Record<string, unkn
   fs.writeFileSync(filePath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
 }
 
+function writeTasks(repo: string, changeId: string, markdown: string): void {
+  const filePath = path.join(repo, "openspec", "changes", changeId, "tasks.md");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, markdown.replace(/\r\n/g, "\n"), "utf8");
+}
+
 function snapshotFiles(rootPath: string, relativePath = ""): string[] {
   const current = path.join(rootPath, relativePath);
   return fs.readdirSync(current, { withFileTypes: true })
@@ -183,7 +189,7 @@ function snapshotFiles(rootPath: string, relativePath = ""): string[] {
       const normalized = entryRelativePath.split(path.sep).join("/");
       const entryPath = path.join(rootPath, entryRelativePath);
       if (entry.isDirectory()) {
-        return snapshotFiles(rootPath, entryRelativePath);
+        return [`${normalized}/\n<DIR>`, ...snapshotFiles(rootPath, entryRelativePath)];
       }
       return [`${normalized}\n${fs.readFileSync(entryPath, "utf8")}`];
     });
@@ -617,6 +623,63 @@ const tests: TestCase[] = [
 
       const after = snapshotFiles(repo);
       assert(JSON.stringify(after) === JSON.stringify(before), "MVP plugin tools must not create, delete, or mutate temp repo files in this runtime-deferred/no-op slice.");
+    }),
+  },
+  {
+    name: "plugin run_next and status expose active-change fallback without ledger mutation",
+    run: () => withTempRepo("active-change-fallback", async (repo) => {
+      writeTasks(repo, "z-change", "# Tasks\n\n- [ ] Later task\n");
+      writeTasks(repo, "a-change", "# Tasks\n\n- [ ] First task\n");
+      const before = snapshotFiles(repo);
+      const tools = await pluginTools(repo);
+
+      const runNext = await executePluginTool(tools, "autopilot_run_next", {});
+      assert(runNext.payload.reasonCode === "active_change_handoff", `Expected active_change_handoff, got ${String(runNext.payload.reasonCode)}.`);
+      assert(taskIds(runNext.payload).join(",") === "a-change,z-change", `Expected active change summaries, got ${taskIds(runNext.payload).join(",")}.`);
+      assert((runNext.payload.selection as Record<string, unknown>).selectedTaskId === "a-change", "run_next must select deterministic active change primary.");
+      assert(JSON.stringify(runNext.payload.nextActions).includes("openspec-apply-change"), "run_next active-change next action must mention openspec-apply-change.");
+      assertNoProgressClaims(runNext.payload, "active-change run_next");
+      assertLoopGuard(runNext.payload, "autopilot_run_next");
+
+      const scopedStatus = await executePluginTool(tools, "autopilot_status", { changeId: "z-change" });
+      assert(scopedStatus.payload.reasonCode === "active_change_handoff", `Expected scoped status active_change_handoff, got ${String(scopedStatus.payload.reasonCode)}.`);
+      assert(taskIds(scopedStatus.payload).join(",") === "z-change", `Expected scoped status z-change summary, got ${taskIds(scopedStatus.payload).join(",")}.`);
+      assert((scopedStatus.payload.selection as Record<string, unknown>).selectedTaskId === "z-change", "status must preserve scoped active-change selection evidence.");
+      assertNoProgressClaims(scopedStatus.payload, "active-change scoped status");
+
+      const after = snapshotFiles(repo);
+      assert(JSON.stringify(after) === JSON.stringify(before), "Active-change fallback must not create, delete, or mutate repo files.");
+    }),
+  },
+  {
+    name: "plugin scoped run_next uses active fallback without overriding ledger authority",
+    run: () => withTempRepo("active-change-scoped-precedence", async (repo) => {
+      writeLedger(repo, "ledger-change", readyResearchLedger("task-ledger"));
+      writeTasks(repo, "ledger-change", "# Tasks\n\n- [ ] Ledger task\n");
+      writeTasks(repo, "active-change", "# Tasks\n\n- [ ] Active task\n");
+      writeLedger(repo, "invalid-ledger-change", invalidReadyLedger("task-invalid"));
+      writeTasks(repo, "invalid-ledger-change", "# Tasks\n\n- [ ] Invalid ledger task\n");
+      const before = snapshotFiles(repo);
+      const tools = await pluginTools(repo);
+
+      const scopedActive = await executePluginTool(tools, "autopilot_run_next", { changeId: "active-change" });
+      assert(scopedActive.payload.reasonCode === "active_change_handoff", `Expected scoped active_change_handoff, got ${String(scopedActive.payload.reasonCode)}.`);
+      assert(taskIds(scopedActive.payload).join(",") === "active-change", `Expected active-change summary, got ${taskIds(scopedActive.payload).join(",")}.`);
+      assert((scopedActive.payload.selection as Record<string, unknown>).selectedTaskId === "active-change", "scoped active run_next must select active-change.");
+      assertNoProgressClaims(scopedActive.payload, "scoped active run_next");
+
+      const scopedLedger = await executePluginTool(tools, "autopilot_run_next", { changeId: "ledger-change" });
+      assert(scopedLedger.payload.reasonCode === "ready_runtime_deferred", `Expected scoped ledger ready_runtime_deferred, got ${String(scopedLedger.payload.reasonCode)}.`);
+      assert(taskIds(scopedLedger.payload).join(",") === "task-ledger", `Expected ledger task summary, got ${taskIds(scopedLedger.payload).join(",")}.`);
+      assert((scopedLedger.payload.selection as Record<string, unknown>).selectedTaskId === "task-ledger", "scoped ledger run_next must preserve ledger selection.");
+
+      const scopedInvalidLedger = await executePluginTool(tools, "autopilot_run_next", { changeId: "invalid-ledger-change" });
+      assert(scopedInvalidLedger.payload.reasonCode === "invalid_ledgers", `Expected same-scope invalid ledger authority, got ${String(scopedInvalidLedger.payload.reasonCode)}.`);
+      assert(taskIds(scopedInvalidLedger.payload).join(",") === "task-invalid", `Expected invalid ledger task summary, got ${taskIds(scopedInvalidLedger.payload).join(",")}.`);
+      assertNoProgressClaims(scopedInvalidLedger.payload, "scoped invalid ledger run_next");
+
+      const after = snapshotFiles(repo);
+      assert(JSON.stringify(after) === JSON.stringify(before), "Scoped active fallback and ledger precedence checks must not mutate repo files or directories.");
     }),
   },
   {

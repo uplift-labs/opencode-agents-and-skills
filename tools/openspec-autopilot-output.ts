@@ -13,7 +13,6 @@ import {
   type AutopilotReasonCode as ContractAutopilotReasonCode,
   type AutopilotSelectionReason,
   type AutopilotSelectionMode,
-  type AutopilotToolName,
 } from "./autopilot-contract.ts";
 import { validateTaskLedger } from "./autopilot-ledger.ts";
 import {
@@ -26,6 +25,13 @@ import {
   stoppedRuntimeEntries,
 } from "./openspec-autopilot-runtime.ts";
 import type { AutopilotRuntimeState } from "./openspec-autopilot-runtime.ts";
+import { readActiveChangeSummaries } from "./openspec-autopilot-active-change-queue.ts";
+import {
+  nextActionsAfterAnswerBlocker,
+  nextActionsAfterRejectedAnswerBlocker,
+  nextActionsFor,
+  type AutopilotNextAction,
+} from "./openspec-autopilot-next-actions.ts";
 export {
   validateBlockerAnswer,
   type AutopilotActiveRunState,
@@ -42,10 +48,10 @@ export type AutopilotOutcome = "advanced" | "blocked_for_user" | "waiting_for_mr
 export type NextRecommendedCall = "autopilot_status" | "autopilot_collect" | "autopilot_answer_blocker" | null;
 export type AutopilotReasonCode = ContractAutopilotReasonCode;
 // `advanced` is emitted only when plugin-owned runtime state validates a legal claim or collect transition.
-// `actionable` and `not_selected` remain reserved actionability values for future runtime dispatch surfaces.
+// `actionable` is used for active-change handoff summaries; `not_selected` remains reserved for future runtime dispatch surfaces.
 export type TaskActionability = AutopilotActionability;
-export type AutopilotNextActionKind = "tool" | "validation" | "report" | "wait" | "ask_user" | "manual_review";
-export type AutopilotNextActionSafety = "safe" | "requires_user" | "requires_credentials" | "not_available";
+export type { AutopilotNextAction, AutopilotNextActionKind, AutopilotNextActionSafety } from "./openspec-autopilot-next-actions.ts";
+export type AutopilotSourceKind = "ledger" | "active-change";
 
 export type AutopilotOptions = {
   ledgerRoot?: string;
@@ -67,6 +73,7 @@ export type AutopilotOutputOptions = {
 export type LedgerSummary = {
   path: string;
   id: string;
+  sourceKind: AutopilotSourceKind;
   taskType: string;
   status: string;
   priority: string;
@@ -77,6 +84,9 @@ export type LedgerSummary = {
   valid: boolean;
   errors: string[];
   blockers: Array<Record<string, unknown>>;
+  checkedTasks?: number;
+  uncheckedTasks?: number;
+  totalTasks?: number;
   ledger?: Record<string, unknown>;
   mr?: {
     status?: string;
@@ -93,17 +103,12 @@ export type TaskActionabilitySummary = {
   status: string;
   valid: boolean;
   mrStatus?: string;
+  sourceKind: AutopilotSourceKind;
   actionability: TaskActionability;
   reasonCode: AutopilotReasonCode;
-};
-export type AutopilotNextAction = {
-  label: string;
-  kind: AutopilotNextActionKind;
-  tool?: AutopilotToolName;
-  args?: Record<string, unknown>;
-  reason: string;
-  safety: AutopilotNextActionSafety;
-  expectedResult: string;
+  checkedTasks?: number;
+  uncheckedTasks?: number;
+  totalTasks?: number;
 };
 export type AutopilotLoopGuard = {
   repeatedNoProgress: boolean;
@@ -160,6 +165,7 @@ type LedgerClassification = {
   reasonCode: AutopilotReasonCode;
   hasUserBlocker: boolean;
   isReadyRuntimeDeferred: boolean;
+  isActiveChangeHandoff: boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -210,6 +216,21 @@ export function listTaskLedgerFiles(root: string, options: AutopilotOptions = {}
   return files;
 }
 
+export type AutopilotQueueSummaries = {
+  ledgers: LedgerSummary[];
+  dependencyGraph: LedgerSummary[];
+};
+
+export function readAutopilotQueueSummaries(root: string, options: AutopilotOptions = {}, filter: LedgerFilter = {}): AutopilotQueueSummaries {
+  const dependencyGraph = readLedgerSummaries(root, options);
+  const ledgers = filterLedgerSummaries(dependencyGraph, filter);
+  if (ledgers.length > 0 || filter.taskId != null) {
+    return { ledgers, dependencyGraph };
+  }
+  const activeChanges = readActiveChangeSummaries(root, options.ledgerRoot ?? defaultLedgerRoot, filter);
+  return { ledgers: activeChanges, dependencyGraph: activeChanges };
+}
+
 function ledgerMatchesFilter(ledger: LedgerSummary, filter: LedgerFilter): boolean {
   if (filter.changeId && !ledger.path.startsWith(`openspec/changes/${filter.changeId}/`)) {
     return false;
@@ -235,6 +256,7 @@ export function readLedgerSummaries(root: string, options: AutopilotOptions = {}
       return {
         path: toRelative(root, filePath),
         id: asString(record.id, path.basename(filePath, ".json")),
+        sourceKind: "ledger",
         taskType: asString(record.taskType, "unknown"),
         status: asString(record.status, "unknown"),
         priority: asString(record.priority, ""),
@@ -256,6 +278,7 @@ export function readLedgerSummaries(root: string, options: AutopilotOptions = {}
       return {
         path: toRelative(root, filePath),
         id: path.basename(filePath, ".json"),
+        sourceKind: "ledger",
         taskType: "unknown",
         status: "unknown",
         priority: "",
@@ -297,7 +320,17 @@ export function mrsWaiting(ledgers: LedgerSummary[]): MrWaitSummary[] {
 export function invalidBlockers(ledgers: LedgerSummary[]): BlockerSummary[] {
   return ledgers
     .filter((ledger) => !ledger.valid)
-    .map((ledger) => ({ taskId: ledger.id, path: ledger.path, reason: "invalid task ledger", errors: ledger.errors }));
+    .map((ledger) => ({ taskId: ledger.id, path: ledger.path, reason: ledger.sourceKind === "active-change" ? "invalid active OpenSpec change tasks" : "invalid task ledger", errors: ledger.errors }));
+}
+
+function sourceSummaryLabel(ledgers: LedgerSummary[]): string {
+  if (ledgers.length > 0 && ledgers.every((ledger) => ledger.sourceKind === "active-change")) {
+    return "active OpenSpec change(s)";
+  }
+  if (ledgers.length > 0 && ledgers.every((ledger) => ledger.sourceKind === "ledger")) {
+    return "task ledger(s)";
+  }
+  return "task item(s)";
 }
 
 function classifyLedger(ledger: LedgerSummary): LedgerClassification {
@@ -307,6 +340,17 @@ function classifyLedger(ledger: LedgerSummary): LedgerClassification {
       reasonCode: "invalid_ledgers",
       hasUserBlocker: false,
       isReadyRuntimeDeferred: false,
+      isActiveChangeHandoff: false,
+    };
+  }
+
+  if (ledger.sourceKind === "active-change") {
+    return {
+      actionability: "actionable",
+      reasonCode: "active_change_handoff",
+      hasUserBlocker: false,
+      isReadyRuntimeDeferred: false,
+      isActiveChangeHandoff: true,
     };
   }
 
@@ -316,6 +360,7 @@ function classifyLedger(ledger: LedgerSummary): LedgerClassification {
       reasonCode: "blocked_for_user",
       hasUserBlocker: true,
       isReadyRuntimeDeferred: false,
+      isActiveChangeHandoff: false,
     };
   }
 
@@ -325,6 +370,7 @@ function classifyLedger(ledger: LedgerSummary): LedgerClassification {
       reasonCode: "waiting_for_mr",
       hasUserBlocker: false,
       isReadyRuntimeDeferred: false,
+      isActiveChangeHandoff: false,
     };
   }
 
@@ -334,6 +380,7 @@ function classifyLedger(ledger: LedgerSummary): LedgerClassification {
       reasonCode: "no_actionable_tasks",
       hasUserBlocker: false,
       isReadyRuntimeDeferred: false,
+      isActiveChangeHandoff: false,
     };
   }
 
@@ -343,6 +390,7 @@ function classifyLedger(ledger: LedgerSummary): LedgerClassification {
     reasonCode: isReadyRuntimeDeferred ? "ready_runtime_deferred" : "no_actionable_tasks",
     hasUserBlocker: false,
     isReadyRuntimeDeferred,
+    isActiveChangeHandoff: false,
   };
 }
 
@@ -354,6 +402,10 @@ function userBlockers(ledgers: LedgerSummary[]): BlockerSummary[] {
 
 function hasReadyRuntimeDeferred(ledgers: LedgerSummary[], dependencyGraph: LedgerSummary[]): boolean {
   return ledgers.some((ledger) => classifyLedger(ledger).isReadyRuntimeDeferred && dependenciesSatisfied(ledger, dependencyGraph));
+}
+
+function hasActiveChangeHandoff(ledgers: LedgerSummary[]): boolean {
+  return ledgers.some((ledger) => classifyLedger(ledger).isActiveChangeHandoff);
 }
 
 function hasReadyDependencyBlocked(ledgers: LedgerSummary[], dependencyGraph: LedgerSummary[]): boolean {
@@ -370,14 +422,21 @@ function taskSummaries(ledgers: LedgerSummary[]): TaskActionabilitySummary[] {
       status: ledger.status,
       valid: ledger.valid,
       mrStatus: ledger.mr?.status,
+      sourceKind: ledger.sourceKind,
       actionability: classification.actionability,
       reasonCode: classification.reasonCode,
+      checkedTasks: ledger.checkedTasks,
+      uncheckedTasks: ledger.uncheckedTasks,
+      totalTasks: ledger.totalTasks,
     };
   });
 }
 
-function readyRuntimeDeferredLedgers(ledgers: LedgerSummary[]): LedgerSummary[] {
-  return ledgers.filter((ledger) => classifyLedger(ledger).isReadyRuntimeDeferred);
+function selectableLedgers(ledgers: LedgerSummary[]): LedgerSummary[] {
+  return ledgers.filter((ledger) => {
+    const classification = classifyLedger(ledger);
+    return classification.isReadyRuntimeDeferred || classification.isActiveChangeHandoff;
+  });
 }
 
 function runNextReasonCode(ledgers: LedgerSummary[], dependencyGraph: LedgerSummary[] = ledgers): AutopilotReasonCode {
@@ -392,6 +451,9 @@ function runNextReasonCode(ledgers: LedgerSummary[], dependencyGraph: LedgerSumm
   }
   if (mrsWaiting(ledgers).length > 0) {
     return "waiting_for_mr";
+  }
+  if (hasActiveChangeHandoff(ledgers)) {
+    return "active_change_handoff";
   }
   if (hasReadyRuntimeDeferred(ledgers, dependencyGraph)) {
     return "ready_runtime_deferred";
@@ -424,159 +486,8 @@ function outcomeForReason(reasonCode: AutopilotReasonCode): AutopilotOutcome {
   return "idle";
 }
 
-function nextActionsFor(reasonCode: AutopilotReasonCode): AutopilotNextAction[] {
-  if (reasonCode === "invalid_ledgers") {
-    return [
-      {
-        label: "Review invalid task ledgers",
-        kind: "validation",
-        reason: "At least one task ledger failed deterministic validation.",
-        safety: "safe",
-        expectedResult: "Fix or regenerate invalid ledger state before Autopilot continues.",
-      },
-    ];
-  }
-  if (reasonCode === "runtime_evidence_conflict") {
-    return [
-      {
-        label: "Review runtime evidence conflict",
-        kind: "validation",
-        reason: "Plugin-owned runtime evidence conflicts with current ledger state or legal transition validation.",
-        safety: "safe",
-        expectedResult: "Resolve stale worker reports, ledger drift, or invalid transition evidence before collecting again.",
-      },
-    ];
-  }
-  if (reasonCode === "advanced") {
-    return [
-      {
-        label: "Inspect Autopilot status",
-        kind: "tool",
-        tool: "autopilot_status",
-        reason: "Plugin-owned runtime state accepted a legal claim or worker-report transition.",
-        safety: "safe",
-        expectedResult: "Status confirms the next safe Autopilot action before additional collection or dispatch.",
-      },
-    ];
-  }
-  if (reasonCode === "waiting_for_mr") {
-    return [
-      {
-        label: "Wait for MR review or merge",
-        kind: "wait",
-        reason: "Autopilot must not merge or bypass MR review gates automatically.",
-        safety: "requires_user",
-        expectedResult: "Reviewer or user merges, updates, or rejects the MR outside Autopilot.",
-      },
-    ];
-  }
-  if (reasonCode === "blocked_for_user") {
-    return [
-      {
-        label: "Review blocker before answering",
-        kind: "manual_review",
-        reason: "A task is blocked, but MVP output does not include a question envelope for autopilot_answer_blocker yet.",
-        safety: "requires_user",
-        expectedResult: "Wait for a returned questionId/options envelope before calling autopilot_answer_blocker.",
-      },
-    ];
-  }
-  if (reasonCode === "ready_runtime_deferred") {
-    return [
-      {
-        label: "Continue selected OpenSpec change manually",
-        kind: "manual_review",
-        reason: "Valid Ready work exists, but MVP runtime claim/dispatch and ledger mutation are deferred.",
-        safety: "safe",
-        expectedResult: "Use selection.selectedTaskId and selection.candidates to continue the deterministic primary slice without repeating autopilot_run_next.",
-      },
-    ];
-  }
-  if (reasonCode === "collect_deferred") {
-    return [
-      {
-        label: "Inspect Autopilot status",
-        kind: "tool",
-        tool: "autopilot_status",
-        reason: "No scoped plugin-owned worker report was available for legal collection, so repeating collect would not advance state.",
-        safety: "safe",
-        expectedResult: "Status summarizes current ledgers without claiming progress.",
-      },
-    ];
-  }
-  if (reasonCode === "stop_no_active_state") {
-    return [
-      {
-        label: "Inspect Autopilot status",
-        kind: "tool",
-        tool: "autopilot_status",
-        reason: "Stop did not change runtime state; status is the safe follow-up if confirmation is needed.",
-        safety: "safe",
-        expectedResult: "Status confirms current ledgers, blockers, and MR waits.",
-      },
-    ];
-  }
-  if (reasonCode === "stop_applied") {
-    return [
-      {
-        label: "Inspect Autopilot status",
-        kind: "tool",
-        tool: "autopilot_status",
-        reason: "Stop updated plugin-owned active runtime state.",
-        safety: "safe",
-        expectedResult: "Status confirms remaining active runs, tasks, blockers, and MR waits.",
-      },
-    ];
-  }
-  if (reasonCode === "no_ledgers") {
-    return [
-      {
-        label: "Create or select an OpenSpec task ledger",
-        kind: "manual_review",
-        reason: "No plugin-owned task ledger was discovered.",
-        safety: "safe",
-        expectedResult: "A valid task ledger exists before Autopilot runtime tools are retried.",
-      },
-    ];
-  }
-  return [
-    {
-      label: "Review OpenSpec task state",
-      kind: "manual_review",
-      reason: "Ledgers exist, but no task can safely advance through the MVP runtime.",
-      safety: "safe",
-      expectedResult: "A human or future runtime identifies the next bounded safe action.",
-    },
-  ];
-}
-
-function nextActionsAfterAnswerBlocker(): AutopilotNextAction[] {
-  return [
-    {
-      label: "Inspect Autopilot status after blocker answer",
-      kind: "tool",
-      tool: "autopilot_status",
-      reason: "MVP accepted the blocker answer envelope but did not mutate plugin-owned state.",
-      safety: "safe",
-      expectedResult: "Status confirms whether a real blocker remains before any further action.",
-    },
-  ];
-}
-
-function nextActionsAfterRejectedAnswerBlocker(): AutopilotNextAction[] {
-  return [
-    {
-      label: "Inspect pending blocker question",
-      kind: "manual_review",
-      reason: "The blocker answer did not match a plugin-owned pending question or option envelope.",
-      safety: "requires_user",
-      expectedResult: "Call autopilot_answer_blocker only with a returned questionId and matching option data.",
-    },
-  ];
-}
-
 function loopGuardFor(reasonCode: AutopilotReasonCode, equivalentCall?: string): AutopilotLoopGuard {
-  const suppressRepeatRecommendation = ["ready_runtime_deferred", "collect_deferred", "stop_no_active_state", "no_actionable_tasks", "no_ledgers"].includes(reasonCode);
+  const suppressRepeatRecommendation = ["ready_runtime_deferred", "active_change_handoff", "collect_deferred", "stop_no_active_state", "no_actionable_tasks", "no_ledgers"].includes(reasonCode);
   return {
     repeatedNoProgress: suppressRepeatRecommendation,
     equivalentCall,
@@ -599,7 +510,7 @@ function outputFor(ledgers: LedgerSummary[], summary: string, reasonCode: Autopi
     taskSummaries: taskSummaries(ledgers),
     nextActions: nextActionsFor(reasonCode),
     loopGuard: loopGuardFor(reasonCode, equivalentCall),
-    selection: selectionFor(ledgers, readyRuntimeDeferredLedgers(ledgers), reasonCode, dependencyGraph),
+    selection: selectionFor(ledgers, selectableLedgers(ledgers), reasonCode, dependencyGraph),
   };
 }
 
@@ -607,10 +518,20 @@ export function createRunNextOutput(ledgers: LedgerSummary[], outputOptions: Aut
   const dependencyGraph = outputOptions.dependencyGraph ?? ledgers;
   const reasonCode = runNextReasonCode(ledgers, dependencyGraph);
   if (reasonCode === "no_ledgers") {
-    return outputFor(ledgers, "No OpenSpec autopilot task ledgers were found. MVP prototype does not create ledgers automatically yet.", reasonCode, "autopilot_run_next", null, { dependencyGraph });
+    return outputFor(ledgers, "No OpenSpec autopilot task ledgers or unfinished active OpenSpec changes were found. MVP prototype does not create ledgers automatically yet.", reasonCode, "autopilot_run_next", null, { dependencyGraph });
+  }
+  if (reasonCode === "active_change_handoff") {
+    return outputFor(
+      ledgers,
+      `Autopilot found ${ledgers.length} unfinished active OpenSpec change(s) without an applicable task ledger. Continue the selected change through openspec-apply-change; no plugin-owned runtime state was advanced.`,
+      reasonCode,
+      "autopilot_run_next",
+      null,
+      { dependencyGraph },
+    );
   }
   if (reasonCode === "ready_runtime_deferred") {
-    const selection = selectionFor(ledgers, readyRuntimeDeferredLedgers(ledgers), reasonCode, dependencyGraph, outputOptions.runtimeState);
+    const selection = selectionFor(ledgers, selectableLedgers(ledgers), reasonCode, dependencyGraph, outputOptions.runtimeState);
     if (shouldClaimReadyTasks(outputOptions.runtimeState)) {
       const claimed = claimSelectedReadyTasks(ledgers, selection, outputOptions.runtimeState);
       if (claimed.conflicts.length > 0) {
@@ -651,14 +572,14 @@ export function createRunNextOutput(ledgers: LedgerSummary[], outputOptions: Aut
       { dependencyGraph },
     );
   }
-  return outputFor(ledgers, `Autopilot inspected ${ledgers.length} task ledger(s).`, reasonCode, "autopilot_run_next", null, { dependencyGraph });
+  return outputFor(ledgers, `Autopilot inspected ${ledgers.length} ${sourceSummaryLabel(ledgers)}.`, reasonCode, "autopilot_run_next", null, { dependencyGraph });
 }
 
 export function createStatusOutput(ledgers: LedgerSummary[], outputOptions: AutopilotOutputOptions = {}): AutopilotOutput & { status: Record<string, unknown> } {
   const dependencyGraph = outputOptions.dependencyGraph ?? ledgers;
   const reasonCode = runNextReasonCode(ledgers, dependencyGraph);
   return {
-    ...outputFor(ledgers, `Autopilot status inspected ${ledgers.length} task ledger(s).`, reasonCode, "autopilot_status", null, { dependencyGraph }),
+    ...outputFor(ledgers, `Autopilot status inspected ${ledgers.length} ${sourceSummaryLabel(ledgers)}.`, reasonCode, "autopilot_status", null, { dependencyGraph }),
     status: summarizeLedgers(ledgers),
   };
 }

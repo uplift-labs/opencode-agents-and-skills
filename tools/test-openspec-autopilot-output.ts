@@ -172,10 +172,11 @@ function assertSummary(summary: TaskActionabilitySummary | undefined, expected: 
   for (const [key, value] of Object.entries(expected)) {
     assert(summary[key as keyof TaskActionabilitySummary] === value, `Expected summary ${key}=${String(value)}, got ${String(summary[key as keyof TaskActionabilitySummary])}.`);
   }
-  assert(typeof summary.path === "string" && summary.path.endsWith("automation/task.json"), "Summary must include compact ledger path.");
+  const expectedPathSuffix = expected.sourceKind === "active-change" ? "tasks.md" : "automation/task.json";
+  assert(typeof summary.path === "string" && summary.path.endsWith(expectedPathSuffix), `Summary must include compact ${expected.sourceKind ?? "ledger"} path.`);
 }
 
-function assertSelection(output: AutopilotOutput, expected: { mode?: string; maxImplementationClaims?: number; selectedTaskId?: string; candidates: Array<{ taskId: string; rank: number | null; selected: boolean; selectionReason: string; parallelDecision: string }> }): void {
+function assertSelection(output: AutopilotOutput, expected: { mode?: string; maxImplementationClaims?: number; selectedTaskId?: string; candidates: Array<{ taskId: string; rank: number | null; selected: boolean; selectionReason: string; parallelDecision: string; pathSuffix?: string }> }): void {
   assert(typeof output.selection === "object" && output.selection != null && !Array.isArray(output.selection), "Output must include top-level selection evidence.");
   assert(output.selection.mode === (expected.mode ?? "serial_default"), `Expected selection mode ${expected.mode ?? "serial_default"}, got ${String(output.selection.mode)}.`);
   assert(output.selection.maxImplementationClaims === (expected.maxImplementationClaims ?? 1), `Expected maxImplementationClaims=${expected.maxImplementationClaims ?? 1}, got ${String(output.selection.maxImplementationClaims)}.`);
@@ -185,7 +186,7 @@ function assertSelection(output: AutopilotOutput, expected: { mode?: string; max
   for (const [index, expectedCandidate] of expected.candidates.entries()) {
     const actual = output.selection.candidates[index];
     assert(actual.taskId === expectedCandidate.taskId, `Expected candidate[${index}].taskId=${expectedCandidate.taskId}, got ${String(actual.taskId)}.`);
-    assert(typeof actual.path === "string" && actual.path.endsWith("automation/task.json"), `candidate[${index}] must include compact ledger path evidence.`);
+    assert(typeof actual.path === "string" && actual.path.endsWith(expectedCandidate.pathSuffix ?? "automation/task.json"), `candidate[${index}] must include compact path evidence.`);
     assert(actual.rank === expectedCandidate.rank, `Expected candidate[${index}].rank=${String(expectedCandidate.rank)}, got ${String(actual.rank)}.`);
     assert(actual.selected === expectedCandidate.selected, `Expected candidate[${index}].selected=${String(expectedCandidate.selected)}, got ${String(actual.selected)}.`);
     assert(actual.selectionReason === expectedCandidate.selectionReason, `Expected candidate[${index}].selectionReason=${expectedCandidate.selectionReason}, got ${String(actual.selectionReason)}.`);

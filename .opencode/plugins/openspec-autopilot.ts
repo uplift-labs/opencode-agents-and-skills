@@ -8,7 +8,7 @@ import {
   createRunNextOutput,
   createStatusOutput,
   createStopOutput,
-  filterLedgerSummaries,
+  readAutopilotQueueSummaries,
   readLedgerSummaries,
   validateBlockerAnswer,
 } from "../../tools/openspec-autopilot-output.ts";
@@ -53,9 +53,8 @@ export default {
           },
           async execute(args) {
             const root = repoRoot(ctx);
-            const dependencyGraph = readLedgerSummaries(root, resolvedOptions);
-            const ledgers = filterLedgerSummaries(dependencyGraph, { changeId: args.changeId, taskId: args.taskId });
-            return jsonOutput(createRunNextOutput(ledgers, { dependencyGraph, runtimeState: resolvedOptions.runtimeState }));
+            const queue = readAutopilotQueueSummaries(root, resolvedOptions, { changeId: args.changeId, taskId: args.taskId });
+            return jsonOutput(createRunNextOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph, runtimeState: resolvedOptions.runtimeState }));
           },
         }),
         autopilot_status: tool({
@@ -65,9 +64,8 @@ export default {
           },
           async execute(args) {
             const root = repoRoot(ctx);
-            const dependencyGraph = readLedgerSummaries(root, resolvedOptions);
-            const ledgers = filterLedgerSummaries(dependencyGraph, { changeId: args.changeId });
-            return jsonOutput(createStatusOutput(ledgers, { dependencyGraph }));
+            const queue = readAutopilotQueueSummaries(root, resolvedOptions, { changeId: args.changeId });
+            return jsonOutput(createStatusOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph }));
           },
         }),
         autopilot_collect: tool({

@@ -358,7 +358,7 @@ function parallelSelectionFor(rankedCandidates: LedgerSummary[], dependencyBlock
 }
 
 export function selectionFor(ledgers: LedgerSummary[], readyLedgers: LedgerSummary[], reasonCode: string, dependencyGraph: LedgerSummary[], runtimeState?: unknown): AutopilotSelection {
-  if (reasonCode !== "ready_runtime_deferred" && reasonCode !== "no_actionable_tasks") {
+  if (reasonCode !== "ready_runtime_deferred" && reasonCode !== "active_change_handoff" && reasonCode !== "no_actionable_tasks") {
     return emptySelection();
   }
 
