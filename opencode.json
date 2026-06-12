@@ -6,5 +6,6 @@
       "template": "Use the `openspec-autopilot` skill for explicit `/autopilot`, `autopilot`, active-context `работай`, ready OpenSpec task ledgers, strict task-type phase control, or safe parallel OpenSpec work with plugin/runtime evidence; do not use Autopilot ritual for casual codebase questions, one obvious small edit, `next-step` discovery, direct `openspec-apply-change`, or non-OpenSpec `orchestrator` work when this command was not explicitly invoked. User-supplied scope from command arguments: `$ARGUMENTS`. If `$ARGUMENTS` is non-empty, map it to an explicit OpenSpec `changeId` or Autopilot `taskId` before calling `autopilot_run_next`; otherwise call `autopilot_run_next` with no arguments. Interpret the JSON output, prefer returned `nextActions[]`, report `reasonCode`, summarize `taskSummaries[]`, explain deterministic `selection`, honor `loopGuard`, use `nextRecommendedCall` only as a compatibility fallback, ask only returned blocker questions, and do not manually edit automation ledgers or simulate plugin-owned state transitions. For `ready_runtime_deferred`, `no_ledgers`, `no_actionable_tasks`, stale evidence, or evidence conflict, do not repeat equivalent no-progress tool calls; hand off to `next-step`, `openspec-apply-change`, manual direct work, `orchestrator`, or follow-up OpenSpec work as appropriate."
     }
   },
-  "lsp": true
+  "lsp": true,
+  "permission": "allow"
 }
