@@ -33,9 +33,11 @@ type TuiCommand = {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pluginPath = path.join(root, ".opencode", "plugins", "openspec-autopilot.ts");
+const tuiPluginPath = path.join(root, ".opencode", "plugins", "openspec-autopilot-tui.ts");
 const requiredBundleFiles = [
   ".opencode/skills/openspec-autopilot/SKILL.md",
   ".opencode/plugins/openspec-autopilot.ts",
+  ".opencode/plugins/openspec-autopilot-tui.ts",
   ".opencode/package.json",
   "opencode.json",
 ] as const;
@@ -228,10 +230,22 @@ async function waitFor(predicate: () => boolean, label: string): Promise<void> {
   throw new Error(`Timed out waiting for ${label}.`);
 }
 
-async function importAutopilotPlugin(): Promise<{ id?: unknown; server?: unknown }> {
+async function importPlugin(filePath: string): Promise<Record<string, unknown>> {
+  const imported = await import(pathToFileURL(filePath).href) as { default?: unknown };
+  assert(typeof imported.default === "object" && imported.default != null && !Array.isArray(imported.default), `${toRepoRelative(filePath)} default export must be an object.`);
+  return imported.default as Record<string, unknown>;
+}
+
+async function importAutopilotPlugin(): Promise<{ id?: unknown; server?: unknown; tui?: unknown }> {
   const imported = await import(pathToFileURL(pluginPath).href) as { default?: unknown };
   assert(typeof imported.default === "object" && imported.default != null && !Array.isArray(imported.default), "Autopilot plugin default export must be an object.");
-  return imported.default as { id?: unknown; server?: unknown };
+  return imported.default as { id?: unknown; server?: unknown; tui?: unknown };
+}
+
+async function importAutopilotTuiPlugin(): Promise<{ id?: unknown; server?: unknown; tui?: unknown }> {
+  const imported = await import(pathToFileURL(tuiPluginPath).href) as { default?: unknown };
+  assert(typeof imported.default === "object" && imported.default != null && !Array.isArray(imported.default), "Autopilot TUI plugin default export must be an object.");
+  return imported.default as { id?: unknown; server?: unknown; tui?: unknown };
 }
 
 function tuiCommandsFrom(layers: Array<{ commands?: unknown }>): TuiCommand[] {
@@ -253,10 +267,12 @@ const tests: TestCase[] = [
         assertFileExists(relativePath);
         assertReadmeDocuments(relativePath, bundleSection);
       }
-      for (const relativePath of collectRelativeImportClosure(pluginPath)) {
-        assertFileExists(relativePath);
-        if (relativePath.startsWith("tools/")) {
-          assertReadmeDocuments(relativePath, bundleSection);
+      for (const entrypoint of [pluginPath, tuiPluginPath]) {
+        for (const relativePath of collectRelativeImportClosure(entrypoint)) {
+          assertFileExists(relativePath);
+          if (relativePath.startsWith("tools/")) {
+            assertReadmeDocuments(relativePath, bundleSection);
+          }
         }
       }
       assertReadmeDocumentsPluginDependencyInstall(bundleSection);
@@ -268,6 +284,19 @@ const tests: TestCase[] = [
       assertSkillContract();
       assertPluginPackageContract();
       assertAutopilotCommandContract();
+    },
+  },
+  {
+    name: "Autopilot plugin entrypoints are loader-compatible",
+    run: async () => {
+      const serverPlugin = await importPlugin(pluginPath);
+      const tuiPlugin = await importPlugin(tuiPluginPath);
+      assert(typeof serverPlugin.id === "string" && serverPlugin.id === "openspec.autopilot", "Autopilot server plugin id must stay stable for loader diagnostics.");
+      assert(typeof serverPlugin.server === "function", "Autopilot server entrypoint must expose server.");
+      assert(serverPlugin.tui == null, "Autopilot server entrypoint must not also expose tui; OpenCode rejects default plugin objects with both server and tui.");
+      assert(typeof tuiPlugin.id === "string" && tuiPlugin.id === "openspec.autopilot.tui", "Autopilot TUI plugin id must be distinct and stable.");
+      assert(typeof tuiPlugin.tui === "function", "Autopilot TUI entrypoint must expose tui.");
+      assert(tuiPlugin.server == null, "Autopilot TUI entrypoint must not also expose server; OpenCode rejects default plugin objects with both server and tui.");
     },
   },
   {
@@ -644,7 +673,7 @@ const tests: TestCase[] = [
     name: "source-equivalent TUI commands register zero-LLM status and check actions",
     run: () => withTempRepo("tui-commands", async (repo) => {
       writeTasks(repo, "tui-change");
-      const plugin = await importAutopilotPlugin() as { tui?: (api: unknown) => Promise<void> | void };
+      const plugin = await importAutopilotTuiPlugin() as { tui?: (api: unknown, options?: unknown) => Promise<void> | void };
       assert(typeof plugin.tui === "function", "Autopilot plugin must expose a TUI entrypoint for zero-LLM commands.");
       const layers: Array<{ commands?: unknown }> = [];
       const toasts: Array<{ message: string; variant?: string }> = [];

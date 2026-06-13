@@ -22,7 +22,9 @@ When local stale evidence or an evidence conflict appears, stop and report the m
 
 ## First Action
 
-One high-level call should advance as far as safely possible, but only after command arguments are classified. Unless the user asked only for status, stop, collect, blocker-answer, or `/autopilot <free-form prompt>` intake, call `autopilot_run_next`. If the user or `/autopilot` command supplied an exact OpenSpec change or Autopilot task scope, pass it as `changeId` or `taskId`; call with no args only when no scope is supplied:
+One high-level call should advance as far as safely possible, but only after command arguments are classified and the current available tool list has been checked. The public `autopilot_*` tools below are callable only when they are visible in the current tool list. If `autopilot_run_next` is not available for an empty or exact-scope continuation, or `autopilot_status` is not available for required read-only queue inspection, stop and report the missing Autopilot plugin tool surface as a blocker; do not search or scan the repository for CLI/script substitutes, do not use a CLI/script fallback, do not call controller helpers directly, and do not simulate, emulate, or manually mutate plugin-owned ledger/state transitions.
+
+When the required tool is available, unless the user asked only for status, stop, collect, blocker-answer, or `/autopilot <free-form prompt>` intake, call `autopilot_run_next`. If the user or `/autopilot` command supplied an exact OpenSpec change or Autopilot task scope, pass it as `changeId` or `taskId`; call with no args only when no scope is supplied:
 
 ```json
 { "tool": "autopilot_run_next" }
@@ -42,7 +44,7 @@ If command arguments are ambiguous because they resolve to multiple exact scopes
 
 Free-form prompt text is not scope. If command arguments do not exactly resolve to `changeId` or `taskId`, do not pass the free-form prompt as either field; unrelated queued Autopilot work must not be advanced with `autopilot_run_next`. Inspect queue state read-only with `autopilot_status`, and do not persist or echo raw free-form prompt text in plugin-owned state or automation evidence by default. Report derived fields instead: prompt family, recommended workflow, queue summary, and resolved scope when one exists. Then hand off to `openspec-explore` for bugfix/research/planning/unclear evidence, `openspec-propose` for stable feature/refactor/tooling/config/performance/protocol work, direct edit for one obvious docs/typo changes, or `openspec-apply-change` only after an exact existing scope is selected.
 
-Then prefer the returned `nextActions[]` guidance, using `nextRecommendedCall` only as a compatibility fallback. Ask only returned `questions`, summarize `blockers` and `mrsWaiting`, and do not manually advance ledger state when a tool is unavailable or returns an MVP no-op; report the limitation and `reasonCode`.
+When Autopilot tool output exists, prefer the returned `nextActions[]` guidance, using `nextRecommendedCall` only as a compatibility fallback. Ask only returned `questions`, summarize `blockers` and `mrsWaiting`, and do not manually advance ledger state when a tool returns an MVP no-op; report the limitation and `reasonCode`. If no Autopilot output exists because the required tool is unavailable, do not invent a `reasonCode`; report the tool-surface blocker and stop.
 
 ## Authority Boundary
 

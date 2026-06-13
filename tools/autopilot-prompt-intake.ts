@@ -6,6 +6,8 @@ export type AutopilotPromptFamily = AutopilotTaskType | "unclear";
 
 export type AutopilotPromptWorkflow = "autopilot_run_next" | "autopilot_status" | "openspec-explore" | "openspec-propose" | "openspec-apply-change" | "direct-edit" | "adaptive-delivery" | "manual-review";
 
+export type AutopilotPromptToolName = "autopilot_run_next" | "autopilot_status";
+
 export type AutopilotPromptScope = {
   changeId?: string;
   taskId?: string;
@@ -25,6 +27,7 @@ export type AutopilotPromptIntakeInput = {
   knownTaskIds?: readonly string[];
   taskChangeIds?: Readonly<Record<string, string>>;
   existingQueue?: readonly AutopilotPromptQueueItem[];
+  availableTools?: readonly AutopilotPromptToolName[];
 };
 
 export type AutopilotPromptIntakeResult = {
@@ -53,8 +56,9 @@ export type AutopilotPromptIntakeResult = {
 
 export type AutopilotPromptIntakeToolPlan = {
   intake: AutopilotPromptIntakeResult;
-  firstTool: "autopilot_run_next" | "autopilot_status" | null;
+  firstTool: AutopilotPromptToolName | null;
   firstToolArgs?: AutopilotPromptScope;
+  blockedTool?: AutopilotPromptToolName;
   reason: string;
 };
 
@@ -86,6 +90,32 @@ function queueState(input: AutopilotPromptIntakeInput, summary: AutopilotPromptI
     return "unknown";
   }
   return summary.total > 0 ? "present" : "none";
+}
+
+function toolAvailable(input: AutopilotPromptIntakeInput, toolName: AutopilotPromptToolName): boolean {
+  return input.availableTools != null && input.availableTools.includes(toolName);
+}
+
+function unavailableToolPlan(intake: AutopilotPromptIntakeResult, toolName: AutopilotPromptToolName): AutopilotPromptIntakeToolPlan {
+  const { runNextArgs: _runNextArgs, ...blockedIntake } = intake;
+  return {
+    intake: {
+      ...blockedIntake,
+      recommendedWorkflow: "manual-review",
+      claimCapableAction: false,
+      nextActions: [
+        {
+          label: "Report missing Autopilot plugin tool",
+          workflow: "manual-review",
+          safety: "not_available",
+          reason: `${toolName} is not available in the current tool list; stop instead of using a substitute action.`,
+        },
+      ],
+    },
+    firstTool: null,
+    blockedTool: toolName,
+    reason: `${toolName} is not available in the current tool list; stop and report the missing Autopilot plugin tool surface instead of searching for CLI/script substitutes or simulating plugin-owned state.`,
+  };
 }
 
 function resultForScope(category: "empty" | "change-scope" | "task-scope" | "combined-scope", scope: AutopilotPromptScope, input: AutopilotPromptIntakeInput): AutopilotPromptIntakeResult {
@@ -428,6 +458,9 @@ export function classifyAutopilotPromptIntake(input: AutopilotPromptIntakeInput)
 export function planAutopilotPromptIntake(input: AutopilotPromptIntakeInput): AutopilotPromptIntakeToolPlan {
   const intake = classifyAutopilotPromptIntake(input);
   if (intake.claimCapableAction) {
+    if (!toolAvailable(input, "autopilot_run_next")) {
+      return unavailableToolPlan(intake, "autopilot_run_next");
+    }
     return {
       intake,
       firstTool: "autopilot_run_next",
@@ -436,6 +469,9 @@ export function planAutopilotPromptIntake(input: AutopilotPromptIntakeInput): Au
     };
   }
   if (intake.category === "freeform-prompt" && intake.queueState === "unknown") {
+    if (!toolAvailable(input, "autopilot_status")) {
+      return unavailableToolPlan(intake, "autopilot_status");
+    }
     return {
       intake,
       firstTool: "autopilot_status",

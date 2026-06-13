@@ -230,6 +230,24 @@ function assertProgrammaticTriggerDocs(text: string, label: string): void {
   assert(/restart OpenCode/i.test(text), `${label} must include restart guidance for plugin/TUI trigger changes.`);
 }
 
+function assertAutopilotToolAvailabilityGate(text: string, label: string): void {
+  assert(/(current|available|visible)[\s\S]{0,120}tool list|tool list[\s\S]{0,120}(current|available|visible)/i.test(text), `${label} must check the current available tool list before public Autopilot tool calls.`);
+  assert(/autopilot_run_next[\s\S]{0,220}(available|visible|present)|(?:available|visible|present)[\s\S]{0,220}autopilot_run_next/i.test(text), `${label} must require autopilot_run_next to be available before instructing a call.`);
+  assert(/autopilot_status[\s\S]{0,220}(available|visible|present)|(?:available|visible|present)[\s\S]{0,220}autopilot_status/i.test(text), `${label} must require autopilot_status to be available before read-only queue inspection.`);
+  assert(/unavailable|not available|absent|not visible/i.test(text), `${label} must document the unavailable Autopilot tool path.`);
+  assert(/do not[\s\S]{0,180}(search|scan|look for|use)[\s\S]{0,180}(CLI|script|substitute|fallback)|(?:CLI|script)[\s\S]{0,180}(do not|not)[\s\S]{0,180}(fallback|substitute|search)/i.test(text), `${label} must prohibit CLI/script substitute searches when model-facing Autopilot tools are absent.`);
+  assert(/do not[\s\S]{0,180}(simulate|emulate|manually)[\s\S]{0,180}(plugin-owned|ledger|state|transition)|(?:plugin-owned|ledger|state|transition)[\s\S]{0,180}(do not|not)[\s\S]{0,180}(simulate|emulate|manual)/i.test(text), `${label} must prohibit simulating plugin-owned state or ledger transitions.`);
+  assert(/blocker|stop|report/i.test(text), `${label} must stop/report a blocker when required Autopilot tools are unavailable.`);
+}
+
+function assertAutopilotRunNextAvailabilityGate(text: string, label: string): void {
+  assert(/(current|available|visible)[\s\S]{0,120}tool list|tool list[\s\S]{0,120}(current|available|visible)/i.test(text), `${label} must check the current available tool list before recommending autopilot_run_next.`);
+  assert(/autopilot_run_next[\s\S]{0,220}(available|visible|present)|(?:available|visible|present)[\s\S]{0,220}autopilot_run_next/i.test(text), `${label} must require autopilot_run_next to be available before recommending it.`);
+  assert(/unavailable|not available|absent|not visible/i.test(text), `${label} must document the unavailable autopilot_run_next path.`);
+  assert(/CLI\/script|script substitutes|CLI substitutes|substitute/i.test(text), `${label} must prohibit script substitutes when autopilot_run_next is absent.`);
+  assert(/simulate|simulating|emulate|manual/i.test(text), `${label} must prohibit simulating plugin-owned state when autopilot_run_next is absent.`);
+}
+
 function assertPromptIntakeDocs(text: string, label: string): void {
   const normalized = text.toLowerCase();
   for (const phrase of [
@@ -287,6 +305,7 @@ const tests: TestCase[] = [
       assert(firstAction.includes("call with no args only when no scope is supplied"), "openspec-autopilot First Action must call with no args only when no scope is supplied.");
       assert(firstAction.includes("should intersect"), "openspec-autopilot First Action must say combined changeId/taskId scopes are intentional intersections only.");
       assertPromptIntakeDocs(firstAction, "openspec-autopilot First Action prompt intake");
+      assertAutopilotToolAvailabilityGate(firstAction, "openspec-autopilot First Action tool availability gate");
       assert(/safe parallel OpenSpec work/i.test(skill), "openspec-autopilot skill must keep the safe-parallel OpenSpec trigger discoverable.");
       assert(/safe parallel OpenSpec work with plugin\/runtime selection evidence/i.test(skill), "openspec-autopilot skill must qualify safe-parallel trigger with plugin/runtime selection evidence.");
       assert(skill.includes('reasonCode: "ready_runtime_deferred"'), "openspec-autopilot skill must qualify ready_runtime_deferred as reasonCode wording.");
@@ -393,6 +412,7 @@ const tests: TestCase[] = [
       assertAutopilotMaterialization(routing, "README Routing Map");
       assertActiveChangeTriggerBoundary(routing, "README Routing Map");
       assertPromptIntakeDocs(routing, "README Routing Map prompt intake");
+      assertAutopilotToolAvailabilityGate(routing, "README Routing Map tool availability gate");
     },
   },
   {
@@ -405,6 +425,7 @@ const tests: TestCase[] = [
       assertActiveChangeHandoff(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
       assertAutopilotMaterialization(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
       assertPromptIntakeDocs(openSpecCatalog, "README OpenSpec Skill Catalog prompt intake");
+      assertAutopilotToolAvailabilityGate(openSpecCatalog, "README OpenSpec Skill Catalog tool availability gate");
       assert(line.includes("openspec-apply-change"), "README OpenSpec Skill Catalog entry must mention openspec-apply-change continuation for active_change_handoff.");
     },
   },
@@ -426,6 +447,14 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "adjacent Autopilot routing skills require tool availability",
+    run: () => {
+      assertAutopilotRunNextAvailabilityGate(readText(".opencode/skills/next-step/SKILL.md"), "next-step skill Autopilot routing");
+      assertAutopilotRunNextAvailabilityGate(readText(".opencode/skills/adaptive-delivery/SKILL.md"), "adaptive-delivery skill Autopilot lane");
+      assertAutopilotRunNextAvailabilityGate(readText("instructions/global-opencode-agent-instructions.md"), "global OpenCode agent instructions Autopilot routing");
+    },
+  },
+  {
     name: "opencode /autopilot command template documents current output fields",
     run: () => {
       const template = readAutopilotCommandTemplate();
@@ -442,6 +471,7 @@ const tests: TestCase[] = [
       assertAutopilotMaterialization(template, "opencode.json command.autopilot template");
       assertActiveChangeTriggerBoundary(template, "opencode.json command.autopilot template");
       assertPromptIntakeDocs(template, "opencode.json command.autopilot template prompt intake");
+      assertAutopilotToolAvailabilityGate(template, "opencode.json command.autopilot template tool availability gate");
       assert(!template.includes("handoffTarget"), "command.autopilot template must not document a public handoffTarget before the output contract exposes it.");
     },
   },

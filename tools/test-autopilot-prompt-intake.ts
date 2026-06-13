@@ -122,7 +122,7 @@ const tests: TestCase[] = [
     name: "freeform prompt requires status when queue inventory is unknown",
     run: () => {
       const prompt = "fix the login timeout bug";
-      const plan = planAutopilotPromptIntake({ argumentsText: prompt, ...knownScopes });
+      const plan = planAutopilotPromptIntake({ argumentsText: prompt, ...knownScopes, availableTools: ["autopilot_status"] });
       assert(plan.intake.category === "freeform-prompt", `Expected freeform-prompt, got ${plan.intake.category}.`);
       assert(plan.intake.queueState === "unknown", `Expected unknown queue state, got ${plan.intake.queueState}.`);
       assert(plan.intake.recommendedWorkflow === "autopilot_status", `Expected status workflow, got ${plan.intake.recommendedWorkflow}.`);
@@ -130,6 +130,35 @@ const tests: TestCase[] = [
       assert(plan.firstTool === "autopilot_status", `Expected first tool autopilot_status, got ${plan.firstTool}.`);
       assertNoRunNextArgs(plan.intake);
       assert(!JSON.stringify(plan).includes(prompt), "Command-intake plan must not echo raw prompt text by default.");
+    },
+  },
+  {
+    name: "tool planning blocks when Autopilot tools are unavailable",
+    run: () => {
+      const missingListPlan = planAutopilotPromptIntake({ argumentsText: "", ...knownScopes });
+      assert(missingListPlan.firstTool == null, `Expected no first tool without explicit tool-list evidence, got ${missingListPlan.firstTool}.`);
+      assert(missingListPlan.blockedTool === "autopilot_run_next", `Expected missing tool-list evidence to block run_next, got ${missingListPlan.blockedTool}.`);
+
+      const availablePlan = planAutopilotPromptIntake({ argumentsText: "", ...knownScopes, availableTools: ["autopilot_run_next"] });
+      assert(availablePlan.firstTool === "autopilot_run_next", `Expected explicit available run_next, got ${availablePlan.firstTool}.`);
+      assert(availablePlan.blockedTool == null, `Expected no blocked tool when run_next is available, got ${availablePlan.blockedTool}.`);
+
+      const emptyPlan = planAutopilotPromptIntake({ argumentsText: "", ...knownScopes, availableTools: [] });
+      assert(emptyPlan.firstTool == null, `Expected no first tool for missing run_next, got ${emptyPlan.firstTool}.`);
+      assert(emptyPlan.blockedTool === "autopilot_run_next", `Expected blocked run_next, got ${emptyPlan.blockedTool}.`);
+      assert(/not available/i.test(emptyPlan.reason), `Expected unavailable reason, got ${emptyPlan.reason}.`);
+      assert(/CLI|script/i.test(emptyPlan.reason), `Expected no CLI/script fallback reason, got ${emptyPlan.reason}.`);
+      assert(emptyPlan.intake.claimCapableAction === false, "Unavailable run_next plan must not remain claim-capable.");
+      assert(emptyPlan.intake.runNextArgs == null, `Unavailable run_next plan must clear runNextArgs, got ${JSON.stringify(emptyPlan.intake.runNextArgs)}.`);
+      assert(emptyPlan.intake.nextActions.every((action) => action.safety === "not_available" && action.workflow !== "autopilot_run_next"), "Unavailable run_next plan must not keep nested safe run_next actions.");
+
+      const prompt = "fix the login timeout bug";
+      const statusPlan = planAutopilotPromptIntake({ argumentsText: prompt, ...knownScopes, availableTools: [] });
+      assert(statusPlan.firstTool == null, `Expected no first tool for missing status, got ${statusPlan.firstTool}.`);
+      assert(statusPlan.blockedTool === "autopilot_status", `Expected blocked status, got ${statusPlan.blockedTool}.`);
+      assert(/not available/i.test(statusPlan.reason), `Expected unavailable status reason, got ${statusPlan.reason}.`);
+      assert(statusPlan.intake.nextActions.every((action) => action.safety === "not_available" && action.workflow !== "autopilot_status"), "Unavailable status plan must not keep nested safe status actions.");
+      assert(!JSON.stringify(statusPlan).includes(prompt), "Unavailable-tool plan must not echo raw prompt text by default.");
     },
   },
   {

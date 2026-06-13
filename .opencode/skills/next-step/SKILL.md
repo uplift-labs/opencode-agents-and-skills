@@ -15,7 +15,7 @@ For a new broad task that is not yet tied to existing OpenSpec work, use `adapti
 ## Routing
 
 - If the repository has OpenSpec artifacts or the user mentions OpenSpec/spec-first/spec changes, inspect all active OpenSpec work before recommending a next step.
-- If ready OpenSpec automation ledgers exist, or the user asked to continue until blocker/MR/limit, recommend `openspec-autopilot` and `autopilot_run_next` instead of manual task selection.
+- If ready OpenSpec automation ledgers exist, or the user asked to continue until blocker/MR/limit, recommend `openspec-autopilot` and `autopilot_run_next` instead of manual task selection only when the Autopilot plugin tool is visible in the current available tool list. If the tool is unavailable, report the missing plugin tool surface rather than searching for CLI/script substitutes or simulating plugin-owned state.
 - If there is no OpenSpec evidence, or only one concrete next action is available, stay serial and use the single-step output contract below.
 - If two or more independent OpenSpec-backed workstreams are visible, prepare an orchestration proposal and ask for approval only when scope, risk, destructive/remote actions, dirty-state preservation, or acceptance policy is user-owned.
 - When workstreams are bounded, local, reversible, and already within the user's approved goal, orchestration may proceed under the `orchestrator` entry gate without a routine approval question.
