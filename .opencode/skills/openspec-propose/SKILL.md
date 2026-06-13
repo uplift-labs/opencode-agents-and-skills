@@ -28,8 +28,8 @@ Every new OpenSpec `tasks.md` must end with:
 ```md
 ## Retrospective Before Archive
 
-- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
-- [ ] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision.
+- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
+- [ ] Write `retrospective.md` with evidence, problems, root causes, improvements, and archive gate decision.
 - [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
 - [ ] For reusable findings, create or update `opencode-dev-kit` OpenSpec proposals/changes only when the current repository owns them; otherwise record a local handoff and do not write cross-repo without explicit approval.
 - [ ] Run `npm run openspec:retro-followups -- <change-id>` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
@@ -47,6 +47,7 @@ Use this mode when converting several concrete session-scoped follow-ups from an
 - `tasks.md` may be the primary backlog surface for lightweight follow-up changes. Keep `proposal.md` brief but explicit about source evidence, scope, non-goals, and why tracking is needed.
 - Add spec deltas, scenarios, or `design.md` only when normative behavior, compatibility, architecture, migration, or acceptance criteria need a durable source of truth.
 - Carry audit/retro/reviewer evidence into the change so later `next-step` and `openspec-apply-change` runs do not depend on memory or loose final-message bullets.
+- For retro-derived changes, carry the likely root cause and recurrence path into the proposal/tasks; if the cause is unknown, make the follow-up an investigation rather than a presumed fix.
 
 ## Output
 

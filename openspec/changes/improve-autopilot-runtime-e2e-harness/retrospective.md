@@ -9,11 +9,11 @@
 
 ## Problems Found
 
-| Problem | Evidence | Impact | Recommendation | Confidence | Target |
-| --- | --- | --- | --- | --- | --- |
-| Parallel guard missed task-specific forbidden scopes | Coverage review found only write-write overlap was checked | Explicit parallel implementation could start unsafe concurrent tasks | Propagate `scope.forbidden` into ledger summaries and enforce write-vs-forbidden compatibility with a regression test | high | none |
-| Claim continuity needed observable runtime state | Reviewer wave found claim output could imply persisted active state without stop continuity evidence | Stop/status behavior could mislead users | Add claim to stop continuity tests and plugin-owned active runtime evidence | high | none |
-| Collect idempotency needed stronger proof | Reviewer wave found repeated collect could be ambiguous | Worker reports could appear advanced more than once | Track consumed report ids and test repeated collect behavior | high | none |
+| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
+| --- | --- | --- | --- | --- | --- | --- |
+| Parallel guard missed task-specific forbidden scopes | Coverage review found only write-write overlap was checked | Explicit parallel implementation could start unsafe concurrent tasks | Parallel compatibility checking considered write-write conflicts before task-specific forbidden scopes were propagated | Propagate `scope.forbidden` into ledger summaries and enforce write-vs-forbidden compatibility with a regression test | high | none |
+| Claim continuity needed observable runtime state | Reviewer wave found claim output could imply persisted active state without stop continuity evidence | Stop/status behavior could mislead users | Claim output lacked a persisted state-continuity contract linking claim, stop, and status evidence | Add claim to stop continuity tests and plugin-owned active runtime evidence | high | none |
+| Collect idempotency needed stronger proof | Reviewer wave found repeated collect could be ambiguous | Worker reports could appear advanced more than once | Report consumption state was not tracked as durable idempotency evidence | Track consumed report ids and test repeated collect behavior | high | none |
 
 ## Outputs
 

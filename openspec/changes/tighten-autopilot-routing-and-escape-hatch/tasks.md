@@ -30,8 +30,8 @@
 
 ## Retrospective Before Archive
 
-- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
-- [x] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision.
+- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
+- [x] Write `retrospective.md` with evidence, problems, root causes, improvements, and archive gate decision.
 - [x] Create or update project-local OpenSpec follow-up changes for project-local findings; none required.
 - [x] Create or update reusable `opencode-dev-kit` OpenSpec proposals/changes for Autopilot, skill, agent, instruction, validator, or evidence-pack findings; none required.
 - [x] Run `npm run openspec:retro-followups -- tighten-autopilot-routing-and-escape-hatch`; no follow-up changes were required.

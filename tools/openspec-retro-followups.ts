@@ -9,6 +9,7 @@ export type RetroFinding = {
   problem: string;
   evidence: string;
   impact: string;
+  rootCause: string;
   recommendation: string;
   confidence: string;
   target: RetroFindingTarget;
@@ -65,22 +66,30 @@ function parseProblemRows(problemSection: string | null): RetroFinding[] {
     .filter((line) => !/^\|\s*-+\s*\|/.test(line) && !/^\|\s*Problem\s*\|/i.test(line))
     .flatMap((line): RetroFinding[] => {
       const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-      if (cells.length !== 6) {
+      if (cells.length !== 7) {
         return [];
       }
-      const target = cells[5] as RetroFindingTarget;
+      const target = cells[6] as RetroFindingTarget;
       if (target !== "project-local" && target !== "opencode-dev-kit" && target !== "none") {
         return [];
       }
-      return [{ problem: cells[0], evidence: cells[1], impact: cells[2], recommendation: cells[3], confidence: cells[4], target }];
+      return [{ problem: cells[0], evidence: cells[1], impact: cells[2], rootCause: cells[3], recommendation: cells[4], confidence: cells[5], target }];
     });
+}
+
+function normalizedCell(value: string): string {
+  return value.trim().toLowerCase().replace(/[.。]+$/, "");
+}
+
+function isUnknownRootCause(value: string): boolean {
+  return normalizedCell(value) === "unknown";
 }
 
 function taskTail(): string {
   return `## Retrospective Before Archive
 
-- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
-- [ ] Write \`retrospective.md\` with evidence, problems, improvements, and archive gate decision.
+- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
+- [ ] Write \`retrospective.md\` with evidence, problems, root causes, improvements, and archive gate decision.
 - [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
 - [ ] For reusable findings, create or update \`opencode-dev-kit\` OpenSpec proposals/changes only when the current repository owns them; otherwise record a local handoff and do not write cross-repo without explicit approval.
 - [ ] Run \`npm run openspec:retro-followups -- <change-id>\` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
@@ -89,6 +98,9 @@ function taskTail(): string {
 }
 
 function proposalText(sourceChangeId: string, finding: RetroFinding): string {
+  const action = isUnknownRootCause(finding.rootCause)
+    ? `Investigate the unknown root cause before implementing or documenting: ${finding.recommendation}`
+    : `Address the root cause by implementing or documenting: ${finding.recommendation}`;
   return `# Proposal: ${finding.problem}
 
 ## Why
@@ -98,12 +110,13 @@ This follow-up was generated from \`${sourceChangeId}\` retrospective evidence.
 - Problem: ${finding.problem}
 - Evidence: ${finding.evidence}
 - Impact: ${finding.impact}
+- Root cause: ${finding.rootCause}
 - Confidence: ${finding.confidence}
 - Target: ${finding.target}
 
 ## What Changes
 
-- Implement or document: ${finding.recommendation}
+- ${action}
 - Preserve the source retrospective link so archive review can trace why this follow-up exists.
 
 ## Non-Goals
@@ -118,11 +131,15 @@ This follow-up was generated from \`${sourceChangeId}\` retrospective evidence.
 }
 
 function tasksText(sourceChangeId: string, finding: RetroFinding): string {
+  const rootCauseTask = isUnknownRootCause(finding.rootCause)
+    ? `Investigate and document the root cause before designing the fix: ${finding.recommendation}`
+    : `Confirm the retrospective root cause is still correct or update it before designing the fix: ${finding.rootCause}`;
   return `# Tasks: ${finding.problem}
 
 ## Follow-Up Scope
 
 - [ ] Confirm the retrospective finding from \`${sourceChangeId}\` is still current.
+- [ ] ${rootCauseTask}
 - [ ] Define the smallest implementation or documentation slice for: ${finding.recommendation}
 - [ ] Add or update the focused test, fixture, validator, or review evidence needed for this finding.
 - [ ] Implement the minimal change and update docs/specs if behavior changes.
@@ -133,6 +150,29 @@ function tasksText(sourceChangeId: string, finding: RetroFinding): string {
 - [ ] Run \`openspec validate --all\`.
 
 ${taskTail()}`;
+}
+
+function specText(changeId: string, sourceChangeId: string, finding: RetroFinding): string {
+  const rootCauseRequirement = isUnknownRootCause(finding.rootCause)
+    ? "the investigation records the discovered root cause before remediation"
+    : `the follow-up preserves root cause: ${finding.rootCause}`;
+  return `# ${changeId} Specification
+
+## ADDED Requirements
+
+### Requirement: Retrospective Finding Follow-Up Is Scoped
+
+This follow-up SHALL resolve, validate, or explicitly reject the retrospective finding generated from \`${sourceChangeId}\` without expanding beyond the recorded root cause and recommendation unless a separate OpenSpec decision broadens scope.
+
+#### Scenario: Finding is reassessed before implementation
+
+- **GIVEN** the follow-up change is selected for implementation
+- **WHEN** the implementer starts work on the generated finding
+- **THEN** they review the original problem, evidence, impact, root cause, recommendation, confidence, and target
+- **AND** ${rootCauseRequirement}
+- **AND** they either implement the smallest valid slice for: ${finding.recommendation}
+- **OR** record evidence that the finding is no longer current before closing the change.
+`;
 }
 
 function outputLineMarker(target: RetroFindingTarget): string | null {
@@ -188,6 +228,14 @@ function followUpId(sourceChangeId: string, finding: RetroFinding, index: number
   return `retro-${slug(sourceChangeId)}-${String(index + 1).padStart(2, "0")}-${slug(finding.problem)}`.slice(0, 96).replace(/-+$/g, "");
 }
 
+function fileNeedsWrite(filePath: string, expected: string, requiredFragments: string[]): boolean {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return true;
+  }
+  const current = normalizeText(fs.readFileSync(filePath, "utf8"));
+  return requiredFragments.some((fragment) => !current.includes(fragment)) || current !== expected;
+}
+
 export function createRetroFollowUps(root: string, changeId: string, options: { dryRun?: boolean } = {}): RetroFollowUpResult {
   if (!safeChangeId(changeId)) {
     throw new Error(`Invalid change id '${changeId}'.`);
@@ -207,16 +255,28 @@ export function createRetroFollowUps(root: string, changeId: string, options: { 
     const followUpRoot = path.join(root, "openspec", "changes", id);
     const proposalPath = path.join(followUpRoot, "proposal.md");
     const tasksPath = path.join(followUpRoot, "tasks.md");
-    const hasProposal = fs.existsSync(proposalPath);
-    const hasTasks = fs.existsSync(tasksPath);
-    changes.push({ id, target: finding.target, status: hasProposal && hasTasks ? "existing" : "created", path: normalizeText(path.relative(root, followUpRoot)).replaceAll("\\", "/"), problem: finding.problem });
-    if ((!hasProposal || !hasTasks) && options.dryRun !== true) {
+    const specPath = path.join(followUpRoot, "specs", id, "spec.md");
+    const proposal = proposalText(changeId, finding);
+    const tasks = tasksText(changeId, finding);
+    const spec = specText(id, changeId, finding);
+    const taskRootCauseFragment = isUnknownRootCause(finding.rootCause) ? "Investigate and document the root cause" : finding.rootCause;
+    const specRootCauseFragment = isUnknownRootCause(finding.rootCause) ? "discovered root cause" : finding.rootCause;
+    const proposalNeedsWrite = fileNeedsWrite(proposalPath, proposal, [finding.problem, finding.evidence, finding.impact, finding.rootCause, finding.recommendation]);
+    const tasksNeedsWrite = fileNeedsWrite(tasksPath, tasks, [taskRootCauseFragment, finding.recommendation]);
+    const specNeedsWrite = fileNeedsWrite(specPath, spec, ["## ADDED Requirements", "#### Scenario:", specRootCauseFragment, finding.recommendation]);
+    const needsWrite = proposalNeedsWrite || tasksNeedsWrite || specNeedsWrite;
+    changes.push({ id, target: finding.target, status: needsWrite ? "created" : "existing", path: normalizeText(path.relative(root, followUpRoot)).replaceAll("\\", "/"), problem: finding.problem });
+    if (needsWrite && options.dryRun !== true) {
       fs.mkdirSync(followUpRoot, { recursive: true });
-      if (!hasProposal) {
-        fs.writeFileSync(proposalPath, proposalText(changeId, finding), "utf8");
+      if (proposalNeedsWrite) {
+        fs.writeFileSync(proposalPath, proposal, "utf8");
       }
-      if (!hasTasks) {
-        fs.writeFileSync(tasksPath, tasksText(changeId, finding), "utf8");
+      if (tasksNeedsWrite) {
+        fs.writeFileSync(tasksPath, tasks, "utf8");
+      }
+      if (specNeedsWrite) {
+        fs.mkdirSync(path.dirname(specPath), { recursive: true });
+        fs.writeFileSync(specPath, spec, "utf8");
       }
     }
   });

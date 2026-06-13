@@ -25,7 +25,7 @@ Default mode is read-only unless the user asks for fixes.
 Return:
 
 - `Coverage`: files and block ranges reviewed.
-- `Findings`: severity, evidence, impact, recommendation, confidence.
+- `Findings`: severity, evidence, impact, likely root cause, recommendation, confidence.
 - `Explanations`: concise block-by-block notes for the user.
 - `Open Questions`: only questions blocked by missing external evidence.
 - `Validation`: checks run or skipped with reason.

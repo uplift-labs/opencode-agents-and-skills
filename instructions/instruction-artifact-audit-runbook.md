@@ -88,7 +88,7 @@ Return:
 - `Context Cost Matrix`: artifact -> size/cost -> action.
 - `Installed State Matrix`: source -> installed path -> status -> action.
 - `Permission Semantics Matrix`: policy -> level -> evidence -> gap.
-- `Findings`: severity, evidence, evidence type, impact, recommendation, confidence.
+- `Findings`: severity, evidence, evidence type, impact, likely root cause, recommendation, confidence.
 - `Redundancy Matrix`: keep | scope | move | merge | split | delete candidates.
 - `Validation`: commands, reviewer gates, live checks, and skipped gates with reasons.
 - `Non-Repo Changes`: exact external files changed or inspected.

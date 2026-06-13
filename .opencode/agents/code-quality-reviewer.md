@@ -97,7 +97,7 @@ Return:
 - `Confidence`: high | medium | low.
 - `Blocking for acceptance`: yes/no.
 - `Code Health Delta`: improves | neutral | worsens, with evidence.
-- `Findings`: ordered by severity. Each finding includes `Severity`, `File/Line`, `Evidence`, `Evidence Type`, `Impact on agent work`, `Impact on human readability`, `Minimal Recommendation`, `Pattern/Refactoring`, `Confidence`, `Needs external reviewer`.
+- `Findings`: ordered by severity. Each finding includes `Severity`, `File/Line`, `Evidence`, `Evidence Type`, `Impact on agent work`, `Impact on human readability`, `Likely Root Cause`, `Minimal Recommendation`, `Pattern/Refactoring`, `Confidence`, `Needs external reviewer`.
 - `Navigation Signals`: attention/split-candidate files, responsibility map, and split-or-justify decisions.
 - `Smell Matrix`: smell -> evidence -> force/optional/nit -> remedy.
 - `Validation Gaps`: missing tests, inventories, or reviewer evidence that would change confidence.

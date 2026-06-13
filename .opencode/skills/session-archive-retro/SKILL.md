@@ -1,6 +1,6 @@
 ---
 name: session-archive-retro
-description: Analyze bounded OpenCode session history, transcripts, reflections, logs, and validation traces to find workflow problems and synthesize concrete improvements.
+description: Analyze bounded OpenCode session history, transcripts, reflections, logs, and validation traces to find workflow problems, root causes, and concrete improvements.
 license: MIT
 ---
 
@@ -15,6 +15,7 @@ For behavior-changing improvements to scripts, validators, skills, agents, confi
 ## Contract
 
 - Work from evidence, not memory.
+- Treat observed problems as symptoms until the likely root cause is identified. Improvements should remove or reduce the cause that allowed the problem to happen, not merely restate the symptom.
 - The agent only has access to session artifacts that are present locally, exported, user-approved for remote/shared reads, or reachable through available tools.
 - Default scope is the current project/worktree. Analyze selected projects or bounded all-project history only when the user explicitly scopes it. For all-history, cross-install, whole-corpus retros targeting global skill improvements, use `opencode-total-session-retro` instead.
 - Prefer session-by-session coverage for the selected scope. Do not rely on keyword searches as the primary method when full session artifacts are available.
@@ -78,12 +79,15 @@ Helper code must have explicit inputs and outputs, a schema or fixture-backed co
 - Whether edits happened, and evidence for actual edit tools versus summary/diff metadata.
 - Outcome: success, partial, failed, blocked, or unclear.
 - Candidate lesson.
+- Symptom versus likely root cause; use `unknown` when evidence cannot support a cause.
 - Evidence confidence: high, medium, or low.
 
 6. Roll up batches from session cards, not raw keyword counts.
 7. Promote a global pattern only when it appears in multiple independent sessions or one severe session with strong evidence.
-8. Preserve successful recurring practices as well as problems.
-9. Reconcile proposed improvements against current source/tests/config/docs/prompts before recommending implementation-sensitive changes.
+8. For each promoted problem, trace the chain from trigger to missed guard to outcome. Separate proximate triggers, systemic root causes, and contributing factors.
+9. If the root cause is uncertain, recommend the smallest investigation, telemetry, validator, or evidence-gathering follow-up instead of pretending the fix is known.
+10. Preserve successful recurring practices as well as problems.
+11. Reconcile proposed improvements against current source/tests/config/docs/prompts before recommending implementation-sensitive changes.
 
 ## Common Pattern Categories
 
@@ -96,11 +100,13 @@ Helper code must have explicit inputs and outputs, a schema or fixture-backed co
 - Scope creep or accidental refactors.
 - Weak PR/MR summaries.
 - Incomplete evidence before readiness/merge/archive claims.
+- Symptom fixes that do not remove the root cause or recurrence path.
 - Successful practices to preserve.
 
 ## Improvement Backlog Routing
 
 - If the retro produces several concrete project-local or session-scoped improvement tasks, group them into OpenSpec follow-up changes so the backlog is durable and discoverable by `next-step`.
+- Route root-cause fixes when evidence supports the cause; route root-cause investigations when the symptom is clear but the cause is not.
 - Keep single obvious fixes, low-confidence observations, and speculative polish in the retro output instead of creating OpenSpec noise.
 - In read-only mode, recommend candidate change groups and change ids; create or update OpenSpec files only when write scope and the repository's OpenSpec workflow are available.
 - For global reusable OpenCode artifact improvements, route broad or cross-project backlogs through `opencode-total-session-retro` unless the user intentionally scoped the retro to this repository's OpenCode artifacts.
@@ -113,9 +119,10 @@ Return:
 - `Coverage Ledger`: concise redacted inline table by default, or link/path to a generated ledger only when the user approved writing it.
 - `Coverage Limits`: missing/inaccessible/truncated sources and confidence impact.
 - `Session Rollup`: concise batch/global summary.
-- `Findings`: severity, evidence, evidence type, impact, recommendation, confidence.
+- `Findings`: severity, evidence, evidence type, impact, likely root cause, recommendation, confidence.
 - `Recurring Patterns`: repeated problems and success patterns with representative session ids or artifacts.
-- `Improvement Backlog`: automation, instructions, skills, agents, prompts, docs, or validation changes.
+- `Root-Cause Analysis`: symptom -> likely root cause -> contributing factors -> recurrence path -> confidence.
+- `Improvement Backlog`: automation, instructions, skills, agents, prompts, docs, or validation changes, each naming the root cause it removes or the investigation needed to find it.
 - `Applied Changes`: changed files or `none`.
 - `Validation`: checks run or skipped with reason.
 - `Privacy Notes`: redactions or sensitive-source handling.

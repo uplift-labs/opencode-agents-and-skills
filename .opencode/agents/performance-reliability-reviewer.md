@@ -51,7 +51,7 @@ Return:
 - `Verdict`: clean | material findings | blocked | not applicable.
 - `Confidence`: high | medium | low.
 - `Blocking for production/readiness`: yes/no.
-- `Findings`: severity, evidence, evidence type, impact, recommendation, confidence, needs external reviewer.
+- `Findings`: severity, evidence, evidence type, impact, likely root cause, recommendation, confidence, needs external reviewer.
 - `Performance Evidence Matrix`: claim/path -> evidence -> gap.
 - `Reliability Failure Matrix`: scenario -> expected behavior -> evidence/gap.
 - `Benchmark Suggestions`: minimal useful benchmark/load profiles.

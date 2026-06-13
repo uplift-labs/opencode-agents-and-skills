@@ -64,7 +64,7 @@ Return:
 - `Verdict`: clean | material findings | blocked | not applicable.
 - `Confidence`: high | medium | low.
 - `Blocking for acceptance`: yes/no.
-- `Findings`: ordered by severity. Each finding includes `Severity`, `Evidence`, `Evidence Type`, `Impact`, `Recommendation`, `Confidence`, `Needs external reviewer`.
+- `Findings`: ordered by severity. Each finding includes `Severity`, `Evidence`, `Evidence Type`, `Impact`, `Likely Root Cause`, `Recommendation`, `Confidence`, `Needs external reviewer`.
 - `Coverage Matrix`: requirement -> existing/planned/missing verification.
 - `Task/Repro Coverage Matrix`: user task, acceptance claim, log, repro, or runtime envelope -> existing/planned/missing verification.
 - `Inferred Coverage Matrix`: source behavior/invariant -> existing/planned/missing verification.

@@ -74,9 +74,9 @@
 
 ## Retrospective Before Archive
 
-- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
-- [ ] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision.
-- [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
-- [ ] For reusable findings, create or update `opencode-dev-kit` OpenSpec proposals/changes only when the current repository owns them; otherwise record a local handoff and do not write cross-repo without explicit approval.
-- [ ] Run `npm run openspec:retro-followups -- enable-autopilot-worker-dispatch` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
-- [ ] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded.
+- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes. Evidence: `retrospective.md` reviews OpenSpec artifacts, source/test evidence, validation, reviewer gates, current `ready_runtime_deferred` Autopilot output, root causes, and live-enable boundaries.
+- [x] Write `retrospective.md` with evidence, problems, root causes, improvements, and archive gate decision. Evidence: `openspec/changes/enable-autopilot-worker-dispatch/retrospective.md` created.
+- [x] Create or update project-local OpenSpec follow-up changes for project-local findings. Evidence: no project-local findings remain; project-local issues were fixed in scope or recorded as archive/runtime-boundary evidence.
+- [x] For reusable findings, create or update `opencode-dev-kit` OpenSpec proposals/changes only when the current repository owns them; otherwise record a local handoff and do not write cross-repo without explicit approval. Evidence: `npm run openspec:retro-followups -- enable-autopilot-worker-dispatch` created `retro-enable-autopilot-worker-dispatch-01-worker-dispatch-option-diagnostics-remain-a-reus` with proposal, tasks, and spec delta.
+- [x] Run `npm run openspec:retro-followups -- enable-autopilot-worker-dispatch` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive. Evidence: command passed with one created `opencode-dev-kit` follow-up and `retrospectiveUpdated: true`; rerun after generator fix added the missing spec delta with `retrospectiveUpdated: false`.
+- [x] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded. Evidence: `npm run openspec:retro-gate -- enable-autopilot-worker-dispatch` returned `valid: true` and `archiveAllowed: true` after root-cause/spec-delta contract fixes.

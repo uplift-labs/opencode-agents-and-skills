@@ -28,8 +28,8 @@ function tasksWithRetro(): string {
 
 ## Retrospective Before Archive
 
-- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
-- [x] Write \`retrospective.md\` with evidence, problems, improvements, and archive gate decision.
+- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
+- [x] Write \`retrospective.md\` with evidence, problems, root causes, improvements, and archive gate decision.
 - [x] Create or update project-local OpenSpec follow-up changes for project-local findings.
 - [x] Create or update reusable \`opencode-dev-kit\` OpenSpec proposals/changes for Autopilot, skill, agent, instruction, validator, or evidence-pack findings.
 - [x] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded.
@@ -48,11 +48,11 @@ function retrospectiveWithFindings(): string {
 
 ## Problems Found
 
-| Problem | Evidence | Impact | Recommendation | Confidence | Target |
-| --- | --- | --- | --- | --- | --- |
-| Project docs drift | README section stale | Reviewers miss current commands | Create docs follow-up | high | project-local |
-| Autopilot escape friction | ready_runtime_deferred repeated | Token waste | Improve reusable skill guidance | high | opencode-dev-kit |
-| Fixed in scope | Reviewer finding patched | No remaining impact | No follow-up needed | high | none |
+| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
+| --- | --- | --- | --- | --- | --- | --- |
+| Project docs drift | README section stale | Reviewers miss current commands | README routing was not updated with the changed command contract | Create docs follow-up | high | project-local |
+| Autopilot escape friction | ready_runtime_deferred repeated | Token waste | Escape-hatch guidance did not distinguish safe handoff from repeated no-progress calls | Improve reusable skill guidance | high | opencode-dev-kit |
+| Fixed in scope | Reviewer finding patched | No remaining impact | Missing coverage was already addressed by the scoped fix | No follow-up needed | high | none |
 
 ## Outputs
 
@@ -64,6 +64,33 @@ function retrospectiveWithFindings(): string {
 
 - Decision: passed
 - Reason: Findings routed to durable OpenSpec changes.
+- Approver, if skipped: none
+`;
+}
+
+function retrospectiveWithUnknownCause(changeId = "unknown"): string {
+  return `# Retrospective: unknown
+
+## Evidence Reviewed
+
+- Tool outputs / validation: repeated failed validation without stable repro.
+
+## Problems Found
+
+| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
+| --- | --- | --- | --- | --- | --- | --- |
+| Mystery failure | Repeated failed validation without stable repro | Agents cannot pick a safe fix | unknown | Investigate root cause with instrumentation before implementing a fix | medium | project-local |
+
+## Outputs
+
+- Project follow-up changes: none.
+- \`opencode-dev-kit\` proposals/changes: none.
+- No findings reason: Evidence reviewed before routing.
+
+## Archive Gate Decision
+
+- Decision: passed
+- Reason: Unknown cause routed to investigation.
 - Approver, if skipped: none
 `;
 }
@@ -92,13 +119,36 @@ const tests: TestCase[] = [
       for (const change of result.changes) {
         assert(fs.existsSync(path.join(repo, change.path, "proposal.md")), `Missing proposal for ${change.id}.`);
         assert(fs.existsSync(path.join(repo, change.path, "tasks.md")), `Missing tasks for ${change.id}.`);
+        const specPath = path.join(repo, change.path, "specs", change.id, "spec.md");
+        const spec = fs.existsSync(specPath) ? fs.readFileSync(specPath, "utf8") : "";
+        assert(spec.includes("## ADDED Requirements") && spec.includes("#### Scenario:"), `Missing valid spec delta for ${change.id}.`);
       }
+      const projectProposal = fs.readFileSync(path.join(repo, "openspec", "changes", "retro-example-01-project-docs-drift", "proposal.md"), "utf8");
+      assert(projectProposal.includes("Root cause: README routing was not updated with the changed command contract"), "Generated proposal must preserve the retrospective root cause.");
+      const projectTasks = fs.readFileSync(path.join(repo, "openspec", "changes", "retro-example-01-project-docs-drift", "tasks.md"), "utf8");
+      assert(projectTasks.includes("Confirm the retrospective root cause"), "Generated tasks must require root-cause confirmation before implementation.");
       const retrospective = fs.readFileSync(path.join(repo, "openspec", "changes", "example", "retrospective.md"), "utf8");
       assert(retrospective.includes("Project follow-up changes: `retro-example-01-project-docs-drift`."), "Project output must reference generated follow-up change.");
       assert(retrospective.includes("`opencode-dev-kit` proposals/changes: `retro-example-02-autopilot-escape-friction`."), "Reusable output must reference generated follow-up change.");
       assert(retrospective.includes("No findings reason: n/a."), "No-findings reason must be cleared when findings create changes.");
       const gate = evaluateRetroGate(repo, "example");
       assert(gate.valid && gate.archiveAllowed, `Generated follow-ups should satisfy retro gate, got ${JSON.stringify(gate.errors)}.`);
+    }),
+  },
+  {
+    name: "follow-up helper routes unknown root causes to investigation wording",
+    run: () => withTempRepo("unknown", (repo) => {
+      writeChange(repo, "investigate-case", retrospectiveWithUnknownCause("investigate-case"));
+      const result = createRetroFollowUps(repo, "investigate-case");
+      assert(result.changes.length === 1, `Expected one investigation follow-up, got ${JSON.stringify(result.changes)}.`);
+      const proposal = fs.readFileSync(path.join(repo, "openspec", "changes", "retro-investigate-case-01-mystery-failure", "proposal.md"), "utf8");
+      assert(proposal.includes("Investigate the unknown root cause"), "Unknown-cause proposal must use investigation wording.");
+      const tasks = fs.readFileSync(path.join(repo, "openspec", "changes", "retro-investigate-case-01-mystery-failure", "tasks.md"), "utf8");
+      assert(tasks.includes("Investigate and document the root cause"), "Unknown-cause tasks must require root-cause investigation.");
+      const second = createRetroFollowUps(repo, "investigate-case");
+      assert(second.changes.every((change) => change.status === "existing"), `Unknown root-cause follow-up must be idempotent, got ${JSON.stringify(second.changes)}.`);
+      const gate = evaluateRetroGate(repo, "investigate-case");
+      assert(gate.valid && gate.archiveAllowed, `Unknown root-cause follow-up should satisfy gate, got ${JSON.stringify(gate.errors)}.`);
     }),
   },
   {
@@ -124,8 +174,30 @@ const tests: TestCase[] = [
       const project = result.changes.find((change) => change.id === "retro-example-01-project-docs-drift");
       assert(project?.status === "created", `Partial follow-up must be completed, got ${JSON.stringify(project)}.`);
       assert(fs.existsSync(path.join(partial, "tasks.md")), "Partial follow-up must get missing tasks.md.");
+      assert(fs.existsSync(path.join(partial, "specs", "retro-example-01-project-docs-drift", "spec.md")), "Partial follow-up must get missing spec delta.");
       const gate = evaluateRetroGate(repo, "example");
       assert(gate.valid, `Completed partial follow-up should satisfy retro gate, got ${JSON.stringify(gate.errors)}.`);
+    }),
+  },
+  {
+    name: "follow-up helper adds missing spec to old generated changes",
+    run: () => withTempRepo("missing-spec", (repo) => {
+      writeChange(repo, "example");
+      const existing = path.join(repo, "openspec", "changes", "retro-example-01-project-docs-drift");
+      fs.mkdirSync(existing, { recursive: true });
+      fs.writeFileSync(path.join(existing, "proposal.md"), "# Existing Proposal\n", "utf8");
+      fs.writeFileSync(path.join(existing, "tasks.md"), "# Existing Tasks\n", "utf8");
+
+      const result = createRetroFollowUps(repo, "example");
+      const project = result.changes.find((change) => change.id === "retro-example-01-project-docs-drift");
+      assert(project?.status === "created", `Missing spec follow-up must be repaired, got ${JSON.stringify(project)}.`);
+      const updatedProposal = fs.readFileSync(path.join(existing, "proposal.md"), "utf8");
+      assert(updatedProposal.includes("Root cause: README routing was not updated with the changed command contract"), "Existing proposal must be updated with current root cause evidence.");
+      const updatedTasks = fs.readFileSync(path.join(existing, "tasks.md"), "utf8");
+      assert(updatedTasks.includes("Confirm the retrospective root cause"), "Existing tasks must be updated with root-cause confirmation.");
+      assert(fs.existsSync(path.join(existing, "specs", "retro-example-01-project-docs-drift", "spec.md")), "Old generated follow-up must get missing spec delta.");
+      const gate = evaluateRetroGate(repo, "example");
+      assert(gate.valid, `Repaired old follow-up should satisfy retro gate, got ${JSON.stringify(gate.errors)}.`);
     }),
   },
   {

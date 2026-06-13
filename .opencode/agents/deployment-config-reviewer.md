@@ -50,7 +50,7 @@ Return:
 - `Verdict`: clean | material findings | blocked | not applicable.
 - `Confidence`: high | medium | low.
 - `Blocking for deployment`: yes/no.
-- `Findings`: severity, evidence, evidence type, impact, recommendation, confidence, needs external reviewer.
+- `Findings`: severity, evidence, evidence type, impact, likely root cause, recommendation, confidence, needs external reviewer.
 - `Config Matrix`: field/limit/default -> validation evidence -> gap.
 - `Deployment Matrix`: lifecycle step -> evidence -> gap.
 - `Actionable Continuation Items`: concrete follow-up tasks, including a recommendation for main-session OpenSpec follow-up tracking when several session-scoped items remain outside current scope, or `none`.

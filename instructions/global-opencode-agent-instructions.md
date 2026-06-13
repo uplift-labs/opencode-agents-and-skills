@@ -21,6 +21,7 @@
 - Treat new instructions as the last resort. Before adding instructions, consider whether the same goal can be enforced, detected, or summarized by program logic or validation output.
 - Use prose instructions for judgment-heavy work that cannot be safely algorithmized, such as code review priorities, architectural trade-offs, communication style, and safety boundaries.
 - Do not create false confidence by over-automating human judgment. Use automation to gather evidence and make failures visible, then keep explicit reviewer judgment where needed.
+- For retros, audits, reviewer gates, and follow-up backlogs, separate symptoms from likely root causes. Durable improvements should remove or reduce the recurrence path; when the cause is unknown, route an investigation or instrumentation task instead of guessing.
 
 ## Deterministic Helper Automation
 
@@ -29,6 +30,7 @@
 - Helper code must have no hidden heuristics: do not encode fuzzy scoring, probabilistic classification, model-like summarization, or unstated inference as evidence.
 - If deterministic helper code cannot answer something from its inputs, report `unknown`, `unreadable`, `unsupported`, or `blocked` instead of guessing.
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
+- Deterministic helpers may surface root-cause signals, evidence chains, and missing data, but they must not infer root cause from fuzzy transcript content or hidden heuristics.
 
 ## Token Efficiency
 

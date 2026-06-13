@@ -9,12 +9,12 @@
 
 ## Problems Found
 
-| Problem | Evidence | Impact | Recommendation | Confidence | Target |
-| --- | --- | --- | --- | --- | --- |
-| Auto policy could be confused with default serial behavior | Proposal and design required explicit `mode: "auto"` or `maxImplementationClaims: "auto"`; tasks record default serial regression coverage and skill/README wording updates | Agents could over-parallelize without repository or user policy | Keep explicit auto-mode wording and default serial tests as the guardrail | high | none |
-| Parallel starts needed durable worktree evidence | Design required task-to-worktree mapping across selection, `tasksStarted[]`, and active runtime state; tasks record added worktree lifecycle and mapping coverage | Fan-in, MR, archive, and cleanup gates could lose stream ownership | Preserve mapping assertions and worktree lifecycle planning as required evidence | high | none |
-| Auto-parallel terminal readiness needed fan-in proof | Runtime spec requires integration evidence before Done/archive-ready; tasks record fan-in validation tests and helpers | Multiple started streams or accepted soft conflicts could appear complete without combined validation | Keep fan-in validation as an archive and MR readiness prerequisite | high | none |
-| Test harness has minor maintainability pressure | `tasks.md` records final code-quality review with residual P2/nit for attention-band test size and duplicated local helper only | Future edits could make the focused tests harder to maintain, but current reviewer gate found no blocker | Treat as non-blocking; split the helper only if future changes expand the same test area | medium | none |
+| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
+| --- | --- | --- | --- | --- | --- | --- |
+| Auto policy could be confused with default serial behavior | Proposal and design required explicit `mode: "auto"` or `maxImplementationClaims: "auto"`; tasks record default serial regression coverage and skill/README wording updates | Agents could over-parallelize without repository or user policy | Auto behavior introduced a second execution policy whose opt-in boundary could be implicit without explicit guardrails | Keep explicit auto-mode wording and default serial tests as the guardrail | high | none |
+| Parallel starts needed durable worktree evidence | Design required task-to-worktree mapping across selection, `tasksStarted[]`, and active runtime state; tasks record added worktree lifecycle and mapping coverage | Fan-in, MR, archive, and cleanup gates could lose stream ownership | Runtime output initially lacked a durable ownership mapping contract for each started stream | Preserve mapping assertions and worktree lifecycle planning as required evidence | high | none |
+| Auto-parallel terminal readiness needed fan-in proof | Runtime spec requires integration evidence before Done/archive-ready; tasks record fan-in validation tests and helpers | Multiple started streams or accepted soft conflicts could appear complete without combined validation | Terminal readiness policy needed explicit combined-validation state for multi-stream outcomes | Keep fan-in validation as an archive and MR readiness prerequisite | high | none |
+| Test harness has minor maintainability pressure | `tasks.md` records final code-quality review with residual P2/nit for attention-band test size and duplicated local helper only | Future edits could make the focused tests harder to maintain, but current reviewer gate found no blocker | Feature coverage grew around local helper duplication before a shared test utility became necessary | Treat as non-blocking; split the helper only if future changes expand the same test area | medium | none |
 
 ## Outputs
 

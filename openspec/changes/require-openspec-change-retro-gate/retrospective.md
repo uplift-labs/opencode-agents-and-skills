@@ -9,12 +9,12 @@
 
 ## Problems Found
 
-| Problem | Evidence | Impact | Recommendation | Confidence | Target |
-| --- | --- | --- | --- | --- | --- |
-| Reusable task tail implied cross-repo writes | Instruction review found mandatory `opencode-dev-kit` wording lacked approval guard | Agents in other repositories could write or imply writes across repos | Keep the route but require current-repo ownership or local handoff without explicit cross-repo approval | high | none |
-| Evidence-pack determinism wording overclaimed | Instruction review found README said deterministic output while timestamps are generated | Reviewers could expect byte-identical output across runs | Reword to stable schema and ordering plus generated timestamp | medium | none |
-| Active task checkboxes drifted behind evidence | Instruction review found validation and reviewer items unchecked after passing gates | Archive and next-step could surface completed work as incomplete | Synchronize tasks with validation and reviewer evidence | high | none |
-| Follow-up creation was not algorithmically enforced | User review caught that `retrospective.md` could be written without creating OpenSpec changes for actionable findings | Practical retro conclusions could remain prose and be forgotten before archive | Add `openspec:retro-followups` helper and make `openspec:retro-gate` verify referenced follow-up changes exist | high | none |
+| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
+| --- | --- | --- | --- | --- | --- | --- |
+| Reusable task tail implied cross-repo writes | Instruction review found mandatory `opencode-dev-kit` wording lacked approval guard | Agents in other repositories could write or imply writes across repos | The reusable template named a shared artifact owner without an explicit current-repository ownership guard | Keep the route but require current-repo ownership or local handoff without explicit cross-repo approval | high | none |
+| Evidence-pack determinism wording overclaimed | Instruction review found README said deterministic output while timestamps are generated | Reviewers could expect byte-identical output across runs | Documentation conflated stable schema/order with byte-identical output despite generated timestamps | Reword to stable schema and ordering plus generated timestamp | medium | none |
+| Active task checkboxes drifted behind evidence | Instruction review found validation and reviewer items unchecked after passing gates | Archive and next-step could surface completed work as incomplete | Task status updates were not synchronized immediately after validation and reviewer evidence was recorded | Synchronize tasks with validation and reviewer evidence | high | none |
+| Follow-up creation was not algorithmically enforced | User review caught that `retrospective.md` could be written without creating OpenSpec changes for actionable findings | Practical retro conclusions could remain prose and be forgotten before archive | The retrospective gate checked for prose evidence before a helper existed to materialize actionable follow-ups | Add `openspec:retro-followups` helper and make `openspec:retro-gate` verify referenced follow-up changes exist | high | none |
 
 ## Outputs
 

@@ -279,14 +279,14 @@ Validate all OpenSpec changes with the first-class package gate:
 npm run openspec:validate
 ```
 
-Before archiving a completed OpenSpec change, validate its retrospective archive gate with:
+Before archiving a completed OpenSpec change, create/update retrospective follow-ups with the mutating helper, then validate the read-only retrospective archive gate with:
 
 ```sh
 npm run openspec:retro-followups -- <change-id>
 npm run openspec:retro-gate -- <change-id>
 ```
 
-The follow-up helper reads actionable `retrospective.md` `Problems Found` rows and creates/updates OpenSpec follow-up changes before archive. The retro gate then checks that `tasks.md` ends with `Retrospective Before Archive`, `retrospective.md` exists, evidence/output/archive-decision sections are present, approved skips include reason and approver, and actionable findings reference real follow-up changes with `proposal.md` and `tasks.md`.
+Use `npm run openspec:retro-followups -- <change-id> --dry-run` for read-only inspection. Without `--dry-run`, the follow-up helper reads actionable `retrospective.md` `Problems Found` rows and creates/updates OpenSpec follow-up changes before archive. The retro gate then checks that `tasks.md` ends with `Retrospective Before Archive`, `retrospective.md` exists, evidence/output/archive-decision sections are present, approved skips include reason and approver, actionable rows include `Root Cause`, and actionable findings reference real follow-up changes with `proposal.md`, `tasks.md`, and `specs/<generated-id>/spec.md` that preserve the retrospective evidence and root cause.
 
 For Autopilot contract changes, run the direct source-equivalent bundle smoke and report freshness checks when those surfaces are in scope:
 
@@ -349,7 +349,7 @@ After inventory, gather deterministic structured metrics without transcript-cont
 npm run retro:analyze -- --format markdown
 ```
 
-The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. Markdown output highlights action-oriented rollups for tool error hotspots, tool error categories, readiness signals, open TODOs, TODO status/priority counts, daily session buckets, and `session_message` types. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets. It may inspect tool `error`/`output`/`message` strings only to set fixed error-category buckets and bash command values only to set explicit validation/git-review proxy categories; it emits category names, booleans, and counts rather than those inspected values. These categories and proxies are mechanical signals, not root-cause or intent findings. Use `--db <path>` or `--data-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Use `--include-session-cards` with `--format json` when a redacted mechanical per-session envelope is needed; for large stores, combine it with an approved `--out <path>` because it emits one JSON card per session. Use `--out <path>` only for approved generated analysis reports; existing files are refused unless `--overwrite` is passed explicitly.
+The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. Markdown output highlights action-oriented rollups for tool error hotspots, tool error categories, readiness signals, open TODOs, TODO status/priority counts, daily session buckets, and `session_message` types. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets. It may inspect tool `error`/`output`/`message` strings only to set fixed error-category buckets and bash command values only to set explicit validation/git-review proxy categories; it emits category names, booleans, and counts rather than those inspected values. These categories and proxies are mechanical signals that can seed investigation, not root-cause or intent findings. Use `--db <path>` or `--data-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Use `--include-session-cards` with `--format json` when a redacted mechanical per-session envelope is needed; for large stores, combine it with an approved `--out <path>` because it emits one JSON card per session. Use `--out <path>` only for approved generated analysis reports; existing files are refused unless `--overwrite` is passed explicitly.
 
 ## Routing Map
 
@@ -400,9 +400,9 @@ This repository's OpenSpec guide starts at `openspec/project.md`; active changes
 
 ## OpenSpec Retrospective Gate
 
-Before archiving a completed OpenSpec change, write `openspec/changes/<change-id>/retrospective.md`, run `npm run openspec:retro-followups -- <change-id>` when available to create/update follow-up OpenSpec changes for actionable findings, then run `npm run openspec:retro-gate -- <change-id>`. New `tasks.md` files should end with `Retrospective Before Archive` so the final learning step is machine-checkable.
+Before archiving a completed OpenSpec change, write `openspec/changes/<change-id>/retrospective.md`, run `npm run openspec:retro-followups -- <change-id>` when available to create/update follow-up OpenSpec changes for actionable findings, then run `npm run openspec:retro-gate -- <change-id>`. New `tasks.md` files should end with `Retrospective Before Archive` so the final learning step is machine-checkable and includes root-cause review.
 
-`retrospective.md` should stay concise but evidence-backed. Include `Evidence Reviewed`, `Problems Found`, `Outputs`, and `Archive Gate Decision`. Actionable project-local or reusable Autopilot/skill/agent/instruction/validator/evidence-pack findings must become real OpenSpec follow-up changes referenced from `Outputs`; otherwise use `Target` `none` only for findings fixed in scope, intentionally non-actionable items, or justified no-follow-up decisions. Approved skips must include a reason and approver.
+`retrospective.md` should stay concise but evidence-backed. Include `Evidence Reviewed`, `Problems Found`, `Outputs`, and `Archive Gate Decision`. `Problems Found` rows use `Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target`; actionable recommendations should address the cause or explicitly route an investigation/instrumentation follow-up when the cause is `unknown`. Actionable project-local or reusable Autopilot/skill/agent/instruction/validator/evidence-pack findings must become real OpenSpec follow-up changes referenced from `Outputs`; otherwise use `Target` `none` only for findings fixed in scope, intentionally non-actionable items, or justified no-follow-up decisions. Approved skips must include a reason and approver.
 
 ## Skill Catalog
 
@@ -415,8 +415,8 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 - `merge-request-review-loop`: autonomous MR/PR review follow-up for status checks, reviewer feedback, local fixes, revalidation, outcome handoff, and remote-action gates.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
 - `orchestrator`: prompt-only master coordination for broad independent non-Autopilot work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead; it is not a durable runtime orchestration service.
-- `opencode-total-session-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize session-level insights into trends, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
-- `session-archive-retro`: analyze bounded/current-project session history, transcripts, and logs for recurring workflow improvements.
+- `opencode-total-session-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize session-level insights into trends/root causes, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
+- `session-archive-retro`: analyze bounded/current-project session history, transcripts, and logs for recurring workflow problems, root causes, and improvements.
 
 ### Review And Learning
 

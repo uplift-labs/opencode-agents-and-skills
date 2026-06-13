@@ -19,7 +19,7 @@ If the change has an automation task ledger, the user invoked `/autopilot`, stri
 - Keep TDD proportional: stop at the smallest test/gate set that proves the scoped requirement unless the risk profile requires broader coverage.
 - Make the smallest correct code/doc changes that satisfy the scoped requirement.
 - Update tasks and traceability only when evidence exists.
-- Ensure `tasks.md` has a final `Retrospective Before Archive` section; add it when continuing an older active change that lacks the gate.
+- Ensure `tasks.md` has a final `Retrospective Before Archive` section; add it when continuing an older active change that lacks the gate. The section must require likely root-cause review before archive.
 - Run the closest relevant validation after each meaningful slice.
 - Use reviewer agents for material code-quality/maintainability, architecture, concurrency, protocol, deployment, or test-coverage risks.
 
@@ -29,7 +29,7 @@ If the change has an automation task ledger, the user invoked `/autopilot`, stri
 - Tests cover observable behavior and negative/recovery cases where relevant.
 - Docs/specs/tasks are synchronized.
 - Validation commands have been run or skipped with explicit reason and residual risk.
-- Before archive, hand off to the retrospective gate before archive: write or update `retrospective.md`, run `npm run openspec:retro-followups -- <change-id>` when available to create/update OpenSpec follow-up changes for actionable findings, then run `npm run openspec:retro-gate -- <change-id>`.
+- Before archive, hand off to the retrospective gate before archive: write or update `retrospective.md` with root causes for actionable problems, run `npm run openspec:retro-followups -- <change-id>` when available to create/update OpenSpec follow-up changes for actionable findings, then run `npm run openspec:retro-gate -- <change-id>`.
 
 ## Output
 

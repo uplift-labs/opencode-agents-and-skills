@@ -51,8 +51,8 @@ The artifact should be concise but evidence-backed. Suggested sections:
 
 ## Problems Found
 
-| Problem | Evidence | Impact | Recommendation | Confidence | Target |
-| --- | --- | --- | --- | --- | --- |
+| Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
+| --- | --- | --- | --- | --- | --- | --- |
 
 ## Token And Command Efficiency
 
@@ -161,8 +161,8 @@ Every new OpenSpec `tasks.md` should end with a final section similar to:
 ```md
 ## Retrospective Before Archive
 
-- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps.
-- [ ] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision.
+- [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
+- [ ] Write `retrospective.md` with evidence, problems, root causes, improvements, and archive gate decision.
 - [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
 - [ ] Create or update reusable `opencode-dev-kit` OpenSpec proposals/changes for Autopilot, skill, agent, instruction, validator, or evidence-pack findings.
 - [ ] Run `npm run openspec:retro-followups -- <change-id>` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
@@ -194,15 +194,15 @@ npm run openspec:retro-followups -- <change-id>
 npm run openspec:retro-gate -- <change-id>
 ```
 
-`openspec:retro-followups` reads actionable `Problems Found` rows from `retrospective.md`, creates or reuses `openspec/changes/<generated-id>/proposal.md` and `tasks.md`, and updates `Outputs` with those ids. It does not mutate protected Autopilot `automation/**` paths.
+`openspec:retro-followups` reads actionable `Problems Found` rows from `retrospective.md`, including `Root Cause`, creates or reuses `openspec/changes/<generated-id>/proposal.md`, `tasks.md`, and `specs/<generated-id>/spec.md`, and updates `Outputs` with those ids. It does not mutate protected Autopilot `automation/**` paths.
 
 Implemented checks:
 
 - `openspec/changes/<change-id>/tasks.md` includes a final retrospective task or section.
 - `openspec/changes/<change-id>/retrospective.md` exists before archive.
 - `retrospective.md` includes evidence reviewed and archive decision.
-- Findings with `Target` `project-local` or `opencode-dev-kit` reference existing OpenSpec follow-up changes with `proposal.md` and `tasks.md`.
-- Findings with `Target` `none` are treated as fixed in scope, intentionally no-follow-up, or not actionable; they must still include evidence and confidence.
+- Findings with `Target` `project-local` or `opencode-dev-kit` include root cause and reference existing OpenSpec follow-up changes with `proposal.md`, `tasks.md`, and a spec delta that preserve the retrospective evidence.
+- Findings with `Target` `none` are treated as fixed in scope, intentionally no-follow-up, or not actionable; they must still include evidence, root cause, and confidence.
 - Approved skips include reason and approver.
 
 The helper should output stable JSON:

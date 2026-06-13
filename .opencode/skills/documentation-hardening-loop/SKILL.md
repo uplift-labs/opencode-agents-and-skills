@@ -42,7 +42,7 @@ Return:
 
 - `Verdict`: clean | material fixes applied | material findings | blocked.
 - `Scope`: docs/specs reviewed.
-- `Findings`: severity, evidence, impact, recommendation, confidence.
+- `Findings`: severity, evidence, impact, likely root cause, recommendation, confidence.
 - `Changed Files`: if edits were made.
 - `Validation`: commands/checks run and result.
 - `Residual Risks`: docs-only claims or missing external evidence.

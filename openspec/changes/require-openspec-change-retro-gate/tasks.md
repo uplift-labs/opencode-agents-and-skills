@@ -49,7 +49,7 @@
 
 ## Retrospective Before Archive
 
-- [x] Review the completed work on this retrospective-gate change, including validation, reviewer gates, repeated operations, wait time, and token-heavy steps.
+- [x] Review the completed work on this retrospective-gate change, including validation, reviewer gates, repeated operations, wait time, token-heavy steps, and likely root causes.
 - [x] Write `retrospective.md` for this change with evidence, problems, improvement ideas, and archive gate decision.
 - [x] Create or update project-local OpenSpec follow-up changes for project-local findings; none required after fixed findings.
 - [x] Create or update reusable `opencode-dev-kit` OpenSpec proposals/changes for Autopilot, skill, agent, instruction, validator, or evidence-pack findings; none required after fixed findings.

@@ -25,7 +25,7 @@ Use this skill for a focused read-only or fix-enabled consistency pass over Open
 Return:
 
 - `Verdict`: consistent | minor issues | material findings | blocked.
-- `Findings`: severity, evidence, impact, recommendation, confidence.
+- `Findings`: severity, evidence, impact, likely root cause, recommendation, confidence.
 - `Requirement-To-Test Matrix`: existing/planned/missing.
 - `Task Evidence Review`: completed tasks with proof or gaps.
 - `Archive/Implementation Readiness`: yes/no and why.

@@ -13,7 +13,7 @@ Use this helper only with `documentation-hardening-loop` or an equivalent exhaus
 - Track every text file in scope with continuous line ranges from first to last line.
 - Include frontmatter, blank lines, tables, diagrams, anchors, and code fences.
 - For generated, binary, unreadable, deleted, or too-large files, add a special block with reason and confidence impact.
-- Store paths, line ranges, short excerpts, evidence refs, verdicts, findings, fix decisions, and re-review status. Do not store secrets or large source dumps.
+- Store paths, line ranges, short excerpts, evidence refs, verdicts, findings, likely root causes, fix decisions, and re-review status. Do not store secrets or large source dumps.
 - If a file changes after review, mark affected blocks `needs-rereview`.
 
 ## Deterministic Helper Automation
@@ -51,7 +51,7 @@ Use this helper only with `documentation-hardening-loop` or an equivalent exhaus
 - Re-review:
 
 ## Findings
-- F01 | severity | block | evidence | impact | minimal fix | status
+- F01 | severity | block | evidence | impact | likely root cause | minimal fix | status
 ```
 
 ## Completion Gate

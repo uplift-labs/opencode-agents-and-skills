@@ -62,8 +62,8 @@
 
 ## Retrospective Before Archive
 
-- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, and token-heavy steps. Evidence: `retrospective.md` reviews artifacts, validations, reviewers, and Autopilot handoff.
-- [x] Write `retrospective.md` with evidence, problems, improvements, and archive gate decision. Evidence: `openspec/changes/add-autopilot-continuous-validation-gates/retrospective.md` added.
+- [x] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes. Evidence: `retrospective.md` reviews artifacts, validations, reviewers, Autopilot handoff, and root causes.
+- [x] Write `retrospective.md` with evidence, problems, root causes, improvements, and archive gate decision. Evidence: `openspec/changes/add-autopilot-continuous-validation-gates/retrospective.md` added.
 - [x] Create or update project-local OpenSpec follow-up changes for project-local findings. Evidence: no `project-local` findings remained; `npm run openspec:retro-followups -- add-autopilot-continuous-validation-gates` returned `changes: []`.
 - [x] For reusable findings, create or update `opencode-dev-kit` OpenSpec proposals/changes only when the current repository owns them; otherwise record a local handoff and do not write cross-repo without explicit approval. Evidence: no `opencode-dev-kit` findings remained; follow-up generator returned `changes: []`.
 - [x] Run `npm run openspec:retro-followups -- <change-id>` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive. Evidence: `npm run openspec:retro-followups -- add-autopilot-continuous-validation-gates` passed with `retrospectiveUpdated: false`.

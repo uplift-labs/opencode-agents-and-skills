@@ -12,7 +12,7 @@ Use this helper with `codebase-audit-loop` when the audit must prove coverage ra
 
 - The final audit result must be derived from ledger rows, not a general impression.
 - Every ordinary scoped file or logical block must have a verdict: `reviewed-no-finding`, `finding`, `blocked`, or `needs-rereview`.
-- Every material finding must have evidence, impact, recommendation, confidence, and status.
+- Every material finding must have evidence, impact, likely root cause or `unknown`, recommendation, confidence, and status.
 - Reviewer summaries are not accepted unless assigned ranges, evidence, and confidence are recorded.
 - If a reviewed file changes, mark affected blocks `needs-rereview`.
 - Missing evidence for critical behavior is a finding, blocker, or accepted risk, not a silent no-finding.
@@ -47,7 +47,7 @@ Use this helper with `codebase-audit-loop` when the audit must prove coverage ra
 - [ ] AB01 | path:1-80 | purpose | risk | status
 
 ## Findings
-- F01 | severity | evidence | impact | recommendation | confidence | status
+- F01 | severity | evidence | impact | likely root cause | recommendation | confidence | status
 
 ## Duplicate And Reduction Matrix
 - D01 | files/symbols | duplication type | action: delete | merge | extract | keep | blocked | validation

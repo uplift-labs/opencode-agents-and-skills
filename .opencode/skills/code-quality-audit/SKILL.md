@@ -14,7 +14,7 @@ Do not use this skill for pure documentation edits, generated/vendor code, tiny 
 
 - Code quality means future changes are easier and safer for both the agent and the human reader.
 - Prefer the smallest design that keeps the code understandable, testable, and locally changeable.
-- Treat smells as signals, not automatic guilt. A finding needs evidence, impact, and a minimal remedy.
+- Treat smells as signals, not automatic guilt. A finding needs evidence, impact, likely root cause, and a minimal remedy.
 - Do not require perfection. Block only when the change worsens code health or creates a likely future defect/change-cost trap.
 - Do not apply Design Patterns by default. Use a pattern only when it removes concrete duplication, branching, coupling, lifecycle complexity, or boundary confusion.
 - For behavior-changing fixes, add or update the smallest useful test-first gate before refactoring or implementation unless infeasible; if infeasible, state the substitute evidence.
@@ -115,7 +115,7 @@ Return:
 
 - `Verdict`: clean | minor findings | material findings | blocked | fixed | not applicable.
 - `Code Health Delta`: improves | neutral | worsens, with evidence.
-- `Findings`: severity, file/line, evidence, impact on agent work and human readability, minimal remedy, pattern/refactoring if useful, confidence.
+- `Findings`: severity, file/line, evidence, impact on agent work and human readability, likely root cause, minimal remedy, pattern/refactoring if useful, confidence.
 - `Navigation Signals`: attention/split-candidate files, responsibility map, and split-or-justify decisions.
 - `Smell Matrix`: smell -> evidence -> remedy -> force/optional/nit.
 - `Validation`: tests, inventory commands, reviewer gates, or skipped checks with reason.

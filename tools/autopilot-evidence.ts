@@ -333,7 +333,7 @@ function retrospectiveEvidence(): RetrospectiveEvidence {
     archiveGatePassed: false,
     checklist: [
       { id: "retro:evidence-reviewed", source: "retrospective-template", status: "planned", summary: "Review OpenSpec artifacts, validation, reviewers, Autopilot/runtime events, blockers, and reports." },
-      { id: "retro:problems", source: "retrospective-template", status: "planned", summary: "Record problems with evidence, impact, recommendation, confidence, and target." },
+      { id: "retro:problems", source: "retrospective-template", status: "planned", summary: "Record problems with evidence, impact, root cause, recommendation, confidence, and target." },
       { id: "retro:archive-decision", source: "retrospective-template", status: "planned", summary: "Record passed, blocked, or approved-skip archive gate decision." },
     ],
     candidateFollowUps: [

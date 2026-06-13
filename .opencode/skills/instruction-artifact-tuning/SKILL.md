@@ -18,6 +18,7 @@ For broad audits that include multiple skills/agents, global config, installed c
 - Cohesion: one primary job, one output contract, and no unrelated duties hidden in one prompt.
 - Authority clarity: global, repository, skill, agent, and user instructions do not conflict.
 - Evidence discipline: docs and user claims are hypotheses until checked against source, tests, schemas, or live output.
+- Root-cause discipline: retro, audit, reviewer, and follow-up artifacts separate symptoms from likely root causes, and recommendations explain how recurrence is prevented or reduced.
 - Verification: the artifact names concrete checks, commands, reviewer gates, or eval criteria where possible.
 - TDD discipline: implementation-capable artifacts require test-first behavior for code changes, or an explicit infeasibility path with substitute validation evidence.
 - Tool safety: edit/read-only boundaries, destructive-operation policy, remote-state policy, and permissions are explicit.
@@ -33,6 +34,7 @@ For broad audits that include multiple skills/agents, global config, installed c
 - For agents, ensure frontmatter has a useful `description`, correct `mode`, and least-privilege `permission`.
 - Reviewer agents should be leaf validators unless explicitly designed otherwise: no edits, commits, pushes, nested agents, destructive commands, or user questions.
 - For behavior-changing instruction artifacts, add or update a minimal loader/schema/eval fixture or validation checklist before editing when feasible; document missing harnesses.
+- For retro/audit/reviewer artifacts, require `Likely Root Cause` or `Root Cause` in findings/backlogs, or explicitly route an investigation when the cause is unknown.
 - For broad audits, cover repo source, installed state, runtime policy, context-cost metrics, permission semantics, reviewer gates, and non-repo changes using the audit runbook.
 - For broad independent artifact inventories, consider `orchestrator` with bounded read-only workers; keep single-artifact or tightly coupled tuning serial.
 - When helper code would materially reduce repeated inspection or token use, require an explicit input/output contract, fixture or schema, stable ordering, privacy-safe output, and no hidden heuristics.
@@ -47,7 +49,7 @@ For review-only work, return:
 
 - `Verdict`: clean | minor tuning | material tuning needed | blocked.
 - `Scope`: files and artifact types reviewed.
-- `Findings`: severity, evidence, impact, recommendation, confidence.
+- `Findings`: severity, evidence, impact, likely root cause, recommendation, confidence.
 - `Tuning Opportunities`: minimal edits or split/move suggestions.
 - `Validation`: checks run or explicitly skipped with reason.
 - `Runtime/Installed Evidence`: installed drift, active config, loader docs/source/live checks, or explicit gaps when in scope.

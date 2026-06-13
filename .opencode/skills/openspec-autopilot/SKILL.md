@@ -207,9 +207,9 @@ Executable checkpoint guidance when this repository exposes `npm run autopilot:c
 
 ## Retrospective Archive Gate
 
-Before archive or archive-ready acceptance, require `retrospective.md`, generated follow-up OpenSpec changes for actionable retrospective findings, and the repository retro gate when available. If a completed change lacks a passed `Archive Gate Decision`, `No findings` evidence, generated follow-up changes for `Target` `project-local` or `opencode-dev-kit`, or an approved skip with reason and approver, treat the missing retrospective/follow-up as an archive gate blocker and ask only blocker questions returned by the plugin/runtime.
+Before archive or archive-ready acceptance, require `retrospective.md`, root-cause evidence for actionable problems, generated follow-up OpenSpec changes for actionable retrospective findings, and the repository retro gate when available. If a completed change lacks a passed `Archive Gate Decision`, `No findings` evidence, generated follow-up changes for `Target` `project-local` or `opencode-dev-kit`, root-cause/investigation routing for actionable rows, or an approved skip with reason and approver, treat the missing retrospective/follow-up as an archive gate blocker and ask only blocker questions returned by the plugin/runtime.
 
-When `npm run openspec:retro-followups -- <change-id>` exists, run it before the gate so actionable `Problems Found` rows create or update OpenSpec follow-up changes. Then use `npm run openspec:retro-gate -- <change-id>` as deterministic evidence. If either command fails or is unavailable, report the archive gate status manually instead of mutating protected Autopilot state.
+When `npm run openspec:retro-followups -- <change-id>` exists, run it before the gate so actionable `Problems Found` rows create or update OpenSpec follow-up changes that carry problem, evidence, impact, root cause, recommendation, confidence, and target. Then use `npm run openspec:retro-gate -- <change-id>` as deterministic evidence. If either command fails or is unavailable, report the archive gate status manually instead of mutating protected Autopilot state.
 
 ## Reviewer And Test Policy
 

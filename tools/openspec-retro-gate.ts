@@ -15,6 +15,7 @@ type ProblemRow = {
   problem: string;
   evidence: string;
   impact: string;
+  rootCause: string;
   recommendation: string;
   confidence: string;
   target: string;
@@ -29,6 +30,7 @@ type CliOptions = {
 const decisionValues = new Set(["passed", "blocked", "approved-skip"]);
 const findingTargets = new Set(["project-local", "opencode-dev-kit", "none"]);
 const emptyValues = new Set(["", "none", "n/a", "na", "unknown", "unavailable", "-"]);
+const unknownRootCauseValues = new Set(["unknown"]);
 
 function normalizeText(text: string): string {
   return text.replace(/\r\n/g, "\n");
@@ -36,6 +38,18 @@ function normalizeText(text: string): string {
 
 function isMeaningful(value: string | undefined): boolean {
   return value != null && !emptyValues.has(value.trim().toLowerCase().replace(/[.。]+$/, ""));
+}
+
+function normalizedCell(value: string | undefined): string {
+  return value?.trim().toLowerCase().replace(/[.。]+$/, "") ?? "";
+}
+
+function isUnknownRootCause(value: string | undefined): boolean {
+  return unknownRootCauseValues.has(normalizedCell(value));
+}
+
+function routesUnknownRootCauseInvestigation(row: ProblemRow): boolean {
+  return /\b(investigat\w*|instrument\w*|diagnos\w*|gather evidence|collect evidence)\b/i.test(row.recommendation);
 }
 
 function safeChangeId(changeId: string): boolean {
@@ -95,11 +109,11 @@ function parseProblemRows(problemSection: string | null): { rows: ProblemRow[]; 
     .filter((line) => !/^\|\s*-+\s*\|/.test(line) && !/^\|\s*Problem\s*\|/i.test(line))
     .flatMap((line): ProblemRow[] => {
       const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-      if (cells.length !== 6) {
+      if (cells.length !== 7) {
         malformedRows++;
         return [];
       }
-      return [{ problem: cells[0], evidence: cells[1], impact: cells[2], recommendation: cells[3], confidence: cells[4], target: cells[5] }];
+      return [{ problem: cells[0], evidence: cells[1], impact: cells[2], rootCause: cells[3], recommendation: cells[4], confidence: cells[5], target: cells[6] }];
     });
   return { rows, malformedRows };
 }
@@ -116,12 +130,36 @@ function outputChangeIds(outputs: string, marker: string): string[] {
   return Array.from(value.matchAll(/`([^`]+)`/g), (match) => match[1].trim()).filter((id) => id.length > 0);
 }
 
-function followUpChangeExists(root: string, changeId: string): boolean {
+function fileIncludesAll(filePath: string, values: string[]): boolean {
+  const text = fileText(filePath);
+  return text != null && values.every((value) => text.includes(value));
+}
+
+function validateFollowUpChange(root: string, changeId: string, finding: ProblemRow): string[] {
   if (!safeChangeId(changeId)) {
-    return false;
+    return [`${changeId} is not a safe follow-up change id.`];
   }
   const changeRoot = path.join(root, "openspec", "changes", changeId);
-  return fs.existsSync(path.join(changeRoot, "proposal.md")) && fs.existsSync(path.join(changeRoot, "tasks.md"));
+  const proposalPath = path.join(changeRoot, "proposal.md");
+  const tasksPath = path.join(changeRoot, "tasks.md");
+  const specPath = path.join(changeRoot, "specs", changeId, "spec.md");
+  const errors: string[] = [];
+  if (!fs.existsSync(proposalPath) || !fs.existsSync(tasksPath) || !fs.existsSync(specPath)) {
+    errors.push(`${changeId} must exist with proposal.md, tasks.md, and a spec delta before archive.`);
+    return errors;
+  }
+  if (!fileIncludesAll(proposalPath, [finding.problem, finding.evidence, finding.impact, finding.rootCause, finding.recommendation])) {
+    errors.push(`${changeId} proposal.md must preserve the retrospective problem, evidence, impact, root cause, and recommendation.`);
+  }
+  const taskRootCauseFragment = isUnknownRootCause(finding.rootCause) ? "Investigate and document the root cause" : finding.rootCause;
+  const specRootCauseFragment = isUnknownRootCause(finding.rootCause) ? "discovered root cause" : finding.rootCause;
+  if (!fileIncludesAll(tasksPath, [taskRootCauseFragment, finding.recommendation])) {
+    errors.push(`${changeId} tasks.md must preserve the retrospective root cause and recommendation.`);
+  }
+  if (!fileIncludesAll(specPath, ["## ADDED Requirements", "#### Scenario:", specRootCauseFragment, finding.recommendation])) {
+    errors.push(`${changeId} spec delta must preserve the retrospective root cause.`);
+  }
+  return errors;
 }
 
 function defaultRoot(): string {
@@ -183,11 +221,14 @@ export function evaluateRetroGate(root: string, changeId: string): RetroGateResu
   const parsedProblems = parseProblemRows(problems);
   const rows = parsedProblems.rows;
   if (parsedProblems.malformedRows > 0) {
-    errors.push("Retrospective problem rows must have exactly six columns: Problem, Evidence, Impact, Recommendation, Confidence, Target.");
+    errors.push("Retrospective problem rows must have exactly seven columns: Problem, Evidence, Impact, Root Cause, Recommendation, Confidence, Target.");
   }
   for (const row of rows) {
-    if (![row.problem, row.evidence, row.impact, row.recommendation, row.confidence].every(isMeaningful)) {
-      errors.push("Retrospective problem rows must include problem, evidence, impact, recommendation, and confidence.");
+    if (![row.problem, row.evidence, row.impact, row.recommendation, row.confidence].every(isMeaningful) || (!isMeaningful(row.rootCause) && !isUnknownRootCause(row.rootCause))) {
+      errors.push("Retrospective problem rows must include problem, evidence, impact, root cause, recommendation, and confidence.");
+    }
+    if (isUnknownRootCause(row.rootCause) && !routesUnknownRootCauseInvestigation(row)) {
+      errors.push(`Retrospective finding '${row.problem}' has unknown root cause and must route investigation or instrumentation before remediation.`);
     }
     if (!findingTargets.has(row.target)) {
       errors.push(`Retrospective finding target must be one of project-local, opencode-dev-kit, none; got ${row.target}.`);
@@ -214,16 +255,15 @@ export function evaluateRetroGate(root: string, changeId: string): RetroGateResu
         errors.push(`${target} retrospective findings must reference one or more generated OpenSpec follow-up change ids in backticks.`);
         continue;
       }
-      for (const id of ids) {
-        if (!followUpChangeExists(root, id)) {
-          errors.push(`${target} retrospective follow-up '${id}' must exist with proposal.md and tasks.md before archive.`);
-        }
-      }
       for (const row of targetRows) {
         const actionableIndex = actionableRows.indexOf(row);
         const expectedId = expectedFollowUpId(changeId, row, actionableIndex);
         if (!ids.includes(expectedId)) {
           errors.push(`${target} retrospective finding '${row.problem}' must reference generated follow-up '${expectedId}' before archive.`);
+          continue;
+        }
+        for (const followUpError of validateFollowUpChange(root, expectedId, row)) {
+          errors.push(`${target} retrospective follow-up '${expectedId}' ${followUpError}`);
         }
       }
     }
