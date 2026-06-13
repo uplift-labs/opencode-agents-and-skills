@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "id": "enable-autopilot-worker-dispatch",
+  "taskType": "planning",
+  "status": "Ready",
+  "priority": "medium",
+  "dependencies": [],
+  "scope": {
+    "read": [
+      "openspec/changes/enable-autopilot-worker-dispatch/**",
+      "openspec/project.md",
+      "package.json"
+    ],
+    "write": [
+      "openspec/changes/enable-autopilot-worker-dispatch/**"
+    ],
+    "forbidden": [
+      "openspec/changes/*/automation/**",
+      ".autopilot/**"
+    ]
+  },
+  "autonomy": {
+    "allowCommit": false,
+    "allowPush": false,
+    "allowCreateMr": false,
+    "allowMerge": false
+  },
+  "validation": {
+    "commands": [
+      {
+        "command": "npm run validate",
+        "reason": "Repository validation script is available."
+      },
+      {
+        "command": "npm test",
+        "reason": "Repository test script is available."
+      },
+      {
+        "command": "npm run openspec:validate",
+        "reason": "OpenSpec validation script is available."
+      },
+      {
+        "command": "npm run autopilot:validate -- openspec/changes/enable-autopilot-worker-dispatch/automation/task.json",
+        "reason": "Materialized Autopilot ledger validation script is available."
+      }
+    ]
+  },
+  "phaseProfile": {
+    "analyze": {
+      "required": true,
+      "depth": "materialized-active-change"
+    },
+    "implementation": {
+      "required": true,
+      "mode": "analyze-first"
+    },
+    "review": {
+      "required": true,
+      "mode": "reviewer-gated"
+    },
+    "acceptance": {
+      "required": true,
+      "mr": "policy"
+    }
+  },
+  "phaseEvidence": {},
+  "testDecision": {
+    "decision": "required",
+    "reason": "Materialized from active OpenSpec change; Analyze must confirm the focused test strategy before implementation."
+  },
+  "plan": {
+    "summary": "Materialized from active OpenSpec change enable-autopilot-worker-dispatch.",
+    "slices": [
+      "Analyze active change",
+      "Implement smallest safe slice",
+      "Validate and review"
+    ],
+    "scope": "Active OpenSpec change enable-autopilot-worker-dispatch.",
+    "testStrategy": "Analyze phase must confirm or refine the focused test strategy before implementation."
+  },
+  "reviewPolicy": {
+    "required": [
+      {
+        "reviewer": "implementation-readiness-reviewer",
+        "status": "pending",
+        "reason": "Materialized planning task requires implementation readiness review before acceptance."
+      }
+    ],
+    "skipped": []
+  },
+  "mr": {
+    "required": true,
+    "status": "none"
+  },
+  "blockers": [],
+  "feedback": [],
+  "history": [],
+  "revision": {
+    "number": 0,
+    "contentHash": "sha256:0b31bfa491db250747142d390517cf79974b6e769a926ff0fc16563df8fa6240",
+    "updatedBy": "autopilot-materializer",
+    "updatedAt": "2026-06-13T01:22:26.938Z"
+  }
+}

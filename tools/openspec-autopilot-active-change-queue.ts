@@ -80,10 +80,16 @@ function activeChangeSummary(root: string, changeId: string, taskPath: string, c
   };
 }
 
-function readActiveChange(root: string, changeId: string, taskPath: string): LedgerSummary[] {
+function readActiveChange(root: string, changeId: string, changePath: string, taskPath: string): LedgerSummary[] {
   try {
+    if (isSymlinkPath(changePath) || !realPathIsInside(root, changePath)) {
+      return [invalidActiveChangeSummary(root, changeId, taskPath, "Active OpenSpec change directory must not be a symlink or escape the repository root.")];
+    }
     if (!fs.existsSync(taskPath)) {
       return [];
+    }
+    if (isSymlinkPath(taskPath) || !realPathIsInside(changePath, taskPath) || !realPathIsInside(root, taskPath)) {
+      return [invalidActiveChangeSummary(root, changeId, taskPath, "Active OpenSpec tasks.md must not be a symlink or escape the change directory.")];
     }
     const stat = fs.statSync(taskPath);
     if (!stat.isFile()) {
@@ -108,8 +114,11 @@ export function readActiveChangeSummaries(root: string, ledgerRoot: string, filt
   }
 
   return fs.readdirSync(changesRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "archive")
+    .filter((entry) => (entry.isDirectory() || entry.isSymbolicLink()) && entry.name !== "archive")
     .filter((entry) => filter.changeId == null || entry.name === filter.changeId)
     .sort((left, right) => left.name.localeCompare(right.name))
-    .flatMap((entry) => readActiveChange(root, entry.name, path.join(changesRoot, entry.name, "tasks.md")));
+    .flatMap((entry) => {
+      const changePath = path.join(changesRoot, entry.name);
+      return readActiveChange(root, entry.name, changePath, path.join(changePath, "tasks.md"));
+    });
 }

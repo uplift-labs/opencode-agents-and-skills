@@ -19,6 +19,18 @@ type PluginToolDefinition = {
   execute: (args: Record<string, unknown>, context?: unknown) => Promise<string | PluginToolResult>;
 };
 
+type PluginHooks = {
+  tool?: Record<string, PluginToolDefinition>;
+  event?: (input: { event: { type: string; properties?: Record<string, unknown> } }) => Promise<void> | void;
+  "tool.execute.before"?: (input: { tool: string; sessionID: string; callID: string }, output: { args: Record<string, unknown> }) => Promise<void> | void;
+  "tool.execute.after"?: (input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> }, output: unknown) => Promise<void> | void;
+};
+
+type TuiCommand = {
+  name: string;
+  run: () => void | Promise<void>;
+};
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pluginPath = path.join(root, ".opencode", "plugins", "openspec-autopilot.ts");
 const requiredBundleFiles = [
@@ -169,10 +181,67 @@ function withTempRepo(name: string, run: (repo: string) => void | Promise<void>)
   });
 }
 
+function writeTasks(repo: string, changeId: string): void {
+  const filePath = path.join(repo, "openspec", "changes", changeId, "tasks.md");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, "# Tasks\n\n- [ ] Next task\n", "utf8");
+}
+
+function acceptanceResearchLedger(id: string): Record<string, unknown> {
+  const ledger = JSON.parse(fs.readFileSync(path.join(root, "fixtures", "autopilot-ledger", "valid-research.json"), "utf8")) as Record<string, unknown>;
+  ledger.id = id;
+  ledger.scope = {
+    read: ["docs/**", "openspec/**"],
+    write: [`openspec/changes/${id}/**`],
+    forbidden: ["src/**", "openspec/changes/*/automation/**", ".autopilot/**"],
+  };
+  ledger.mr = {
+    required: false,
+    status: "not-required",
+    noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR.",
+  };
+  return ledger;
+}
+
+function readyResearchLedger(id: string, priority = "medium"): Record<string, unknown> {
+  const ledger = acceptanceResearchLedger(id);
+  ledger.status = "Ready";
+  ledger.priority = priority;
+  ledger.history = [];
+  ledger.mr = { required: true, status: "none" };
+  return ledger;
+}
+
+function writeLedger(repo: string, changeId: string, ledger: Record<string, unknown>): void {
+  const filePath = path.join(repo, "openspec", "changes", changeId, "automation", "task.json");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+}
+
+async function waitFor(predicate: () => boolean, label: string): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${label}.`);
+}
+
 async function importAutopilotPlugin(): Promise<{ id?: unknown; server?: unknown }> {
   const imported = await import(pathToFileURL(pluginPath).href) as { default?: unknown };
   assert(typeof imported.default === "object" && imported.default != null && !Array.isArray(imported.default), "Autopilot plugin default export must be an object.");
   return imported.default as { id?: unknown; server?: unknown };
+}
+
+function tuiCommandsFrom(layers: Array<{ commands?: unknown }>): TuiCommand[] {
+  return layers.flatMap((layer) => Array.isArray(layer.commands) ? layer.commands : []).map((command) => {
+    assert(typeof command === "object" && command != null && !Array.isArray(command), "TUI command must be an object.");
+    const record = command as Record<string, unknown>;
+    assert(typeof record.name === "string", "TUI command must have a string name.");
+    assert(typeof record.run === "function", `TUI command ${record.name} must have a run function.`);
+    return { name: record.name, run: record.run as () => void | Promise<void> };
+  });
 }
 
 const tests: TestCase[] = [
@@ -221,6 +290,394 @@ const tests: TestCase[] = [
       const payload = JSON.parse(result.output) as Record<string, unknown>;
       assert(payload.reasonCode === "no_ledgers", "source-equivalent status smoke should run without ledgers and return no_ledgers.");
       assert(Array.isArray(payload.nextActions), "source-equivalent status smoke must include current output shape.");
+    }),
+  },
+  {
+    name: "source-equivalent event hook schedules observe file status without run-next",
+    run: () => withTempRepo("event-file-status", async (repo) => {
+      writeTasks(repo, "trigger-change");
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { triggers: { fileWatch: { debounceMs: 1, cooldownMs: 1 } } },
+      ) as PluginHooks;
+      assert(typeof hooks.event === "function", "Autopilot plugin must expose an event hook for programmatic triggers.");
+      await hooks.event({ event: { type: "file.watcher.updated", properties: { file: path.join(repo, "openspec", "changes", "trigger-change", "tasks.md"), event: "change" } } });
+      await waitFor(() => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "status"), "observe file status trigger log");
+      assert(!logs.some((log) => (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"), "Passive file event must not schedule run_next.");
+    }),
+  },
+  {
+    name: "source-equivalent tool after hook schedules cheap checkpoint without no-progress loop",
+    run: () => withTempRepo("tool-after-checkpoint", async (repo) => {
+      writeTasks(repo, "trigger-change");
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { triggers: { postToolCheckpoints: { debounceMs: 1, cooldownMs: 1 } } },
+      ) as PluginHooks;
+      assert(typeof hooks["tool.execute.after"] === "function", "Autopilot plugin must expose a tool.execute.after hook for post-tool checkpoints.");
+      await hooks["tool.execute.after"](
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-advanced", args: {} },
+        { output: JSON.stringify({ reasonCode: "ledger_materialized", tasksAdvanced: [{ taskId: "trigger-change", changeId: "trigger-change" }] }) },
+      );
+      await waitFor(() => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "check"), "post-tool checkpoint log");
+      const completedAfterProgress = logs.filter((log) => log.message === "trigger job completed").length;
+      await hooks["tool.execute.after"](
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-no-progress", args: {} },
+        { output: JSON.stringify({ reasonCode: "ready_runtime_deferred", loopGuard: { repeatedNoProgress: true, suppressRepeatRecommendation: true } }) },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(logs.filter((log) => log.message === "trigger job completed").length === completedAfterProgress, "No-progress output must not schedule another checkpoint loop.");
+      assert(!logs.some((log) => (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"), "Post-tool checkpoint must not repeat run_next.");
+    }),
+  },
+  {
+    name: "source-equivalent before hook blocks direct protected Autopilot writes",
+    run: () => withTempRepo("before-protected-guard", async (repo) => {
+      const plugin = await importAutopilotPlugin();
+      const hooks = await plugin.server({ directory: repo, worktree: repo }, { triggers: { protectedPathGuard: { enabled: true } } }) as PluginHooks;
+      assert(typeof hooks["tool.execute.before"] === "function", "Autopilot plugin must expose a tool.execute.before protected-path guard.");
+      let blocked = false;
+      try {
+        await hooks["tool.execute.before"](
+          { tool: "apply_patch", sessionID: "session-1", callID: "call-guard" },
+          { args: { patchText: "*** Begin Patch\n*** Update File: openspec/changes/change-a/automation/task.json\n@@\n-{}\n+{}\n*** End Patch" } },
+        );
+      } catch (error) {
+        blocked = error instanceof Error && error.message.includes("protected Autopilot state");
+      }
+      assert(blocked, "Protected-path guard must block apply_patch writes to automation/task.json.");
+
+      for (const [tool, args] of [
+        ["bash", { command: "Set-Content task.json '{}'", cwd: "openspec/changes/change-a/automation" }],
+        ["future_write_tool", { target: "openspec/changes/change-a/automation/runtime.json", content: "{}" }],
+        ["serena_execute_shell_command", { command: "Set-Content openspec/changes/change-a/automation/task.json '{}'" }],
+      ] as const) {
+        let protectedWriteBlocked = false;
+        try {
+          await hooks["tool.execute.before"]({ tool, sessionID: "session-1", callID: `call-${tool}` }, { args });
+        } catch (error) {
+          protectedWriteBlocked = error instanceof Error && error.message.includes("protected Autopilot state");
+        }
+        assert(protectedWriteBlocked, `Protected-path guard must block ${tool} protected writes.`);
+      }
+
+      await hooks["tool.execute.before"](
+        { tool: "apply_patch", sessionID: "session-1", callID: "call-safe" },
+        { args: { patchText: "*** Begin Patch\n*** Update File: openspec/changes/change-a/tasks.md\n@@\n-- [ ] Task\n+- [x] Task\n*** End Patch" } },
+      );
+    }),
+  },
+  {
+    name: "source-equivalent worker idle trigger collects owned report once",
+    run: () => withTempRepo("worker-idle-collect", async (repo) => {
+      writeLedger(repo, "worker-change", acceptanceResearchLedger("worker-task"));
+      const runtimeState = {
+        workerSessions: [{ sessionID: "worker-session-1", taskId: "worker-task", reportId: "worker-report-1", status: "idle" }],
+        workerReports: [{
+          reportId: "worker-report-1",
+          taskId: "worker-task",
+          fromStatus: "Acceptance",
+          toStatus: "Done",
+          completedAt: "2026-06-12T00:00:00.000Z",
+          evidence: { noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR." },
+        }],
+      };
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { runtimeState, triggers: { triggerMode: "controlled", workerCollect: { debounceMs: 1 } } },
+      ) as PluginHooks;
+      assert(typeof hooks.event === "function", "Autopilot plugin must expose event hook for worker idle collection.");
+      await hooks.event({ event: { type: "session.status", properties: { sessionID: "worker-session-1", status: { type: "idle" } } } });
+      await waitFor(
+        () => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "collect" && (log.extra as Record<string, unknown> | undefined)?.reasonCode === "advanced"),
+        "owned worker collect trigger log",
+      );
+      const completedAfterFirstIdle = logs.filter((log) => log.message === "trigger job completed").length;
+      assert(JSON.stringify(runtimeState).includes("worker-report-1"), "Runtime state should retain consumed report evidence after collect.");
+
+      await new Promise((resolve) => setTimeout(resolve, 1050));
+      await hooks.event({ event: { type: "session.status", properties: { sessionID: "worker-session-1", status: { type: "idle" } } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(logs.filter((log) => log.message === "trigger job completed").length === completedAfterFirstIdle, "Repeated idle for consumed report must not schedule another collect job.");
+    }),
+  },
+  {
+    name: "source-equivalent runtime-owned jobs revalidate before execution",
+    run: () => withTempRepo("runtime-revalidation", async (repo) => {
+      writeLedger(repo, "worker-change", acceptanceResearchLedger("worker-task"));
+      const workerRuntimeState = {
+        workerSessions: [{ sessionID: "worker-session-1", taskId: "worker-task", reportId: "worker-report-1", status: "idle", reportConsumed: false }],
+        workerReports: [{ reportId: "worker-report-1", taskId: "worker-task", fromStatus: "Acceptance", toStatus: "Done", completedAt: "2026-06-12T00:00:00.000Z", evidence: { noMrPolicy: "Research-only artifact accepted without MR." } }],
+      };
+      const plugin = await importAutopilotPlugin();
+      const workerLogs: Array<Record<string, unknown>> = [];
+      const workerHooks = await plugin.server(
+        { directory: repo, worktree: repo, client: { app: { log: async (entry: { body: Record<string, unknown> }) => workerLogs.push(entry.body) } } },
+        { runtimeState: workerRuntimeState, triggers: { triggerMode: "controlled", workerCollect: { debounceMs: 25 } } },
+      ) as PluginHooks;
+      await workerHooks.event?.({ event: { type: "session.status", properties: { sessionID: "worker-session-1", status: { type: "idle" } } } });
+      workerRuntimeState.workerSessions[0].reportConsumed = true;
+      await waitFor(
+        () => workerLogs.some((log) => log.message === "trigger job suppressed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "collect"),
+        "stale collect suppression log",
+      );
+      assert(!workerLogs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "collect"), "Stale worker collect must not reach the controller.");
+
+      const runRuntimeState = { activeRun: { runId: "run-1", taskIds: ["task-a"], sessionIDs: ["session-1"], locksValid: true, blockers: false, lastRunNextOutput: { reasonCode: "advanced" } } };
+      const runLogs: Array<Record<string, unknown>> = [];
+      const runHooks = await plugin.server(
+        { directory: repo, worktree: repo, client: { app: { log: async (entry: { body: Record<string, unknown> }) => runLogs.push(entry.body) } } },
+        { runtimeState: runRuntimeState, triggers: { triggerMode: "autonomous", runNextEvents: { enabled: true, cooldownMs: 1 } } },
+      ) as PluginHooks;
+      await runHooks.event?.({ event: { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } } });
+      runRuntimeState.activeRun.blockers = true;
+      await waitFor(
+        () => runLogs.some((log) => log.message === "trigger job suppressed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"),
+        "stale run_next suppression log",
+      );
+      assert(!runLogs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"), "Stale autonomous run_next must not reach the controller.");
+    }),
+  },
+  {
+    name: "source-equivalent worker report marker before idle is collected after idle",
+    run: () => withTempRepo("worker-marker-before-idle", async (repo) => {
+      writeLedger(repo, "marker-change", acceptanceResearchLedger("marker-task"));
+      const runtimeState = {
+        workerSessions: [{ sessionID: "worker-session-2", taskId: "marker-task", status: "busy" }],
+        workerReports: [{
+          reportId: "marker-report-1",
+          taskId: "marker-task",
+          fromStatus: "Acceptance",
+          toStatus: "Done",
+          completedAt: "2026-06-12T00:01:00.000Z",
+          evidence: { noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR." },
+        }],
+      };
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { runtimeState, triggers: { triggerMode: "controlled", workerCollect: { debounceMs: 1 } } },
+      ) as PluginHooks;
+      assert(typeof hooks.event === "function", "Autopilot plugin must expose event hook for marker-before-idle collection.");
+      await hooks.event({ event: { type: "message.part.updated", properties: { sessionID: "worker-session-2", reportId: "marker-report-1", complete: true, part: { type: "text", text: "AUTOPILOT_WORKER_REPORT marker-report-1 COMPLETE" } } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(!logs.some((log) => log.message === "trigger job completed"), "Busy report marker must not collect before idle.");
+
+      await hooks.event({ event: { type: "session.status", properties: { sessionID: "worker-session-2", status: { type: "idle" } } } });
+      await waitFor(
+        () => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "collect" && (log.extra as Record<string, unknown> | undefined)?.reasonCode === "advanced"),
+        "marker-before-idle collect trigger log",
+      );
+    }),
+  },
+  {
+    name: "source-equivalent blocker and permission reply triggers require owned evidence",
+    run: () => withTempRepo("blocker-permission-events", async (repo) => {
+      const runtimeState = {
+        blockerQuestions: [{
+          requestID: "question-request-1",
+          questionId: "question-1",
+          taskId: "task-a",
+          options: [{ label: "Proceed", action: "continue" }],
+        }],
+        pendingPermissions: [{ requestID: "permission-request-1", taskId: "task-a" }],
+      };
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { runtimeState, triggers: { triggerMode: "controlled", blockerReplies: { enabled: true }, permissionReplies: { enabled: true } } },
+      ) as PluginHooks;
+      assert(typeof hooks.event === "function", "Autopilot plugin must expose event hook for blocker and permission replies.");
+
+      await hooks.event({ event: { type: "question.replied", properties: { requestID: "question-request-1", answers: [["Proceed"]] } } });
+      await waitFor(
+        () => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "answer_blocker"),
+        "owned blocker answer trigger log",
+      );
+      const blockerLog = logs.find((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "answer_blocker");
+      assert((blockerLog?.extra as Record<string, unknown> | undefined)?.outcome === "idle", `Owned blocker answer should be accepted without failed validation, got ${JSON.stringify(blockerLog)}.`);
+      await waitFor(
+        () => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "status"),
+        "owned blocker answer status follow-up log",
+      );
+      const completedAfterBlocker = logs.filter((log) => log.message === "trigger job completed").length;
+
+      await hooks.event({ event: { type: "permission.replied", properties: { requestID: "permission-request-1", reply: "reject" } } });
+      await waitFor(
+        () => logs.filter((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "status").length >= 2,
+        "owned permission reply status trigger log",
+      );
+      const completedAfterOwned = logs.filter((log) => log.message === "trigger job completed").length;
+      assert(completedAfterOwned > completedAfterBlocker, "Permission reply should add its own status checkpoint after blocker status follow-up.");
+
+      await hooks.event({ event: { type: "question.replied", properties: { requestID: "unknown-question", answers: [["Proceed"]] } } });
+      await hooks.event({ event: { type: "permission.replied", properties: { requestID: "unknown-permission", reply: "once" } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(logs.filter((log) => log.message === "trigger job completed").length === completedAfterOwned, "Unknown blocker/permission replies must not schedule Autopilot jobs.");
+    }),
+  },
+  {
+    name: "source-equivalent workspace and worktree triggers require owned waits",
+    run: () => withTempRepo("workspace-worktree-events", async (repo) => {
+      const runtimeState = {
+        waitingWorkspaces: ["workspace-a"],
+        waitingWorktrees: [{ name: "worktree-a", taskId: "task-a" }],
+        activeRun: { runId: "run-1", taskIds: ["task-a", "task-b"], locksValid: true },
+      };
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { runtimeState, triggers: { triggerMode: "controlled" } },
+      ) as PluginHooks;
+      assert(typeof hooks.event === "function", "Autopilot plugin must expose event hook for workspace/worktree events.");
+
+      await hooks.event({ event: { type: "workspace.ready", properties: { name: "workspace-a" } } });
+      await waitFor(
+        () => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "status"),
+        "owned workspace ready status trigger log",
+      );
+      await hooks.event({ event: { type: "worktree.failed", properties: { name: "worktree-a", message: "failed" } } });
+      await waitFor(
+        () => logs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "stop"),
+        "owned worktree failed stop trigger log",
+      );
+      const taskStopLog = logs.find((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "stop");
+      assert(JSON.stringify((taskStopLog?.extra as Record<string, unknown> | undefined)?.tasksAdvanced).includes("task-a"), `Worktree failed stop must target task-a, got ${JSON.stringify(taskStopLog)}.`);
+      assert(JSON.stringify(runtimeState.activeRun?.taskIds) === JSON.stringify(["task-b"]), `Task-scoped stop must leave only task-b active, got ${JSON.stringify(runtimeState.activeRun)}.`);
+      runtimeState.waitingWorkspaces = [{ name: "workspace-run", runId: "run-1" }];
+      await hooks.event({ event: { type: "workspace.failed", properties: { name: "workspace-run", message: "failed" } } });
+      await waitFor(
+        () => logs.filter((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "stop").length >= 2,
+        "owned workspace failed run stop trigger log",
+      );
+      const runStopLog = logs.filter((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "stop").at(-1);
+      assert(JSON.stringify((runStopLog?.extra as Record<string, unknown> | undefined)?.tasksAdvanced).includes("run-1"), `Workspace failed stop must target run-1, got ${JSON.stringify(runStopLog)}.`);
+      assert(runtimeState.activeRun == null, `Run-scoped stop must remove active run, got ${JSON.stringify(runtimeState.activeRun)}.`);
+      const completedAfterOwned = logs.filter((log) => log.message === "trigger job completed").length;
+
+      await hooks.event({ event: { type: "workspace.ready", properties: { name: "unknown-workspace" } } });
+      await hooks.event({ event: { type: "worktree.ready", properties: { name: "unknown-worktree" } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(logs.filter((log) => log.message === "trigger job completed").length === completedAfterOwned, "Unknown workspace/worktree events must not schedule Autopilot jobs.");
+    }),
+  },
+  {
+    name: "source-equivalent autonomous run-next trigger requires explicit owned prerequisites",
+    run: () => withTempRepo("autonomous-run-next-events", async (repo) => {
+      writeLedger(repo, "task-a", readyResearchLedger("task-a", "medium"));
+      writeLedger(repo, "task-b", readyResearchLedger("task-b", "high"));
+      const plugin = await importAutopilotPlugin();
+      const disabledLogs: Array<Record<string, unknown>> = [];
+      const disabledHooks = await plugin.server(
+        { directory: repo, worktree: repo, client: { app: { log: async (entry: { body: Record<string, unknown> }) => disabledLogs.push(entry.body) } } },
+        { runtimeState: { activeRun: { runId: "run-1", taskIds: ["task-a"], sessionIDs: ["session-1"], locksValid: true } }, triggers: { triggerMode: "autonomous", runNextEvents: { enabled: false } } },
+      ) as PluginHooks;
+      await disabledHooks.event?.({ event: { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(!disabledLogs.some((log) => (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"), "Disabled runNextEvents must not schedule run_next.");
+
+      const blockedLogs: Array<Record<string, unknown>> = [];
+      const blockedHooks = await plugin.server(
+        { directory: repo, worktree: repo, client: { app: { log: async (entry: { body: Record<string, unknown> }) => blockedLogs.push(entry.body) } } },
+        { runtimeState: { activeRun: { runId: "run-1", taskIds: ["task-a"], sessionIDs: ["session-1"], locksValid: true, blockers: true } }, triggers: { triggerMode: "autonomous", runNextEvents: { enabled: true, cooldownMs: 1 } } },
+      ) as PluginHooks;
+      await blockedHooks.event?.({ event: { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(!blockedLogs.some((log) => (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"), "Active blockers must suppress autonomous run_next.");
+
+      const allowedLogs: Array<Record<string, unknown>> = [];
+      const lastRunNextOutput = { reasonCode: "advanced", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } };
+      const allowedRuntimeState = { activeRun: { runId: "run-1", taskIds: ["task-a"], sessionIDs: ["session-1"], locksValid: true, lastRunNextOutput } };
+      const allowedHooks = await plugin.server(
+        { directory: repo, worktree: repo, client: { app: { log: async (entry: { body: Record<string, unknown> }) => allowedLogs.push(entry.body) } } },
+        { runtimeState: allowedRuntimeState, triggers: { triggerMode: "autonomous", runNextEvents: { enabled: true, cooldownMs: 1 } } },
+      ) as PluginHooks;
+      await allowedHooks.event?.({ event: { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } } });
+      await waitFor(
+        () => allowedLogs.some((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next"),
+        "eligible autonomous run_next trigger log",
+      );
+      const runLog = allowedLogs.find((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next");
+      assert(JSON.stringify((runLog?.extra as Record<string, unknown> | undefined)?.taskSummaryIds).includes("task-a"), `Autonomous run_next must inspect scoped task-a, got ${JSON.stringify(runLog)}.`);
+      assert(!JSON.stringify((runLog?.extra as Record<string, unknown> | undefined)?.taskSummaryIds).includes("task-b"), `Autonomous run_next must not inspect higher-priority unscoped task-b, got ${JSON.stringify(runLog)}.`);
+      assert(allowedRuntimeState.activeRun.lastRunNextOutput.reasonCode === "ready_runtime_deferred", `Autonomous run_next must refresh latest output evidence, got ${JSON.stringify(allowedRuntimeState.activeRun.lastRunNextOutput)}.`);
+      const completedAfterFirstRun = allowedLogs.filter((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next").length;
+      await allowedHooks.event?.({ event: { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } } });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert(allowedLogs.filter((log) => log.message === "trigger job completed" && (log.extra as Record<string, unknown> | undefined)?.jobKind === "run_next").length === completedAfterFirstRun, "Refreshed no-progress run_next output must suppress repeated autonomous idle events.");
+    }),
+  },
+  {
+    name: "source-equivalent TUI commands register zero-LLM status and check actions",
+    run: () => withTempRepo("tui-commands", async (repo) => {
+      writeTasks(repo, "tui-change");
+      const plugin = await importAutopilotPlugin() as { tui?: (api: unknown) => Promise<void> | void };
+      assert(typeof plugin.tui === "function", "Autopilot plugin must expose a TUI entrypoint for zero-LLM commands.");
+      const layers: Array<{ commands?: unknown }> = [];
+      const toasts: Array<{ message: string; variant?: string }> = [];
+      const dialogs: unknown[] = [];
+      const api = {
+        state: { path: { directory: repo, worktree: repo } },
+        keymap: { registerLayer: (layer: { commands?: unknown }) => layers.push(layer) },
+        ui: {
+          toast: (toast: { message: string; variant?: string }) => toasts.push(toast),
+          dialog: { replace: (factory: () => unknown) => dialogs.push(factory()), clear: () => undefined },
+          DialogPrompt: (input: unknown) => input,
+        },
+      };
+      await plugin.tui(api);
+      assert(layers.length === 0, "TUI commands should be disabled unless tuiCommands.enabled is true.");
+      await plugin.tui(api, { triggers: { tuiCommands: { enabled: true } } });
+      const commands = tuiCommandsFrom(layers);
+      const names = commands.map((command) => command.name).sort();
+      assert(JSON.stringify(names) === JSON.stringify(["autopilot.check", "autopilot.run", "autopilot.status", "autopilot.stop"]), `Unexpected TUI command names: ${JSON.stringify(names)}.`);
+
+      await commands.find((command) => command.name === "autopilot.status")?.run();
+      await commands.find((command) => command.name === "autopilot.check")?.run();
+      assert(toasts.some((toast) => toast.message.includes("Autopilot status")), `TUI status must report through toast, got ${JSON.stringify(toasts)}.`);
+      assert(toasts.some((toast) => toast.message.includes("Autopilot cheap check")), `TUI check must report through toast, got ${JSON.stringify(toasts)}.`);
+
+      await commands.find((command) => command.name === "autopilot.run")?.run();
+      assert(dialogs.length === 1, "TUI run command should gather optional scope through a dialog when available.");
+      const prompt = dialogs[0] as { onConfirm?: (value: string) => void | Promise<void> };
+      assert(typeof prompt.onConfirm === "function", "TUI run dialog must expose an onConfirm fallback path.");
+      await prompt.onConfirm("tui-change");
+      assert(toasts.some((toast) => toast.message.includes("/autopilot tui-change")), `TUI run confirm must include scoped prompt-mediated fallback, got ${JSON.stringify(toasts)}.`);
+      await commands.find((command) => command.name === "autopilot.stop")?.run();
+      assert(toasts.some((toast) => toast.message.includes("prompt-mediated fallback")), `TUI run/stop fallback must be explicit, got ${JSON.stringify(toasts)}.`);
     }),
   },
 ];

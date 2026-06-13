@@ -202,6 +202,64 @@ function assertAutopilotCheckDocs(text: string, label: string): void {
   assert(/prepush[\s\S]{0,180}ready-to-land|ready-to-land[\s\S]{0,180}prepush/i.test(text), `${label} must route routine ready-to-land evidence to prepush rather than final.`);
 }
 
+function assertProgrammaticTriggerDocs(text: string, label: string): void {
+  for (const phrase of [
+    "triggerMode",
+    "off",
+    "observe",
+    "controlled",
+    "autonomous",
+    "file.watcher.updated",
+    "tool.execute.after",
+    "tool.execute.before",
+    "autopilot_collect",
+    "autopilot_answer_blocker",
+    "protected-path guard",
+    "autopilot.status",
+    "autopilot.check",
+    "autopilot.run",
+    "autopilot.stop",
+    "zero-LLM",
+    "prompt-mediated",
+  ]) {
+    assert(text.toLowerCase().includes(phrase.toLowerCase()), `${label} must document programmatic trigger phrase: ${phrase}.`);
+  }
+  assert(/passive[\s\S]{0,160}(status|cheap check)[\s\S]{0,160}(never|not)[\s\S]{0,160}autopilot_run_next|autopilot_run_next[\s\S]{0,160}(never|not)[\s\S]{0,160}passive/i.test(text), `${label} must state passive events do not call autopilot_run_next by default.`);
+  assert(/controlled[\s\S]{0,220}plugin-owned[\s\S]{0,220}(worker|blocker|permission|workspace|worktree)/i.test(text), `${label} must tie controlled runtime triggers to plugin-owned evidence.`);
+  assert(/permission(?:\.replied| replies)[\s\S]{0,120}status-only|status-only[\s\S]{0,120}permission(?:\.replied| replies)/i.test(text), `${label} must document MVP permission replies as status-only.`);
+  assert(/restart OpenCode/i.test(text), `${label} must include restart guidance for plugin/TUI trigger changes.`);
+}
+
+function assertPromptIntakeDocs(text: string, label: string): void {
+  const normalized = text.toLowerCase();
+  for (const phrase of [
+    "/autopilot <free-form prompt>",
+    "free-form prompt",
+    "exact",
+    "ambiguous",
+    "changeId",
+    "taskId",
+    "openspec-explore",
+    "openspec-propose",
+    "direct edit",
+    "raw",
+    "derived",
+    "prompt family",
+    "queue summary",
+    "resolved scope",
+  ]) {
+    assert(normalized.includes(phrase.toLowerCase()), `${label} must document prompt-intake phrase: ${phrase}.`);
+  }
+  for (const family of autopilotTaskTypes) {
+    assert(normalized.includes(family.toLowerCase()), `${label} must document canonical prompt family label: ${family}.`);
+  }
+  assert(/ambiguous[\s\S]{0,220}(block|options|do not call|without advancement)|multiple exact scopes[\s\S]{0,220}(block|options|do not call|without advancement)/i.test(text), `${label} must document ambiguous exact-scope blocking/options before advancement.`);
+  assert(/free-form prompt[\s\S]{0,260}(not|never)[\s\S]{0,160}(changeId|taskId)|(changeId|taskId)[\s\S]{0,260}(not|never)[\s\S]{0,160}free-form prompt/i.test(text), `${label} must prohibit treating free-form prompts as changeId/taskId scope.`);
+  assert(/free-form prompt[\s\S]{0,260}(not|never|do not)[\s\S]{0,180}(unrelated|queued|queue)[\s\S]{0,160}autopilot_run_next|unrelated[\s\S]{0,180}(not|never|do not)[\s\S]{0,180}autopilot_run_next/i.test(text), `${label} must state free-form prompts do not advance unrelated queued Autopilot work.`);
+  assert(/read-only[\s\S]{0,180}(autopilot_status|status)|autopilot_status[\s\S]{0,180}read-only/i.test(text), `${label} must route free-form prompt queue inspection through read-only status evidence.`);
+  assert(/raw[\s\S]{0,160}(prompt|free-form)[\s\S]{0,180}(not|never|do not)[\s\S]{0,120}(persist|echo)|do not[\s\S]{0,120}(persist|echo)[\s\S]{0,180}raw[\s\S]{0,120}(prompt|free-form)/i.test(text), `${label} must prohibit raw free-form prompt persistence or echo by default.`);
+}
+
 function extractLineContaining(text: string, needle: string, label: string): string {
   const line = text.split(/\r?\n/).find((candidate) => candidate.includes(needle));
   assert(line != null, `${label} must contain ${needle}.`);
@@ -228,6 +286,7 @@ const tests: TestCase[] = [
       assert(firstAction.includes("changeId") && firstAction.includes("taskId"), "openspec-autopilot First Action must document scoped changeId/taskId arguments.");
       assert(firstAction.includes("call with no args only when no scope is supplied"), "openspec-autopilot First Action must call with no args only when no scope is supplied.");
       assert(firstAction.includes("should intersect"), "openspec-autopilot First Action must say combined changeId/taskId scopes are intentional intersections only.");
+      assertPromptIntakeDocs(firstAction, "openspec-autopilot First Action prompt intake");
       assert(/safe parallel OpenSpec work/i.test(skill), "openspec-autopilot skill must keep the safe-parallel OpenSpec trigger discoverable.");
       assert(/safe parallel OpenSpec work with plugin\/runtime selection evidence/i.test(skill), "openspec-autopilot skill must qualify safe-parallel trigger with plugin/runtime selection evidence.");
       assert(skill.includes('reasonCode: "ready_runtime_deferred"'), "openspec-autopilot skill must qualify ready_runtime_deferred as reasonCode wording.");
@@ -304,6 +363,15 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "Autopilot programmatic trigger docs stay synchronized",
+    run: () => {
+      const skill = readText(".opencode/skills/openspec-autopilot/SKILL.md");
+      const readme = readText("README.md");
+      assertProgrammaticTriggerDocs(skill, "openspec-autopilot skill");
+      assertProgrammaticTriggerDocs(readme, "README");
+    },
+  },
+  {
     name: "README Autopilot routing section documents current output fields",
     run: () => {
       const readme = readText("README.md");
@@ -324,6 +392,7 @@ const tests: TestCase[] = [
       assertActiveChangeHandoff(routing, "README Routing Map");
       assertAutopilotMaterialization(routing, "README Routing Map");
       assertActiveChangeTriggerBoundary(routing, "README Routing Map");
+      assertPromptIntakeDocs(routing, "README Routing Map prompt intake");
     },
   },
   {
@@ -335,6 +404,7 @@ const tests: TestCase[] = [
       const line = extractLineContaining(openSpecCatalog, "`openspec-autopilot`", "README OpenSpec Skill Catalog");
       assertActiveChangeHandoff(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
       assertAutopilotMaterialization(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
+      assertPromptIntakeDocs(openSpecCatalog, "README OpenSpec Skill Catalog prompt intake");
       assert(line.includes("openspec-apply-change"), "README OpenSpec Skill Catalog entry must mention openspec-apply-change continuation for active_change_handoff.");
     },
   },
@@ -364,13 +434,14 @@ const tests: TestCase[] = [
       assertNoAuthoritativeStaleFields(template, "opencode.json command.autopilot template");
       assertExplainsDeterministicSelection(template, "opencode.json command.autopilot template");
       assert(template.includes("openspec-autopilot"), "command.autopilot template must route through openspec-autopilot skill.");
-      assert(template.includes("autopilot_run_next"), "command.autopilot template must call autopilot_run_next first by default.");
+      assert(template.includes("autopilot_run_next"), "command.autopilot template must document autopilot_run_next for empty or exact-scope arguments.");
       assert(template.includes("$ARGUMENTS"), "command.autopilot template must expose user-supplied scope through $ARGUMENTS.");
       assertAutopilotEligibilityBoundaries(template, "opencode.json command.autopilot template");
       assertAutopilotEscapeHatch(template, "opencode.json command.autopilot template");
       assertActiveChangeHandoff(template, "opencode.json command.autopilot template");
       assertAutopilotMaterialization(template, "opencode.json command.autopilot template");
       assertActiveChangeTriggerBoundary(template, "opencode.json command.autopilot template");
+      assertPromptIntakeDocs(template, "opencode.json command.autopilot template prompt intake");
       assert(!template.includes("handoffTarget"), "command.autopilot template must not document a public handoffTarget before the output contract exposes it.");
     },
   },

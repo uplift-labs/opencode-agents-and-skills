@@ -59,9 +59,7 @@ export const autopilotAutoConflictTolerances = ["none", "small"] as const;
 export const autopilotToolNames = ["autopilot_run_next", "autopilot_status", "autopilot_collect", "autopilot_answer_blocker", "autopilot_stop"] as const;
 
 export const autopilotProtectedPathPatterns = [
-  "openspec/changes/*/automation/task.json",
-  "openspec/changes/*/automation/feedback/**",
-  "openspec/changes/*/automation/artifacts/**",
+  "openspec/changes/*/automation/**",
   ".autopilot/**",
 ] as const;
 

@@ -1,7 +1,53 @@
 import { tool } from "@opencode-ai/plugin";
 import type { Plugin } from "@opencode-ai/plugin";
+import type { TuiPlugin } from "@opencode-ai/plugin/tui";
+import { runAutopilotCheck } from "../../tools/autopilot-check.ts";
+import {
+  classifyAutopilotEvent,
+  classifyAutopilotToolExecutionAfter,
+  parseAutopilotTriggerOptions,
+  type AutopilotBusEvent,
+  type AutopilotToolExecutionInput,
+  type AutopilotTriggerDecision,
+  type AutopilotTriggerJob,
+  type AutopilotTriggerRuntimeEvidence,
+} from "../../tools/autopilot-programmatic-triggers.ts";
+import { guardAutopilotProtectedPathToolCall } from "../../tools/autopilot-protected-path-guard.ts";
+import {
+  createAutopilotTriggerScheduler,
+  type AutopilotTriggerEnqueueResult,
+  type AutopilotTriggerExecution,
+} from "../../tools/autopilot-trigger-scheduler.ts";
+import { completeAutopilotWorkerReportMarker } from "../../tools/autopilot-worker-report-marker.ts";
 import type { AutopilotOptions } from "../../tools/openspec-autopilot-output.ts";
 import { createAutopilotController, toPluginToolOutput } from "../../tools/openspec-autopilot-controller.ts";
+
+type AutopilotPluginOptions = AutopilotOptions & {
+  triggers?: unknown;
+};
+
+type LogContext = {
+  client?: {
+    app?: {
+      log?: (entry: { body: Record<string, unknown> }) => Promise<void> | void;
+    };
+  };
+};
+
+type TuiApi = {
+  state?: { path?: { directory?: string; worktree?: string } };
+  keymap: {
+    registerLayer: (layer: { commands: Array<Record<string, unknown>>; bindings?: Array<Record<string, unknown>> }) => void;
+  };
+  ui: {
+    toast: (input: { variant?: string; message: string; duration?: number }) => void;
+    dialog?: {
+      replace?: (factory: () => unknown) => void;
+      clear?: () => void;
+    };
+    DialogPrompt?: (input: { title: string; placeholder?: string; onConfirm: (value: string) => void | Promise<void>; onCancel?: () => void }) => unknown;
+  };
+};
 
 function optionalNonEmptyString(value?: string): string | undefined {
   if (typeof value !== "string") {
@@ -15,12 +61,447 @@ function repoRoot(ctx: { worktree?: string; directory?: string }): string {
   return optionalNonEmptyString(ctx.worktree) ?? optionalNonEmptyString(ctx.directory) ?? process.cwd();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value != null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function recordsFrom(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+  return strings.length > 0 ? strings : undefined;
+}
+
+function waitArray(value: unknown): Array<string | { name: string; taskId?: string; runId?: string }> | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const waits = value.flatMap((item): Array<string | { name: string; taskId?: string; runId?: string }> => {
+    if (typeof item === "string" && item.trim().length > 0) {
+      return [item.trim()];
+    }
+    if (!isRecord(item)) {
+      return [];
+    }
+    const name = optionalString(item.name ?? item.workspaceID ?? item.worktreeID);
+    return name == null ? [] : [{ name, taskId: optionalString(item.taskId), runId: optionalString(item.runId) }];
+  });
+  return waits.length > 0 ? waits : undefined;
+}
+
+function runtimeEvidence(runtimeState: unknown, pendingWorkerReportIds: Map<string, string> = new Map()): AutopilotTriggerRuntimeEvidence {
+  if (!isRecord(runtimeState)) {
+    return {};
+  }
+  const activeRun = isRecord(runtimeState.activeRun) ? runtimeState.activeRun : undefined;
+  const consumedWorkerReportIds = new Set(stringArray(runtimeState.consumedWorkerReportIds) ?? []);
+  return {
+    workerSessions: recordsFrom(runtimeState.workerSessions).flatMap((worker) => {
+      const sessionID = optionalString(worker.sessionID);
+      const taskId = optionalString(worker.taskId);
+      const reportId = optionalString(worker.reportId) ?? pendingWorkerReportIds.get(sessionID);
+      if (sessionID == null || taskId == null) {
+        return [];
+      }
+      const status = worker.status === "busy" || worker.status === "idle" || worker.status === "retry" ? worker.status : undefined;
+      return [{
+        sessionID,
+        taskId,
+        reportId,
+        status,
+        reportConsumed: worker.reportConsumed === true || reportId != null && consumedWorkerReportIds.has(reportId),
+      }];
+    }),
+    blockerQuestions: recordsFrom(runtimeState.blockerQuestions).flatMap((question) => {
+      const requestID = optionalString(question.requestID ?? question.requestId);
+      const questionId = optionalString(question.questionId);
+      const options = recordsFrom(question.options).flatMap((option) => {
+        const label = optionalString(option.label);
+        return label == null ? [] : [{ label, action: optionalString(option.action) }];
+      });
+      return requestID != null && questionId != null ? [{ requestID, questionId, taskId: optionalString(question.taskId), ...(options.length > 0 ? { options } : {}) }] : [];
+    }),
+    pendingPermissions: recordsFrom(runtimeState.pendingPermissions).flatMap((permission) => {
+      const requestID = optionalString(permission.requestID ?? permission.requestId);
+      return requestID != null ? [{ requestID, taskId: optionalString(permission.taskId) }] : [];
+    }),
+    waitingWorkspaces: waitArray(runtimeState.waitingWorkspaces),
+    waitingWorktrees: waitArray(runtimeState.waitingWorktrees),
+    activeRun: activeRun == null ? undefined : {
+      runId: optionalString(activeRun.runId) ?? "active-run",
+      taskIds: stringArray(activeRun.taskIds),
+      sessionIDs: stringArray(activeRun.sessionIDs),
+      blockers: activeRun.blockers === true,
+      mrWait: activeRun.mrWait === true,
+      locksValid: activeRun.locksValid === true,
+      lastRunNextOutput: isRecord(activeRun.lastRunNextOutput) ? activeRun.lastRunNextOutput : undefined,
+    },
+  };
+}
+
+function triggerOptions(options: AutopilotPluginOptions): ReturnType<typeof parseAutopilotTriggerOptions> {
+  return parseAutopilotTriggerOptions(isRecord(options.triggers) ? options.triggers : undefined);
+}
+
+async function log(ctx: LogContext, level: "debug" | "info" | "warn" | "error", message: string, extra: Record<string, unknown>): Promise<void> {
+  await ctx.client?.app?.log?.({
+    body: {
+      service: "openspec-autopilot",
+      level,
+      message,
+      extra,
+    },
+  });
+}
+
+function loggableJob(job: AutopilotTriggerJob, key: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    key,
+    jobKind: job.kind,
+    sourceEvent: job.sourceEvent,
+    sourceID: job.sourceID,
+    scope: job.scope,
+    claimCapable: job.claimCapable,
+    requiresRuntimeOwnership: job.requiresRuntimeOwnership,
+    ...extra,
+  };
+}
+
+function outputTaskIds(items: unknown[]): string[] {
+  return items.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const id = optionalString(item.taskId ?? item.runId);
+    return id == null ? [] : [id];
+  });
+}
+
+function rememberRunNextOutput(runtimeState: unknown, payload: unknown): void {
+  if (isRecord(runtimeState) && isRecord(runtimeState.activeRun) && isRecord(payload)) {
+    runtimeState.activeRun.lastRunNextOutput = payload;
+  }
+}
+
+function scopeContains(expected: AutopilotTriggerJob["scope"], actual: AutopilotTriggerJob["scope"]): boolean {
+  for (const [key, value] of Object.entries(expected ?? {})) {
+    if (typeof value === "string" && value.length > 0 && actual?.[key as keyof typeof actual] !== value) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function collectJobStillValid(job: AutopilotTriggerJob, evidence: AutopilotTriggerRuntimeEvidence): boolean {
+  const sessionID = job.scope?.sessionID ?? job.sourceID;
+  const worker = evidence.workerSessions?.find((candidate) => candidate.sessionID === sessionID);
+  return worker != null
+    && worker.taskId === job.scope?.taskId
+    && worker.reportConsumed !== true
+    && (worker.status === "idle" || job.sourceEvent === "session.status")
+    && (job.scope?.reportId == null || worker.reportId === job.scope.reportId);
+}
+
+function revalidationEvent(job: AutopilotTriggerJob): AutopilotBusEvent | null {
+  switch (job.sourceEvent) {
+    case "session.status":
+      return { type: "session.status", properties: { sessionID: job.scope?.sessionID ?? job.sourceID, status: { type: "idle" } } };
+    case "question.replied":
+      return { type: "question.replied", properties: { requestID: job.scope?.requestID ?? job.sourceID, selectedLabel: job.blockerAnswer?.selectedLabel, action: job.blockerAnswer?.action } };
+    case "question.rejected":
+      return { type: "question.rejected", properties: { requestID: job.scope?.requestID ?? job.sourceID } };
+    case "permission.replied":
+      return { type: "permission.replied", properties: { requestID: job.scope?.requestID ?? job.sourceID, reply: "revalidate" } };
+    case "workspace.ready":
+    case "workspace.failed":
+      return { type: job.sourceEvent, properties: { name: job.scope?.workspaceName ?? job.sourceID } };
+    case "worktree.ready":
+    case "worktree.failed":
+      return { type: job.sourceEvent, properties: { name: job.scope?.worktreeName ?? job.sourceID } };
+    default:
+      return null;
+  }
+}
+
+function decisionContainsEquivalentJob(job: AutopilotTriggerJob, decision: AutopilotTriggerDecision): boolean {
+  if (job.kind === "answer_blocker" && job.blockerAnswer?.questionId == null) {
+    return false;
+  }
+  return decision.action === "scheduled" && decision.jobs.some((candidate) => candidate.kind === job.kind
+    && scopeContains(job.scope, candidate.scope)
+    && (job.blockerAnswer?.questionId == null || candidate.blockerAnswer?.questionId === job.blockerAnswer.questionId));
+}
+
+function runtimeJobStillValid(job: AutopilotTriggerJob, options: ReturnType<typeof parseAutopilotTriggerOptions>, evidence: AutopilotTriggerRuntimeEvidence): boolean {
+  if (!job.requiresRuntimeOwnership && !job.claimCapable) {
+    return true;
+  }
+  if (job.kind === "collect") {
+    return collectJobStillValid(job, evidence);
+  }
+  const event = revalidationEvent(job);
+  return event != null && decisionContainsEquivalentJob(job, classifyAutopilotEvent(event, options, evidence));
+}
+
+function tuiRoot(api: TuiApi): string {
+  return optionalNonEmptyString(api.state?.path?.worktree) ?? optionalNonEmptyString(api.state?.path?.directory) ?? process.cwd();
+}
+
+function toastAutopilotOutput(api: TuiApi, label: string, output: { outcome: string; reasonCode: string; taskSummaries?: unknown[]; exitCode?: number; status?: string }): void {
+  const status = output.status ?? output.outcome;
+  const count = Array.isArray(output.taskSummaries) ? ` tasks=${output.taskSummaries.length}` : "";
+  const exit = typeof output.exitCode === "number" ? ` exit=${output.exitCode}` : "";
+  api.ui.toast({ variant: output.exitCode === 0 || output.outcome !== "failed" ? "info" : "warning", message: `${label}: ${status}/${output.reasonCode}${count}${exit}`, duration: 8000 });
+}
+
 export default {
   id: "openspec.autopilot",
-  server: async (ctx, options?: AutopilotOptions) => {
+  tui: async (api: TuiApi, options?: AutopilotPluginOptions) => {
+    const resolvedTriggerOptions = triggerOptions(options ?? {});
+    if (resolvedTriggerOptions.tuiCommands?.enabled !== true) {
+      return;
+    }
+    api.keymap.registerLayer({
+      commands: [
+        {
+          name: "autopilot.status",
+          title: "Autopilot Status",
+          desc: "Show OpenSpec Autopilot status without an LLM turn.",
+          category: "Autopilot",
+          namespace: "palette",
+          slashName: "autopilot-status",
+          async run() {
+            const controller = createAutopilotController({ root: tuiRoot(api) }, options ?? {});
+            const result = await controller.status({}, { kind: "tui-command", name: "autopilot.status" });
+            toastAutopilotOutput(api, "Autopilot status", result.payload);
+          },
+        },
+        {
+          name: "autopilot.check",
+          title: "Autopilot Cheap Check",
+          desc: "Run a cheap OpenSpec Autopilot check without an LLM turn.",
+          category: "Autopilot",
+          namespace: "palette",
+          slashName: "autopilot-check",
+          run() {
+            const result = runAutopilotCheck(tuiRoot(api), { level: "cheap" });
+            toastAutopilotOutput(api, "Autopilot cheap check", { outcome: result.status === "failed" || result.status === "blocked" ? "failed" : "idle", reasonCode: "advanced", status: result.status, exitCode: result.exitCode });
+          },
+        },
+        {
+          name: "autopilot.run",
+          title: "Autopilot Run",
+          desc: "Prepare an explicit /autopilot prompt-mediated continuation.",
+          category: "Autopilot",
+          namespace: "palette",
+          slashName: "autopilot-run",
+          run() {
+            const showFallback = (scope: string): void => {
+              const suffix = scope.trim().length > 0 ? ` ${scope.trim()}` : "";
+              api.ui.toast({ variant: "info", message: `Use prompt-mediated fallback: /autopilot${suffix}`, duration: 10000 });
+            };
+            if (api.ui.dialog?.replace != null && api.ui.DialogPrompt != null) {
+              api.ui.dialog.replace(() => api.ui.DialogPrompt?.({
+                title: "Autopilot run scope",
+                placeholder: "optional changeId or taskId",
+                onConfirm: async (scope) => {
+                  api.ui.dialog?.clear?.();
+                  showFallback(scope);
+                },
+                onCancel: () => api.ui.dialog?.clear?.(),
+              }));
+              return;
+            }
+            showFallback("");
+          },
+        },
+        {
+          name: "autopilot.stop",
+          title: "Autopilot Stop",
+          desc: "Prepare an explicit prompt-mediated Autopilot stop request.",
+          category: "Autopilot",
+          namespace: "palette",
+          slashName: "autopilot-stop",
+          run() {
+            api.ui.toast({ variant: "info", message: "Use prompt-mediated fallback: ask Autopilot to call autopilot_stop with target/id/reason.", duration: 10000 });
+          },
+        },
+      ],
+    });
+  },
+  server: async (ctx, options?: AutopilotPluginOptions) => {
     const resolvedOptions = options ?? {};
-    const controller = createAutopilotController({ root: repoRoot(ctx) }, resolvedOptions);
+    const root = repoRoot(ctx);
+    const controller = createAutopilotController({ root }, resolvedOptions);
+    const resolvedTriggerOptions = triggerOptions(resolvedOptions);
+    const pendingWorkerReportIds = new Map<string, string>();
+    void log(ctx, "debug", "trigger config resolved", {
+      triggerMode: resolvedTriggerOptions.triggerMode,
+      fileWatch: resolvedTriggerOptions.fileWatch?.enabled,
+      postToolCheckpoints: resolvedTriggerOptions.postToolCheckpoints?.enabled,
+      workerCollect: resolvedTriggerOptions.workerCollect?.enabled,
+      blockerReplies: resolvedTriggerOptions.blockerReplies?.enabled,
+      permissionReplies: resolvedTriggerOptions.permissionReplies?.enabled,
+      protectedPathGuard: resolvedTriggerOptions.protectedPathGuard?.enabled,
+      runNextEvents: resolvedTriggerOptions.runNextEvents?.enabled,
+    });
+    const timers = new Map<string, ReturnType<typeof setTimeout>>();
+    const scheduler = createAutopilotTriggerScheduler({
+      execute: async (execution: AutopilotTriggerExecution) => {
+        const job = execution.job;
+        try {
+          const currentEvidence = runtimeEvidence(resolvedOptions.runtimeState, pendingWorkerReportIds);
+          if (!runtimeJobStillValid(job, resolvedTriggerOptions, currentEvidence)) {
+            await log(ctx, "warn", "trigger job suppressed", loggableJob(job, execution.key, {
+              coalescedCount: execution.coalescedCount,
+              reason: "runtime ownership evidence became stale before execution",
+            }));
+            return;
+          }
+          const source = { kind: "programmatic-trigger" as const, name: job.kind, eventType: job.sourceEvent };
+          let result: Awaited<ReturnType<typeof controller.status>>;
+          switch (job.kind) {
+            case "check": {
+              const check = runAutopilotCheck(root, { level: "cheap", change: job.scope?.changeId });
+              await log(ctx, "info", "trigger job completed", loggableJob(job, execution.key, {
+                coalescedCount: execution.coalescedCount,
+                checkStatus: check.status,
+                exitCode: check.exitCode,
+                changes: check.scope.changes.length,
+                ledgers: check.scope.ledgers.length,
+              }));
+              return;
+            }
+            case "status":
+              result = await controller.status({ changeId: job.scope?.changeId }, source);
+              break;
+            case "collect":
+              result = await controller.collect({ taskId: job.scope?.taskId }, source);
+              break;
+            case "answer_blocker":
+              if (job.blockerAnswer?.questionId == null) {
+                throw new Error("Malformed answer_blocker trigger job is missing blockerAnswer.questionId.");
+              }
+              result = await controller.answerBlocker({
+                questionId: job.blockerAnswer.questionId,
+                taskId: job.blockerAnswer.taskId,
+                selectedLabel: job.blockerAnswer.selectedLabel,
+                action: job.blockerAnswer.action,
+              }, source);
+              break;
+            case "stop":
+              result = await controller.stop({
+                target: job.scope?.taskId != null ? "task" : job.scope?.runId != null ? "run" : "all",
+                id: job.scope?.taskId ?? job.scope?.runId,
+                reason: job.reason,
+              }, source);
+              break;
+            case "run_next":
+              result = await controller.runNext({ changeId: job.scope?.changeId, taskId: job.scope?.taskId }, source);
+              break;
+            default: {
+              const unreachable: never = job.kind;
+              throw new Error(`Unsupported Autopilot trigger job kind: ${String(unreachable)}`);
+            }
+          }
+
+          await log(ctx, "info", "trigger job completed", loggableJob(job, execution.key, {
+            coalescedCount: execution.coalescedCount,
+            outcome: result.payload.outcome,
+            reasonCode: result.payload.reasonCode,
+            taskSummaries: result.payload.taskSummaries.length,
+            taskSummaryIds: outputTaskIds(result.payload.taskSummaries),
+            tasksStarted: outputTaskIds(result.payload.tasksStarted),
+            tasksAdvanced: outputTaskIds(result.payload.tasksAdvanced),
+          }));
+          if (job.kind === "run_next") {
+            rememberRunNextOutput(resolvedOptions.runtimeState, result.payload);
+          }
+          if (job.kind === "collect" && result.payload.reasonCode === "advanced" && job.scope?.sessionID != null) {
+            pendingWorkerReportIds.delete(job.scope.sessionID);
+          }
+        } catch (error) {
+          await log(ctx, "error", "trigger job failed", loggableJob(job, execution.key, {
+            error: error instanceof Error ? error.message : String(error),
+          }));
+          throw error;
+        }
+      },
+    });
+
+    function scheduleFlush(result: AutopilotTriggerEnqueueResult): void {
+      if (result.dueAt == null || result.status !== "scheduled" && result.status !== "coalesced") {
+        return;
+      }
+      const existing = timers.get(result.key);
+      if (existing != null) {
+        clearTimeout(existing);
+      }
+      const timer = setTimeout(() => {
+        timers.delete(result.key);
+        scheduler.flushDue(result.dueAt).catch((error: unknown) => {
+          void log(ctx, "error", "trigger scheduler flush failed", { error: error instanceof Error ? error.message : String(error) });
+        });
+      }, Math.max(0, result.dueAt - Date.now()));
+      timer.unref?.();
+      timers.set(result.key, timer);
+    }
+
+    async function enqueueDecision(decision: AutopilotTriggerDecision): Promise<void> {
+      if (decision.action === "ignored") {
+        await log(ctx, "debug", "trigger ignored", { reason: decision.reason });
+        return;
+      }
+      for (const job of decision.jobs) {
+        const result = scheduler.enqueue(job);
+        const message = result.status === "scheduled" || result.status === "coalesced" ? "trigger job enqueued" : "trigger job suppressed";
+        await log(ctx, "debug", message, loggableJob(job, result.key, { enqueueStatus: result.status, reason: result.reason }));
+        scheduleFlush(result);
+      }
+    }
+
+    function disposeScheduler(): void {
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+      scheduler.dispose();
+    }
+
     return {
+      event: async ({ event }: { event: AutopilotBusEvent }) => {
+        if (event.type === "server.instance.disposed" || event.type === "global.disposed") {
+          disposeScheduler();
+          return;
+        }
+        const marker = completeAutopilotWorkerReportMarker(event);
+        if (marker != null) {
+          pendingWorkerReportIds.set(marker.sessionID, marker.reportId);
+        }
+        await enqueueDecision(classifyAutopilotEvent(event, resolvedTriggerOptions, runtimeEvidence(resolvedOptions.runtimeState, pendingWorkerReportIds)));
+      },
+      "tool.execute.before": async (input: { tool: string }, output: { args: unknown }) => {
+        if (resolvedTriggerOptions.protectedPathGuard?.enabled === false) {
+          return;
+        }
+        const decision = guardAutopilotProtectedPathToolCall(input.tool, output.args);
+        if (decision.action === "block") {
+          await log(ctx, "warn", "protected path mutation blocked", { tool: input.tool, paths: decision.paths });
+          throw new Error(`${decision.reason}: ${decision.paths.join(", ")}. Protected Autopilot state must be mutated only by plugin-owned controller paths.`);
+        }
+      },
+      "tool.execute.after": async (input: AutopilotToolExecutionInput, output: unknown) => {
+        await enqueueDecision(classifyAutopilotToolExecutionAfter(input, output, resolvedTriggerOptions));
+      },
       tool: {
         autopilot_run_next: tool({
           description:
@@ -77,4 +558,4 @@ export default {
       },
     };
   },
-} satisfies { id: string; server: Plugin };
+} satisfies { id: string; server: Plugin; tui: TuiPlugin };

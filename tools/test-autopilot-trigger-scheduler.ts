@@ -115,6 +115,81 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "due jobs execute sequentially in stable order",
+    run: async () => {
+      let currentTime = 0;
+      const order: string[] = [];
+      const scheduler = createAutopilotTriggerScheduler({
+        now: () => currentTime,
+        execute: async (execution) => {
+          order.push(`start:${execution.job.kind}`);
+          await Promise.resolve();
+          order.push(`end:${execution.job.kind}`);
+        },
+      });
+
+      scheduler.enqueue(makeJob({ kind: "answer_blocker", id: "answer", blockerAnswer: { questionId: "question-a" } }));
+      scheduler.enqueue(makeJob({ kind: "status", id: "status" }));
+      currentTime = 100;
+      await scheduler.flushDue();
+
+      assert(
+        JSON.stringify(order) === JSON.stringify(["start:answer_blocker", "end:answer_blocker", "start:status", "end:status"]),
+        `Due jobs must execute sequentially with answer before status follow-up, got ${JSON.stringify(order)}.`,
+      );
+    },
+  },
+  {
+    name: "due jobs execute by due time before key order",
+    run: async () => {
+      let currentTime = 0;
+      const order: string[] = [];
+      const scheduler = createAutopilotTriggerScheduler({
+        now: () => currentTime,
+        execute: async (execution) => {
+          order.push(execution.job.kind);
+        },
+      });
+
+      scheduler.enqueue(makeJob({ kind: "answer_blocker", id: "later", debounceMs: 100, blockerAnswer: { questionId: "question-a" } }));
+      scheduler.enqueue(makeJob({ kind: "status", id: "earlier", debounceMs: 50 }));
+      currentTime = 100;
+      await scheduler.flushDue();
+
+      assert(JSON.stringify(order) === JSON.stringify(["status", "answer_blocker"]), `Earlier dueAt must execute before lexical key order, got ${JSON.stringify(order)}.`);
+    },
+  },
+  {
+    name: "due job failure does not drop later due jobs",
+    run: async () => {
+      let currentTime = 0;
+      const order: string[] = [];
+      const scheduler = createAutopilotTriggerScheduler({
+        now: () => currentTime,
+        execute: async (execution) => {
+          order.push(execution.job.id);
+          if (execution.job.id === "first") {
+            throw new Error("first failed");
+          }
+        },
+      });
+
+      scheduler.enqueue(makeJob({ id: "first", kind: "answer_blocker", blockerAnswer: { questionId: "question-a" } }));
+      scheduler.enqueue(makeJob({ id: "second", kind: "status" }));
+      currentTime = 100;
+      let failed = false;
+      try {
+        await scheduler.flushDue();
+      } catch (error) {
+        failed = error instanceof Error && error.message === "first failed";
+      }
+
+      assert(failed, "flushDue must surface the first due job failure after draining the batch.");
+      assert(JSON.stringify(order) === JSON.stringify(["first", "second"]), `Later due jobs must still execute after an earlier failure, got ${JSON.stringify(order)}.`);
+      assert(scheduler.snapshot().pending.length === 0, "Failed due batch must not leave deleted jobs as invisible pending work.");
+    },
+  },
+  {
     name: "cooldown suppresses repeated jobs after execution",
     run: async () => {
       let currentTime = 0;

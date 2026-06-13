@@ -48,6 +48,17 @@ function writeTasksDirectory(repo: string, changeId: string): void {
   fs.mkdirSync(path.join(repo, "openspec", "changes", changeId, "tasks.md"), { recursive: true });
 }
 
+function writeChangeDirectorySymlink(repo: string, changeId: string, target: string): boolean {
+  const changePath = path.join(repo, "openspec", "changes", changeId);
+  fs.mkdirSync(path.dirname(changePath), { recursive: true });
+  try {
+    fs.symlinkSync(target, changePath, process.platform === "win32" ? "junction" : "dir");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readyResearchLedger(): Record<string, unknown> {
   const ledger = readFixture("valid-research.json");
   ledger.id = "ready-research";
@@ -204,6 +215,22 @@ const tests: TestCase[] = [
       const taskIdScope = readQueueOutput(repo, { taskId: "unchecked-change" });
       assert(taskIdScope.reasonCode === "no_ledgers", `Expected taskId-only fallback no_ledgers, got ${taskIdScope.reasonCode}.`);
       assert(taskIdScope.taskSummaries.length === 0, "Active-change fallback must not treat taskId as changeId.");
+    }),
+  },
+  {
+    name: "active OpenSpec queue blocks symlinked change directories without reading target",
+    run: () => withTempRepo("symlink-tasks", (repo) => {
+      const outside = path.join(repo, "outside-change");
+      fs.mkdirSync(outside, { recursive: true });
+      fs.writeFileSync(path.join(outside, "tasks.md"), "# Tasks\n\n- [ ] SHOULD_NOT_BE_READ_SECRET\n", "utf8");
+      assert(writeChangeDirectorySymlink(repo, "symlink-change", outside), "Test requires directory symlink/junction support for active change guard.");
+      const output = readQueueOutput(repo, { changeId: "symlink-change" });
+      assert(output.reasonCode === "invalid_ledgers", `Expected symlinked tasks invalid_ledgers, got ${output.reasonCode}.`);
+      assertSummary(output.taskSummaries[0], { taskId: "symlink-change", status: "Blocked", valid: false, actionability: "invalid", reasonCode: "invalid_ledgers", sourceKind: "active-change" });
+      const blocker = output.blockers[0];
+      assert(blocker?.reason === "invalid active OpenSpec change tasks", `Expected source-aware blocker reason, got ${String(blocker?.reason)}.`);
+      assert(blocker.errors?.some((error) => error.includes("symlink") || error.includes("escape")) === true, "Symlinked tasks blocker must include detailed path safety evidence.");
+      assert(!JSON.stringify(output).includes("SHOULD_NOT_BE_READ_SECRET"), "Active-change fallback must not read symlink target contents.");
     }),
   },
   {

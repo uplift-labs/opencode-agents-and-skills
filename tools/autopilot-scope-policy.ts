@@ -22,7 +22,7 @@ export type ScopeCompatibilityOptions = {
   softConflictScopes?: string[];
 };
 
-const commonProtectedForbiddenScopes = new Set<string>([...autopilotProtectedPathPatterns, "openspec/changes/*/automation/**"]);
+const commonProtectedForbiddenScopes = new Set<string>(autopilotProtectedPathPatterns);
 
 export function normalizedScopeText(pattern: string): string {
   return pattern.trim().replaceAll("\\", "/").replace(/^\.\//, "");
@@ -106,11 +106,7 @@ export function writeScopeComparable(ledger: ScopeLedger): boolean {
 function protectedScopePattern(pattern: string): boolean {
   const normalized = normalizedScopeText(pattern);
   return normalized.startsWith(".autopilot/")
-    || normalized.startsWith("openspec/changes/*/automation/")
-    || /^openspec\/changes\/[^/]+\/automation(?:\/|$)/.test(normalized)
-    || normalized.includes("/automation/task.json")
-    || normalized.includes("/automation/feedback/")
-    || normalized.includes("/automation/artifacts/");
+    || /^openspec\/changes\/(?:\*|[^/]+)\/automation(?:\/|$)/.test(normalized);
 }
 
 function centralCoordinationScope(pattern: string): boolean {

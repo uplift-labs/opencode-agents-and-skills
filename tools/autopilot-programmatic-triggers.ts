@@ -1,3 +1,5 @@
+import { autopilotWorkerReportMarkerStatus } from "./autopilot-worker-report-marker.ts";
+
 export type AutopilotTriggerMode = "off" | "observe" | "controlled" | "autonomous";
 
 export type AutopilotTriggerOptions = {
@@ -7,6 +9,7 @@ export type AutopilotTriggerOptions = {
   workerCollect?: { enabled?: boolean; debounceMs?: number };
   blockerReplies?: { enabled?: boolean };
   permissionReplies?: { enabled?: boolean };
+  protectedPathGuard?: { enabled?: boolean };
   tuiCommands?: { enabled?: boolean };
   runNextEvents?: { enabled?: boolean; cooldownMs?: number };
 };
@@ -28,6 +31,7 @@ export type AutopilotTriggerJobKind = "status" | "check" | "collect" | "answer_b
 export type AutopilotTriggerScope = {
   changeId?: string;
   taskId?: string;
+  runId?: string;
   sessionID?: string;
   requestID?: string;
   reportId?: string;
@@ -72,13 +76,14 @@ export type AutopilotTriggerRuntimeEvidence = {
     requestID: string;
     questionId: string;
     taskId?: string;
+    options?: Array<{ label: string; action?: string }>;
   }>;
   pendingPermissions?: Array<{
     requestID: string;
     taskId?: string;
   }>;
-  waitingWorkspaces?: string[];
-  waitingWorktrees?: string[];
+  waitingWorkspaces?: Array<string | { name: string; taskId?: string; runId?: string }>;
+  waitingWorktrees?: Array<string | { name: string; taskId?: string; runId?: string }>;
   activeRun?: {
     runId: string;
     taskIds?: string[];
@@ -86,6 +91,7 @@ export type AutopilotTriggerRuntimeEvidence = {
     blockers?: boolean;
     mrWait?: boolean;
     locksValid?: boolean;
+    lastRunNextOutput?: Record<string, unknown>;
   };
 };
 
@@ -106,8 +112,12 @@ const noProgressCheckpointReasonCodes = new Set([
   "no_actionable_tasks",
 ]);
 
+function isTriggerMode(value: unknown): value is AutopilotTriggerMode {
+  return value === "off" || value === "observe" || value === "controlled" || value === "autonomous";
+}
+
 function resolvedMode(options: AutopilotTriggerOptions): AutopilotTriggerMode {
-  return options.triggerMode ?? "observe";
+  return options.triggerMode == null ? "observe" : isTriggerMode(options.triggerMode) ? options.triggerMode : "off";
 }
 
 function modeAtLeast(options: AutopilotTriggerOptions, minimum: AutopilotTriggerMode): boolean {
@@ -116,6 +126,64 @@ function modeAtLeast(options: AutopilotTriggerOptions, minimum: AutopilotTrigger
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value != null && !Array.isArray(value);
+}
+
+function recordOption(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function booleanOption(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function boundedIntegerOption(value: unknown, fallback: number, max: number): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= max ? value : fallback;
+}
+
+export function parseAutopilotTriggerOptions(value: unknown): AutopilotTriggerOptions {
+  const options = recordOption(value);
+  const fileWatch = recordOption(options.fileWatch);
+  const postToolCheckpoints = recordOption(options.postToolCheckpoints);
+  const workerCollect = recordOption(options.workerCollect);
+  const blockerReplies = recordOption(options.blockerReplies);
+  const permissionReplies = recordOption(options.permissionReplies);
+  const protectedPathGuard = recordOption(options.protectedPathGuard);
+  const tuiCommands = recordOption(options.tuiCommands);
+  const runNextEvents = recordOption(options.runNextEvents);
+
+  return {
+    triggerMode: options.triggerMode == null ? "observe" : isTriggerMode(options.triggerMode) ? options.triggerMode : "off",
+    fileWatch: {
+      enabled: booleanOption(fileWatch.enabled, true),
+      debounceMs: boundedIntegerOption(fileWatch.debounceMs, 250, 60_000),
+      cooldownMs: boundedIntegerOption(fileWatch.cooldownMs, 1000, 300_000),
+    },
+    postToolCheckpoints: {
+      enabled: booleanOption(postToolCheckpoints.enabled, true),
+      debounceMs: boundedIntegerOption(postToolCheckpoints.debounceMs, 250, 60_000),
+      cooldownMs: boundedIntegerOption(postToolCheckpoints.cooldownMs, 1000, 300_000),
+    },
+    workerCollect: {
+      enabled: booleanOption(workerCollect.enabled, true),
+      debounceMs: boundedIntegerOption(workerCollect.debounceMs, 250, 60_000),
+    },
+    blockerReplies: {
+      enabled: booleanOption(blockerReplies.enabled, true),
+    },
+    permissionReplies: {
+      enabled: booleanOption(permissionReplies.enabled, true),
+    },
+    protectedPathGuard: {
+      enabled: booleanOption(protectedPathGuard.enabled, true),
+    },
+    tuiCommands: {
+      enabled: booleanOption(tuiCommands.enabled, false),
+    },
+    runNextEvents: {
+      enabled: booleanOption(runNextEvents.enabled, false),
+      cooldownMs: boundedIntegerOption(runNextEvents.cooldownMs, 5000, 300_000),
+    },
+  };
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -168,6 +236,19 @@ function schedule(job: Omit<AutopilotTriggerJob, "id" | "debounceMs" | "cooldown
   return { action: "scheduled", reason: fullJob.reason, jobs: [fullJob] };
 }
 
+function scheduleJobs(reason: string, jobs: Array<Omit<AutopilotTriggerJob, "id" | "debounceMs" | "cooldownMs"> & { debounceMs?: number; cooldownMs?: number }>): AutopilotTriggerDecision {
+  return {
+    action: "scheduled",
+    reason,
+    jobs: jobs.map((job) => ({
+      debounceMs: 250,
+      cooldownMs: 1000,
+      ...job,
+      id: [job.kind, job.sourceEvent, stableScopeKey(job.scope), job.sourceID ?? "none"].join(":"),
+    })),
+  };
+}
+
 function fileDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptions): AutopilotTriggerDecision {
   if (!modeAtLeast(options, "observe") || options.fileWatch?.enabled === false) {
     return ignore("file watcher triggers disabled");
@@ -200,11 +281,9 @@ function fileDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptions
     });
   }
 
-  if (parts.rest === "automation/task.json"
+  if (parts.rest.startsWith("automation/")
     || parts.rest === "retrospective.md"
-    || parts.rest === "live-regression-report.md"
-    || parts.rest.startsWith("automation/artifacts/")
-    || parts.rest.startsWith("automation/feedback/")) {
+    || parts.rest === "live-regression-report.md") {
     return schedule({
       kind: "check",
       scope,
@@ -228,23 +307,22 @@ function statusType(value: unknown): string | undefined {
   return optionalString(value.type);
 }
 
-function collectStrings(value: unknown, output: string[] = []): string[] {
-  if (typeof value === "string") {
-    output.push(value);
-    return output;
+function firstAnswerLabel(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
   }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectStrings(item, output);
+  for (const row of value) {
+    if (!Array.isArray(row)) {
+      continue;
     }
-    return output;
-  }
-  if (isRecord(value)) {
-    for (const item of Object.values(value)) {
-      collectStrings(item, output);
+    for (const answer of row) {
+      const label = optionalString(answer);
+      if (label != null) {
+        return label;
+      }
     }
   }
-  return output;
+  return undefined;
 }
 
 function parseRecordJson(value: string): Record<string, unknown> | undefined {
@@ -356,41 +434,6 @@ function safeToolSourceID(input: AutopilotToolExecutionInput): string {
   return `${safeSourcePart(input.tool)}:${safeSourcePart(callID)}`;
 }
 
-function markerIsComplete(event: AutopilotBusEvent, text: string): boolean {
-  return event.properties?.reportComplete === true
-    || event.properties?.complete === true
-    || /\bCOMPLETE\b/i.test(text);
-}
-
-function reportMarkerIds(text: string): string[] {
-  return Array.from(text.matchAll(/\bAUTOPILOT_WORKER_REPORT\s+([^\s]+)/g), (match) => match[1]);
-}
-
-function messageReportMarkerStatus(event: AutopilotBusEvent, reportId: string | undefined): "missing" | "mismatch" | "partial" | "matched" {
-  const explicitReportId = optionalString(event.properties?.reportId);
-  if (explicitReportId != null) {
-    if (reportId != null && explicitReportId !== reportId) {
-      return "mismatch";
-    }
-    return markerIsComplete(event, collectStrings(event.properties).join("\n")) ? "matched" : "partial";
-  }
-  const text = collectStrings(event.properties).join("\n");
-  if (!text.includes("AUTOPILOT_WORKER_REPORT")) {
-    return "missing";
-  }
-  const markerIds = reportMarkerIds(text);
-  if (markerIds.length === 0) {
-    return "missing";
-  }
-  if (reportId != null && !markerIds.includes(reportId)) {
-    return "mismatch";
-  }
-  if (reportId == null) {
-    return "missing";
-  }
-  return markerIsComplete(event, text) ? "matched" : "partial";
-}
-
 function workerDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptions, runtime: AutopilotTriggerRuntimeEvidence): AutopilotTriggerDecision {
   if (!modeAtLeast(options, "controlled") || options.workerCollect?.enabled === false) {
     return ignore("controlled worker triggers disabled");
@@ -411,7 +454,7 @@ function workerDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptio
     return ignore("waiting for worker idle before collecting report evidence");
   }
   if (event.type === "message.updated" || event.type === "message.part.updated") {
-    const markerStatus = messageReportMarkerStatus(event, worker.reportId);
+    const markerStatus = autopilotWorkerReportMarkerStatus(event, worker.reportId);
     if (markerStatus === "missing") {
       return ignore("missing report marker");
     }
@@ -432,6 +475,14 @@ function workerDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptio
     claimCapable: false,
     reason: "plugin-owned worker session is idle with unconsumed report evidence",
   });
+}
+
+function autonomousRunNextLoopGuardSafe(activeRun: NonNullable<AutopilotTriggerRuntimeEvidence["activeRun"]>): boolean {
+  const payload = activeRun.lastRunNextOutput;
+  if (payload == null) {
+    return false;
+  }
+  return autopilotOutputMadeProgress(payload);
 }
 
 function autonomousRunNextDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptions, runtime: AutopilotTriggerRuntimeEvidence): AutopilotTriggerDecision | null {
@@ -461,9 +512,15 @@ function autonomousRunNextDecision(event: AutopilotBusEvent, options: AutopilotT
     return ignore("autonomous run_next requires a plugin-owned session event");
   }
   const taskIds = runtime.activeRun.taskIds ?? [];
+  if (taskIds.length !== 1) {
+    return ignore("autonomous run_next requires exactly one plugin-owned task scope");
+  }
+  if (!autonomousRunNextLoopGuardSafe(runtime.activeRun)) {
+    return ignore("autonomous run_next requires loop-guard safety evidence");
+  }
   return schedule({
     kind: "run_next",
-    scope: { taskId: taskIds.length === 1 ? taskIds[0] : undefined },
+    scope: { taskId: taskIds[0] },
     sourceEvent: event.type,
     sourceID: sessionID,
     cooldownMs: options.runNextEvents.cooldownMs ?? 5000,
@@ -497,21 +554,34 @@ function blockerDecision(event: AutopilotBusEvent, options: AutopilotTriggerOpti
       reason: "plugin-owned blocker question was rejected; schedule unresolved-blocker status",
     });
   }
-  return schedule({
-    kind: "answer_blocker",
-    scope,
-    sourceEvent: event.type,
-    sourceID: requestID,
-    requiresRuntimeOwnership: true,
-    claimCapable: false,
-    reason: "plugin-owned blocker question was answered",
-    blockerAnswer: {
-      questionId: question.questionId,
-      taskId: question.taskId,
-      selectedLabel: optionalString(event.properties?.selectedLabel ?? event.properties?.label),
-      action: optionalString(event.properties?.action),
+  const selectedLabel = optionalString(event.properties?.selectedLabel ?? event.properties?.label) ?? firstAnswerLabel(event.properties?.answers);
+  const selectedAction = optionalString(event.properties?.action) ?? question.options?.find((option) => option.label === selectedLabel)?.action;
+  return scheduleJobs("plugin-owned blocker question was answered; schedule answer handling and status follow-up", [
+    {
+      kind: "answer_blocker",
+      scope,
+      sourceEvent: event.type,
+      sourceID: requestID,
+      requiresRuntimeOwnership: true,
+      claimCapable: false,
+      reason: "plugin-owned blocker question was answered",
+      blockerAnswer: {
+        questionId: question.questionId,
+        taskId: question.taskId,
+        selectedLabel,
+        action: selectedAction,
+      },
     },
-  });
+    {
+      kind: "status",
+      scope,
+      sourceEvent: event.type,
+      sourceID: requestID,
+      requiresRuntimeOwnership: true,
+      claimCapable: false,
+      reason: "plugin-owned blocker answer handled; schedule status follow-up",
+    },
+  ]);
 }
 
 function permissionDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptions, runtime: AutopilotTriggerRuntimeEvidence): AutopilotTriggerDecision {
@@ -537,6 +607,21 @@ function permissionDecision(event: AutopilotBusEvent, options: AutopilotTriggerO
   });
 }
 
+function ownedWaitScope(waits: Array<string | { name: string; taskId?: string; runId?: string }> | undefined, name: string): { owned: boolean; taskId?: string; runId?: string } {
+  for (const wait of waits ?? []) {
+    if (typeof wait === "string") {
+      if (wait === name) {
+        return { owned: true };
+      }
+      continue;
+    }
+    if (wait.name === name) {
+      return { owned: true, taskId: wait.taskId, runId: wait.runId };
+    }
+  }
+  return { owned: false };
+}
+
 function workspaceDecision(event: AutopilotBusEvent, options: AutopilotTriggerOptions, runtime: AutopilotTriggerRuntimeEvidence): AutopilotTriggerDecision {
   if (!modeAtLeast(options, "controlled")) {
     return ignore("controlled workspace triggers disabled");
@@ -546,19 +631,24 @@ function workspaceDecision(event: AutopilotBusEvent, options: AutopilotTriggerOp
     return ignore("workspace event missing name");
   }
   const isWorkspace = event.type.startsWith("workspace.");
-  const owned = isWorkspace ? runtime.waitingWorkspaces?.includes(name) : runtime.waitingWorktrees?.includes(name);
-  if (!owned) {
+  const wait = ownedWaitScope(isWorkspace ? runtime.waitingWorkspaces : runtime.waitingWorktrees, name);
+  if (!wait.owned) {
     return ignore(isWorkspace ? "unknown workspace" : "unknown worktree");
   }
   const failed = event.type.endsWith(".failed");
+  const scopedStop = failed && (wait.taskId != null || wait.runId != null);
   return schedule({
-    kind: failed ? "stop" : "status",
-    scope: isWorkspace ? { workspaceName: name } : { worktreeName: name },
+    kind: scopedStop ? "stop" : "status",
+    scope: { ...(isWorkspace ? { workspaceName: name } : { worktreeName: name }), taskId: wait.taskId, runId: wait.runId },
     sourceEvent: event.type,
     sourceID: name,
     requiresRuntimeOwnership: true,
     claimCapable: false,
-    reason: failed ? "plugin-owned workspace or worktree failed" : "plugin-owned workspace or worktree is ready",
+    reason: failed
+      ? scopedStop
+        ? "plugin-owned workspace or worktree failed for a scoped task"
+        : "plugin-owned workspace or worktree failed; schedule status because no task scope is available"
+      : "plugin-owned workspace or worktree is ready",
   });
 }
 
@@ -647,10 +737,11 @@ export function classifyAutopilotTuiCommand(command: string, options: AutopilotT
   const commandMap: Record<string, { kind: AutopilotTriggerJobKind; claimCapable: boolean; reason: string }> = {
     "autopilot.status": { kind: "status", claimCapable: false, reason: "explicit TUI status command" },
     "autopilot.check": { kind: "check", claimCapable: false, reason: "explicit TUI check command" },
-    "autopilot.run": { kind: "run_next", claimCapable: true, reason: "explicit TUI run command" },
-    "autopilot.stop": { kind: "stop", claimCapable: false, reason: "explicit TUI stop command" },
   };
   const entry = commandMap[command];
+  if (command === "autopilot.run" || command === "autopilot.stop") {
+    return ignore("explicit TUI run/stop uses prompt-mediated fallback, not a scheduler job");
+  }
   if (entry == null) {
     return ignore("unsupported TUI command");
   }

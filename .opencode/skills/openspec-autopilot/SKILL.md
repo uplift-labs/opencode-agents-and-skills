@@ -1,6 +1,6 @@
 ---
 name: openspec-autopilot
-description: Use when the user explicitly says /autopilot or autopilot, asks to inspect or continue an Autopilot/OpenSpec queue with ready ledgers, has unfinished active OpenSpec changes in tasks.md during explicit Autopilot materialization or active_change_handoff, needs strict typed phases, safe parallel OpenSpec work with plugin/runtime selection evidence, or says работай inside an active Autopilot context.
+description: Use when the user explicitly says /autopilot or autopilot, including /autopilot <free-form prompt> intake, asks to inspect or continue an Autopilot/OpenSpec queue with ready ledgers, has unfinished active OpenSpec changes in tasks.md during explicit Autopilot materialization or active_change_handoff, needs strict typed phases, safe parallel OpenSpec work with plugin/runtime selection evidence, or says работай inside an active Autopilot context.
 license: MIT
 ---
 
@@ -10,7 +10,7 @@ Use this skill when OpenSpec work should be controlled by the Autopilot plugin r
 
 ## Eligibility
 
-Use it for explicit `/autopilot` or `autopilot`, active-context `работай`, ready OpenSpec task ledgers/queues, unfinished active OpenSpec changes in `tasks.md` during explicit Autopilot materialization or handoff, strict task-type phase enforcement, safe parallel OpenSpec work when plugin/runtime selection evidence is available, or ready research/planning ledger tasks that need durable evidence and gates. Current MVP may stop with `reasonCode: "ready_runtime_deferred"`, return `reasonCode: "ledger_materialized"` when explicit `autopilot_run_next` creates `automation/task.json` for the selected active change, or return `reasonCode: "active_change_handoff"` for read-only/unsupported active-change paths without plugin-owned ledger creation.
+Use it for explicit `/autopilot` or `autopilot`, explicit `/autopilot <free-form prompt>` intake, active-context `работай`, ready OpenSpec task ledgers/queues, unfinished active OpenSpec changes in `tasks.md` during explicit Autopilot materialization or handoff, strict task-type phase enforcement, safe parallel OpenSpec work when plugin/runtime selection evidence is available, or ready research/planning ledger tasks that need durable evidence and gates. Current MVP may stop with `reasonCode: "ready_runtime_deferred"`, return `reasonCode: "ledger_materialized"` when explicit `autopilot_run_next` creates `automation/task.json` for the selected active change, or return `reasonCode: "active_change_handoff"` for read-only/unsupported active-change paths without plugin-owned ledger creation.
 
 Do not use it for casual codebase questions, one obvious small edit, OpenSpec discovery with no ready work (`next-step`), a single accepted change that `openspec-apply-change` can finish directly, or non-OpenSpec fan-out where prompt-only `orchestrator` is enough. If the user directly asks to implement one accepted OpenSpec change and did not invoke `/autopilot`, route directly to `openspec-apply-change`.
 
@@ -22,7 +22,7 @@ When local stale evidence or an evidence conflict appears, stop and report the m
 
 ## First Action
 
-One high-level call should advance as far as safely possible. Unless the user asked only for status, stop, collect, or blocker-answer, call `autopilot_run_next`. If the user or `/autopilot` command supplied an explicit OpenSpec change or Autopilot task scope, pass it as `changeId` or `taskId`; call with no args only when no scope is supplied:
+One high-level call should advance as far as safely possible, but only after command arguments are classified. Unless the user asked only for status, stop, collect, blocker-answer, or `/autopilot <free-form prompt>` intake, call `autopilot_run_next`. If the user or `/autopilot` command supplied an exact OpenSpec change or Autopilot task scope, pass it as `changeId` or `taskId`; call with no args only when no scope is supplied:
 
 ```json
 { "tool": "autopilot_run_next" }
@@ -38,6 +38,10 @@ One high-level call should advance as far as safely possible. Unless the user as
 
 Pass both `changeId` and `taskId` only when both scopes were explicitly supplied and should intersect.
 
+If command arguments are ambiguous because they resolve to multiple exact scopes, unresolved explicit scope flags, or incompatible `changeId`/`taskId` values, report an ambiguity blocker or user-choice options and do not call `autopilot_run_next` until the ambiguity is resolved.
+
+Free-form prompt text is not scope. If command arguments do not exactly resolve to `changeId` or `taskId`, do not pass the free-form prompt as either field; unrelated queued Autopilot work must not be advanced with `autopilot_run_next`. Inspect queue state read-only with `autopilot_status`, and do not persist or echo raw free-form prompt text in plugin-owned state or automation evidence by default. Report derived fields instead: prompt family, recommended workflow, queue summary, and resolved scope when one exists. Then hand off to `openspec-explore` for bugfix/research/planning/unclear evidence, `openspec-propose` for stable feature/refactor/tooling/config/performance/protocol work, direct edit for one obvious docs/typo changes, or `openspec-apply-change` only after an exact existing scope is selected.
+
 Then prefer the returned `nextActions[]` guidance, using `nextRecommendedCall` only as a compatibility fallback. Ask only returned `questions`, summarize `blockers` and `mrsWaiting`, and do not manually advance ledger state when a tool is unavailable or returns an MVP no-op; report the limitation and `reasonCode`.
 
 ## Authority Boundary
@@ -49,7 +53,7 @@ Then prefer the returned `nextActions[]` guidance, using `nextRecommendedCall` o
 | Worker | Executes bounded Analyze/Implementation/Review/Acceptance work and returns reports. Never edits automation ledgers. |
 | User | Decides true blockers: credentials, unsafe scope, secrets, MR review/merge, protected branches, deploys, or policy exceptions. |
 
-Protected paths are plugin-owned: `openspec/changes/*/automation/task.json`, `openspec/changes/*/automation/feedback/**`, `openspec/changes/*/automation/artifacts/**`, and `.autopilot/**`.
+Protected paths are plugin-owned: `openspec/changes/*/automation/**` and `.autopilot/**`.
 
 ## Public Tools
 
@@ -146,6 +150,21 @@ When auto mode starts more than one task or accepts a soft conflict, terminal re
 Tool result metadata may include `metadata.argumentContext` for no-op/runtime-only tools such as `autopilot_answer_blocker` and `autopilot_stop`. Treat `acknowledged`, `ignored`, and `mutation` as a sanitized argument-handling note only; ignored argument values are not echoed. `mutation: "none"` means no ledger/runtime mutation occurred. `mutation: "plugin-owned-runtime-only"` means the tool used only plugin-owned in-memory runtime state without protected-file mutation; read `summary`, `tasksStarted`, and `tasksAdvanced` to distinguish validation-only evidence from an observable active-state change. `autopilot_answer_blocker` may return `outcome: "failed"` when the `questionId`, `taskId`, label, or action does not match a plugin-owned pending question.
 
 `actionable` is used for `active_change_handoff` summaries that point at unfinished active OpenSpec changes in `tasks.md`; it does not imply plugin-owned worker dispatch. `not_selected` remains reserved for future runtime dispatch/selection behavior. `ledger_materialized` has `outcome: "advanced"` because the plugin created a protected `automation/task.json`; it must include `tasksAdvanced[]` creation evidence and still must not claim worker implementation started. `advanced` is also a current `outcome`/`reasonCode` value for explicit in-memory harness claim, collect, or stop outputs. Claim `advanced` means the selected task claim was validated and may be observable through plugin-owned active runtime state; collect `advanced` means an accepted in-memory worker report transition was validated and its report id was consumed, not that protected ledger files were mutated.
+
+## Programmatic Trigger Hooks
+
+The plugin may also react to OpenCode events and hooks without a new assistant turn. These hooks are helpers around the same controller contract; they do not make passive events user consent for claim-capable work. Configure triggers through the canonical nested plugin option shape `{ "triggers": { ... } }`; invalid `triggerMode` values fail closed to `off`, and invalid timer values fall back to bounded safe defaults. Restart OpenCode after changing plugin, trigger, skill, command, or TUI files because those files are loaded at startup.
+
+Trigger modes:
+
+- `triggerMode: off`: disables event-driven status, check, collect, blocker, permission, workspace, and autonomous jobs; explicit model-facing `autopilot_*` tools still work.
+- `triggerMode: observe`: default. Passive `file.watcher.updated` events for active `tasks.md`, `automation/**`, reports, or retrospectives may schedule `autopilot_status` or `autopilot:check --level cheap`. `tool.execute.after` may schedule cheap checkpoints after `autopilot_run_next` or `autopilot_collect` progress output, and status checkpoints after runtime evidence conflicts. Passive events may schedule status or cheap check jobs and never call `autopilot_run_next` by default.
+- `triggerMode: controlled`: observe mode plus plugin-owned runtime evidence gates. Worker idle/report events may schedule `autopilot_collect`, `question.replied` may schedule `autopilot_answer_blocker`, `permission.replied` is MVP status-only, and workspace/worktree ready or failed events may schedule status or stop handling only when the session, request, permission, workspace, or worktree is plugin-owned.
+- `triggerMode: autonomous`: controlled mode plus explicit `runNextEvents.enabled: true`. Event-sourced `autopilot_run_next` still requires plugin-owned active-run evidence, valid locks, cooldown eligibility, no blockers, no MR wait, and loop-guard safety.
+
+Interpret event-triggered outputs exactly like tool outputs. A trigger job that logs or returns status/check/collect evidence is not permission to repeat an equivalent no-progress `autopilot_run_next`; apply the `reasonCode`, `taskSummaries`, `nextActions`, `selection`, and `loopGuard` rules above. The protected-path guard runs through `tool.execute.before` and blocks direct model-facing writes to `.autopilot/**` and `openspec/changes/*/automation/**`; plugin-owned controller paths remain the only allowed protected-state writer.
+
+TUI commands are separate from the server prompt flow and require `triggers.tuiCommands.enabled: true`. `autopilot.status` and `autopilot.check` are zero-LLM TUI actions for status and cheap checks. `autopilot.run` and `autopilot.stop` are explicit user actions that use a prompt-mediated fallback unless a direct server-owned bridge is proven for the current OpenCode version.
 
 ## Task-Type Policy
 

@@ -169,11 +169,21 @@ export function createAutopilotTriggerScheduler(options: SchedulerOptions): Auto
       }
       const due = Array.from(pending.entries())
         .filter(([, value]) => value.dueAt <= flushTime)
-        .sort(([left], [right]) => left.localeCompare(right));
+        .sort(([leftKey, left], [rightKey, right]) => left.dueAt - right.dueAt || leftKey.localeCompare(rightKey));
       for (const [key] of due) {
         pending.delete(key);
       }
-      await Promise.all(due.map(([key, value]) => runJob(key, value)));
+      const errors: unknown[] = [];
+      for (const [key, value] of due) {
+        try {
+          await runJob(key, value);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length > 0) {
+        throw errors[0];
+      }
     },
 
     dispose(): void {

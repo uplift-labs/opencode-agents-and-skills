@@ -6,6 +6,7 @@ import {
   classifyAutopilotEvent,
   classifyAutopilotToolExecutionAfter,
   classifyAutopilotTuiCommand,
+  parseAutopilotTriggerOptions,
   type AutopilotTriggerDecision,
   type AutopilotTriggerJob,
 } from "./autopilot-programmatic-triggers.ts";
@@ -45,6 +46,13 @@ function scheduledJob(decision: AutopilotTriggerDecision): AutopilotTriggerJob {
   return firstJob(decision);
 }
 
+function jobOfKind(decision: AutopilotTriggerDecision, kind: AutopilotTriggerJob["kind"]): AutopilotTriggerJob {
+  assert(decision.action === "scheduled", `Expected scheduled decision, got ${decision.action}.`);
+  const job = decision.jobs.find((candidate) => candidate.kind === kind);
+  assert(job != null, `Expected ${kind} job, got ${decision.jobs.map((candidate) => candidate.kind).join(",")}.`);
+  return job;
+}
+
 function assertIgnored(decision: AutopilotTriggerDecision, reasonIncludes: string): void {
   assert(decision.action === "ignored", `Expected ignored decision, got ${decision.action}.`);
   assert(decision.jobs.length === 0, `Ignored decision must not schedule jobs: ${JSON.stringify(decision.jobs)}`);
@@ -81,6 +89,34 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "passive events schedule only observe-safe jobs by default",
+    run: () => {
+      for (const file of [
+        "openspec/changes/change-a/tasks.md",
+        "openspec/changes/change-a/automation/task.json",
+      ]) {
+        const decision = classifyAutopilotEvent({ type: "file.watcher.updated", properties: { file, event: "change" } });
+        const job = scheduledJob(decision);
+        assert(job.kind === "status" || job.kind === "check", `Passive file event ${file} must schedule only status/check, got ${job.kind}.`);
+        assert(job.claimCapable === false, `Passive file event ${file} must not be claim-capable.`);
+      }
+
+      const postToolProgress = classifyAutopilotToolExecutionAfter(
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-default", args: {} },
+        { output: { outcome: "advanced", tasksStarted: [{ taskId: "task-a" }] } },
+      );
+      const checkpoint = scheduledJob(postToolProgress);
+      assert(checkpoint.kind === "check", `Default post-tool progress checkpoint must schedule check, got ${checkpoint.kind}.`);
+      assert(checkpoint.claimCapable === false, "Default post-tool checkpoint must not be claim-capable.");
+
+      assertIgnored(
+        classifyAutopilotEvent({ type: "session.status", properties: { sessionID: "worker-1", status: { type: "idle" } } }),
+        "controlled worker triggers disabled",
+      );
+      assert(![...postToolProgress.jobs].some((job) => job.kind === "run_next"), "Passive defaults must never schedule run_next.");
+    },
+  },
+  {
     name: "file watcher classifies ledger and evidence paths as cheap checks",
     run: () => {
       for (const file of [
@@ -89,6 +125,7 @@ const tests: TestCase[] = [
         "openspec/changes/change-a/live-regression-report.md",
         "openspec/changes/change-a/automation/artifacts/report.json",
         "openspec/changes/change-a/automation/feedback/reviewer.json",
+        "openspec/changes/change-a/automation/runtime/state.json",
         ".\\openspec\\changes\\change-a\\automation\\task.json",
       ]) {
         const decision = classifyAutopilotEvent({ type: "file.watcher.updated", properties: { file, event: "change" } }, { fileWatch: { debounceMs: 17, cooldownMs: 29 } });
@@ -200,12 +237,26 @@ const tests: TestCase[] = [
         { triggerMode: "controlled" },
         { blockerQuestions: [{ requestID: "question-request-1", questionId: "question-1", taskId: "task-a" }] },
       );
-      const blockerJob = firstJob(blocker);
+      assert(blocker.jobs.length === 2, `Expected blocker answer plus status follow-up, got ${blocker.jobs.map((job) => job.kind).join(",")}.`);
+      const blockerJob = jobOfKind(blocker, "answer_blocker");
+      const blockerStatusJob = jobOfKind(blocker, "status");
       assert(blockerJob.kind === "answer_blocker", `Expected answer_blocker job, got ${blockerJob.kind}.`);
       assert(blockerJob.blockerAnswer?.questionId === "question-1", "Blocker job must use plugin-owned question id.");
       assert(blockerJob.blockerAnswer?.taskId === "task-a", "Blocker job must preserve plugin-owned task id.");
       assert(blockerJob.blockerAnswer?.selectedLabel === "Proceed", "Blocker job must preserve selected label.");
       assert(blockerJob.blockerAnswer?.action === "continue", "Blocker job must preserve selected action.");
+      assert(blockerStatusJob.scope?.requestID === "question-request-1", "Blocker status follow-up must preserve request scope.");
+
+      const docShapeBlocker = classifyAutopilotEvent(
+        { type: "question.replied", properties: { requestID: "question-request-1", answers: [["Proceed"]] } },
+        { triggerMode: "controlled" },
+        { blockerQuestions: [{ requestID: "question-request-1", questionId: "question-1", taskId: "task-a", options: [{ label: "Proceed", action: "continue" }] }] },
+      );
+      assert(docShapeBlocker.jobs.length === 2, `Expected docs-shaped blocker answer plus status follow-up, got ${docShapeBlocker.jobs.map((job) => job.kind).join(",")}.`);
+      const docShapeJob = jobOfKind(docShapeBlocker, "answer_blocker");
+      assert(docShapeJob.kind === "answer_blocker", `Expected answer_blocker for docs-shaped question reply, got ${docShapeJob.kind}.`);
+      assert(docShapeJob.blockerAnswer?.selectedLabel === "Proceed", `Expected docs-shaped reply selected label, got ${docShapeJob.blockerAnswer?.selectedLabel}.`);
+      assert(docShapeJob.blockerAnswer?.action === "continue", `Expected action inferred from pending option, got ${docShapeJob.blockerAnswer?.action}.`);
 
       const rejected = classifyAutopilotEvent(
         { type: "question.rejected", properties: { questionID: "question-request-1" } },
@@ -252,17 +303,18 @@ const tests: TestCase[] = [
         { waitingWorkspaces: ["workspace-a"] },
       );
       const workspaceFailedJob = firstJob(workspaceFailed);
-      assert(workspaceFailedJob.kind === "stop", `Expected stop for workspace failure, got ${workspaceFailedJob.kind}.`);
+      assert(workspaceFailedJob.kind === "status", `Expected status for unscoped workspace failure, got ${workspaceFailedJob.kind}.`);
       assert(workspaceFailedJob.scope?.workspaceName === "workspace-a", `Expected workspace-a failed scope, got ${JSON.stringify(workspaceFailedJob.scope)}.`);
 
       const worktree = classifyAutopilotEvent(
         { type: "worktree.failed", properties: { name: "worktree-a", message: "failed" } },
         { triggerMode: "controlled" },
-        { waitingWorktrees: ["worktree-a"] },
+        { waitingWorktrees: [{ name: "worktree-a", taskId: "task-a" }] },
       );
       const job = firstJob(worktree);
-      assert(job.kind === "stop", `Expected stop job for owned worktree failure, got ${job.kind}.`);
+      assert(job.kind === "stop", `Expected scoped stop job for owned worktree failure, got ${job.kind}.`);
       assert(job.scope?.worktreeName === "worktree-a", `Expected worktree-a scope, got ${JSON.stringify(job.scope)}.`);
+      assert(job.scope?.taskId === "task-a", `Expected task-a failure scope, got ${JSON.stringify(job.scope)}.`);
       assert(job.requiresRuntimeOwnership === true, "Worktree failure handling requires runtime ownership.");
 
       const worktreeReady = classifyAutopilotEvent(
@@ -273,6 +325,15 @@ const tests: TestCase[] = [
       const worktreeReadyJob = firstJob(worktreeReady);
       assert(worktreeReadyJob.kind === "status", `Expected status for worktree ready, got ${worktreeReadyJob.kind}.`);
       assert(worktreeReadyJob.scope?.worktreeName === "worktree-a", `Expected worktree-a ready scope, got ${JSON.stringify(worktreeReadyJob.scope)}.`);
+
+      const workspaceRunFailed = classifyAutopilotEvent(
+        { type: "workspace.failed", properties: { name: "workspace-run", message: "failed" } },
+        { triggerMode: "controlled" },
+        { waitingWorkspaces: [{ name: "workspace-run", runId: "run-1" }] },
+      );
+      const workspaceRunFailedJob = firstJob(workspaceRunFailed);
+      assert(workspaceRunFailedJob.kind === "stop", `Expected run-scoped stop for workspace failure, got ${workspaceRunFailedJob.kind}.`);
+      assert(workspaceRunFailedJob.scope?.runId === "run-1", `Expected run-1 failure scope, got ${JSON.stringify(workspaceRunFailedJob.scope)}.`);
 
       assertIgnored(classifyAutopilotEvent({ type: "workspace.ready", properties: { name: "unknown" } }, { triggerMode: "controlled" }), "unknown workspace");
       assertIgnored(classifyAutopilotEvent({ type: "worktree.ready", properties: { name: "unknown" } }, { triggerMode: "controlled" }), "unknown worktree");
@@ -285,12 +346,8 @@ const tests: TestCase[] = [
       assert(firstJob(status).kind === "status", "autopilot.status must map to status.");
       const check = classifyAutopilotTuiCommand("autopilot.check", { tuiCommands: { enabled: true } });
       assert(firstJob(check).kind === "check", "autopilot.check must map to check.");
-      const run = classifyAutopilotTuiCommand("autopilot.run", { tuiCommands: { enabled: true } });
-      const runJob = firstJob(run);
-      assert(runJob.kind === "run_next", "autopilot.run must map to run_next intent.");
-      assert(runJob.claimCapable === true, "Explicit TUI run intent may be claim-capable.");
-      const stop = classifyAutopilotTuiCommand("autopilot.stop", { tuiCommands: { enabled: true } });
-      assert(firstJob(stop).kind === "stop", "autopilot.stop must map to stop.");
+      assertIgnored(classifyAutopilotTuiCommand("autopilot.run", { tuiCommands: { enabled: true } }), "prompt-mediated fallback");
+      assertIgnored(classifyAutopilotTuiCommand("autopilot.stop", { tuiCommands: { enabled: true } }), "prompt-mediated fallback");
       assertIgnored(classifyAutopilotTuiCommand("autopilot.status", { tuiCommands: { enabled: false } }), "TUI commands disabled");
       assertIgnored(classifyAutopilotTuiCommand("other.command", { tuiCommands: { enabled: true } }), "unsupported TUI command");
     },
@@ -329,6 +386,15 @@ const tests: TestCase[] = [
         [{ activeRun: { runId: "run-1", blockers: true, locksValid: true } }, "blockers"],
         [{ activeRun: { runId: "run-1", mrWait: true, locksValid: true } }, "MR wait"],
         [{ activeRun: { runId: "run-1", locksValid: false } }, "valid locks"],
+        [{ activeRun: { runId: "run-1", locksValid: true, sessionIDs: ["session-1"] } }, "exactly one plugin-owned task scope"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a", "task-b"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "advanced" } } }, "exactly one plugin-owned task scope"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"] } }, "loop-guard safety evidence"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "ready_runtime_deferred", loopGuard: { repeatedNoProgress: true, suppressRepeatRecommendation: true } } } }, "loop-guard safety evidence"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "active_change_handoff", loopGuard: { repeatedNoProgress: true, suppressRepeatRecommendation: true } } } }, "loop-guard safety evidence"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "waiting_for_mr", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } } } }, "loop-guard safety evidence"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "blocked_for_user", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } } } }, "loop-guard safety evidence"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "invalid_ledgers", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } } } }, "loop-guard safety evidence"],
+        [{ activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "idle", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } } } }, "loop-guard safety evidence"],
       ] as const) {
         assertIgnored(
           classifyAutopilotEvent({ type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } }, { triggerMode: "autonomous", runNextEvents: { enabled: true } }, runtime),
@@ -339,7 +405,7 @@ const tests: TestCase[] = [
       const allowed = classifyAutopilotEvent(
         { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } },
         { triggerMode: "autonomous", runNextEvents: { enabled: true, cooldownMs: 77 } },
-        { activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"] } },
+        { activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "advanced", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } } } },
       );
       const job = firstJob(allowed);
       assert(job.kind === "run_next", `Expected autonomous run_next, got ${job.kind}.`);
@@ -347,6 +413,87 @@ const tests: TestCase[] = [
       assert(job.requiresRuntimeOwnership === true, "Autonomous run_next requires runtime ownership.");
       assert(job.claimCapable === true, "Autonomous run_next is claim-capable only after prerequisites pass.");
       assert(job.cooldownMs === 77, `Expected configured autonomous cooldown, got ${job.cooldownMs}.`);
+
+      const materializedAllowed = classifyAutopilotEvent(
+        { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } },
+        { triggerMode: "autonomous", runNextEvents: { enabled: true } },
+        { activeRun: { runId: "run-1", taskIds: ["task-a"], locksValid: true, sessionIDs: ["session-1"], lastRunNextOutput: { reasonCode: "ledger_materialized", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } } } },
+      );
+      const materializedJob = firstJob(materializedAllowed);
+      assert(materializedJob.kind === "run_next", `Expected autonomous run_next after ledger_materialized, got ${materializedJob.kind}.`);
+      assert(materializedJob.claimCapable === true, "ledger_materialized progress evidence must allow claim-capable autonomous run_next.");
+    },
+  },
+  {
+    name: "trigger modes gate passive controlled and autonomous behavior exactly",
+    run: () => {
+      const fileEvent = { type: "file.watcher.updated", properties: { file: "openspec/changes/change-a/tasks.md", event: "change" } };
+      const workerEvent = { type: "session.status", properties: { sessionID: "worker-1", status: { type: "idle" } } };
+      const runtime = {
+        workerSessions: [{ sessionID: "worker-1", taskId: "task-a", reportId: "report-a", status: "idle" as const }],
+        activeRun: { runId: "run-1", taskIds: ["task-a"], sessionIDs: ["worker-1"], locksValid: true },
+      };
+
+      assertIgnored(classifyAutopilotEvent(fileEvent, { triggerMode: "off" }), "disabled");
+      assert(scheduledJob(classifyAutopilotEvent(fileEvent, { triggerMode: "observe" })).kind === "status", "observe mode must allow passive status.");
+      assertIgnored(classifyAutopilotEvent(workerEvent, { triggerMode: "observe" }, runtime), "controlled worker triggers disabled");
+
+      const controlled = scheduledJob(classifyAutopilotEvent(workerEvent, { triggerMode: "controlled" }, runtime));
+      assert(controlled.kind === "collect", `controlled mode must allow owned collect, got ${controlled.kind}.`);
+      assert(!classifyAutopilotEvent(workerEvent, { triggerMode: "controlled", runNextEvents: { enabled: true } }, runtime).jobs.some((job) => job.kind === "run_next"), "controlled mode must not schedule autonomous run_next.");
+
+      const autonomousDisabled = scheduledJob(classifyAutopilotEvent(workerEvent, { triggerMode: "autonomous", runNextEvents: { enabled: false } }, runtime));
+      assert(autonomousDisabled.kind === "collect", `autonomous mode with runNextEvents disabled must prefer collect, got ${autonomousDisabled.kind}.`);
+
+      const autonomous = scheduledJob(classifyAutopilotEvent(
+        { type: "session.status", properties: { sessionID: "session-1", status: { type: "idle" } } },
+        { triggerMode: "autonomous", runNextEvents: { enabled: true } },
+        { activeRun: { runId: "run-1", taskIds: ["task-a"], sessionIDs: ["session-1"], locksValid: true, lastRunNextOutput: { reasonCode: "advanced" } } },
+      ));
+      assert(autonomous.kind === "run_next", `autonomous mode with explicit runNextEvents and ownership must allow run_next, got ${autonomous.kind}.`);
+    },
+  },
+  {
+    name: "trigger option parser applies safe defaults and rejects invalid modes",
+    run: () => {
+      const defaults = parseAutopilotTriggerOptions(undefined);
+      assert(defaults.triggerMode === "observe", `Expected default observe mode, got ${defaults.triggerMode}.`);
+      assert(defaults.fileWatch?.enabled === true, "Default file watch trigger must be enabled for observe-only status/checks.");
+      assert(defaults.postToolCheckpoints?.enabled === true, "Default post-tool checkpoints must be enabled for cheap checks.");
+      assert(defaults.workerCollect?.enabled === true, "Worker collect config can be enabled by default because triggerMode gates controlled actions.");
+      assert(defaults.runNextEvents?.enabled === false, "Autonomous run-next events must default to disabled.");
+
+      const parsed = parseAutopilotTriggerOptions({
+        triggerMode: "controlled",
+        fileWatch: { enabled: false, debounceMs: 25, cooldownMs: 50 },
+        postToolCheckpoints: { debounceMs: 5, cooldownMs: 10 },
+        workerCollect: { debounceMs: 15 },
+        blockerReplies: { enabled: false },
+        permissionReplies: { enabled: false },
+        tuiCommands: { enabled: true },
+        runNextEvents: { enabled: true, cooldownMs: 9000 },
+      });
+      assert(parsed.triggerMode === "controlled", `Expected controlled mode, got ${parsed.triggerMode}.`);
+      assert(parsed.fileWatch?.enabled === false, "Parser must preserve explicit disabled fileWatch.");
+      assert(parsed.fileWatch?.debounceMs === 25 && parsed.fileWatch.cooldownMs === 50, `Parser must preserve file watch timings, got ${JSON.stringify(parsed.fileWatch)}.`);
+      assert(parsed.postToolCheckpoints?.debounceMs === 5 && parsed.postToolCheckpoints.cooldownMs === 10, `Parser must preserve post-tool timings, got ${JSON.stringify(parsed.postToolCheckpoints)}.`);
+      assert(parsed.workerCollect?.debounceMs === 15, `Parser must preserve worker debounce, got ${JSON.stringify(parsed.workerCollect)}.`);
+      assert(parsed.blockerReplies?.enabled === false, "Parser must preserve blocker disabled flag.");
+      assert(parsed.permissionReplies?.enabled === false, "Parser must preserve permission disabled flag.");
+      assert(parsed.tuiCommands?.enabled === true, "Parser must preserve TUI enabled flag.");
+      assert(parsed.runNextEvents?.enabled === true && parsed.runNextEvents.cooldownMs === 9000, `Parser must preserve explicit autonomous settings, got ${JSON.stringify(parsed.runNextEvents)}.`);
+
+      const invalid = parseAutopilotTriggerOptions({ triggerMode: "surprise", fileWatch: { debounceMs: -1, cooldownMs: "fast" }, postToolCheckpoints: { debounceMs: 0.1 }, runNextEvents: { enabled: true, cooldownMs: 0 } });
+      assert(invalid.triggerMode === "off", `Invalid mode must fail closed to off, got ${invalid.triggerMode}.`);
+      assert(invalid.fileWatch?.debounceMs === 250, `Invalid debounce must fall back to default, got ${invalid.fileWatch?.debounceMs}.`);
+      assert(invalid.fileWatch?.cooldownMs === 1000, `Invalid cooldown must fall back to default, got ${invalid.fileWatch?.cooldownMs}.`);
+      assert(invalid.postToolCheckpoints?.debounceMs === 250, `Fractional debounce must fall back to default, got ${invalid.postToolCheckpoints?.debounceMs}.`);
+      assert(invalid.runNextEvents?.enabled === true, "Parser may preserve explicit autonomous opt-in, but classifier still requires autonomous mode and runtime evidence.");
+      assert(invalid.runNextEvents?.cooldownMs === 5000, `Invalid run-next cooldown must fall back to default, got ${invalid.runNextEvents?.cooldownMs}.`);
+
+      const huge = parseAutopilotTriggerOptions({ fileWatch: { debounceMs: 999999999, cooldownMs: 999999999 } });
+      assert(huge.fileWatch?.debounceMs === 250, `Huge debounce must fall back to default, got ${huge.fileWatch?.debounceMs}.`);
+      assert(huge.fileWatch?.cooldownMs === 1000, `Huge cooldown must fall back to default, got ${huge.fileWatch?.cooldownMs}.`);
     },
   },
   {

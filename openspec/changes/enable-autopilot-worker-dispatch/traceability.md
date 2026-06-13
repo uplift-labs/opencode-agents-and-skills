@@ -23,6 +23,14 @@
 | Worker Scope And Protected Path Enforcement | Protected-path/scope guard tests | Plugin tool/permission guard, path normalization, worker identity checks |
 | Event-Driven Collection Uses Owned Worker Evidence | Event/scheduler integration tests | Runtime evidence exported to trigger layer, controlled collect jobs, passive no-claim behavior |
 
+## Completed Slice Evidence
+
+| Slice | Evidence | Residual Boundary |
+| --- | --- | --- |
+| Runtime store | `tools/autopilot-runtime-store.ts` and `tools/test-autopilot-runtime-store.ts` provide strict schema validation, validate-before-normalize rejection of unknown fields, optional `null` rejection, missing/corrupt/invalid-state recovery, cloned in-memory behavior, full active-run persistence, consumed report id normalization, temp-file atomic save, rollback/cleanup, and same-store overlapping save serialization. Focused, full, OpenSpec, and standard Autopilot checkpoint validation passed. | Serialization is guaranteed for one plugin runtime store instance; cross-process or multi-store writes remain out of scope until controller integration proves a single writer or adds a stronger coordination mechanism. |
+| Worker report parser | `tools/autopilot-worker-report-parser.ts` and `tools/test-autopilot-worker-report-parser.ts` provide strict standalone complete-marker parsing, JSON payload extraction, allowed-key/schema validation, duplicate/consumed report id rejection, stored run evidence matching, optional target-status handling, non-empty blocker and nested evidence preservation, and structured rejection reason codes. Focused, full, OpenSpec, and reviewer validation passed. | Parser validates envelope shape and stored-run evidence only; legal phase transition and protected ledger mutation remain out of scope for the ledger writer and phase-policy slices. |
+| Ledger transition writer | `tools/autopilot-ledger-transition-writer.ts` and `tools/test-autopilot-ledger-transition-writer.ts` provide active OpenSpec ledger path safety, symlink/junction rejection, current/next/post-write validation, stale revision/status detection, exact duplicate report id idempotency, temp-file atomic writes, blocked-state blocker clearing, and byte-preservation checks for rejection paths. Focused, full, OpenSpec, and reviewer validation passed. | Writer is not yet wired into `autopilot_collect`; controller/runtime integration must still serialize plugin-owned writers per ledger and connect parsed reports to durable runtime state. |
+
 ## Out-Of-Scope Follow-Ups
 
 | Future Area | Existing Or Future Tracking |
