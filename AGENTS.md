@@ -12,6 +12,12 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Keep each artifact cohesive. Split artifacts when triggers, permissions, or output contracts differ materially.
 - Preserve OpenCode compatibility: skill folders must match `name` in `SKILL.md`; agent files must use valid frontmatter and least-privilege permissions.
 
+## Autopilot Artifact Format
+
+- Autopilot-owned and OpenSpec automation wrapper artifacts must be JSON, not Markdown. Use JSON for task ledgers, runtime state, retrospectives, operation-gate reports, evidence packs, reviewer outputs, worker reports, and other machine-read Autopilot artifacts.
+- Markdown is allowed for canonical OpenSpec documents such as `proposal.md`, `design.md`, `tasks.md`, `spec.md`, and human-facing repository documentation. When an OpenSpec document needs automation evidence, store the machine-readable source in JSON such as `openspec/changes/<change>/automation/task.json` or `openspec/changes/<change>/automation/retro.json`, and reference it from Markdown only as explanatory text.
+- Do not introduce new Autopilot `*.md` wrapper artifacts such as `retrospective.md`; migrate existing Markdown wrappers to JSON-backed contracts before extending them.
+
 ## TypeScript Development
 
 - Use TypeScript for all repository automation and implementation code.
@@ -35,7 +41,8 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Remove filler and repeated caveats from responses, but preserve exact commands, paths, errors, code, safety warnings, and user-facing decisions.
 - Prefer targeted searches, symbols, and bounded file reads over broad file or log dumps.
 - On native Windows, `rtk` filters work only when invoked explicitly; use `rtk <command>` for shell-heavy read-only commands instead of relying on hook auto-rewrite.
-- When Headroom MCP tools are available, use them only for large logs, search results, JSON, or tool outputs where compression preserves the needed evidence; retrieve originals before relying on exact code, errors, or safety-critical details.
+- When Headroom MCP tools are available and a log, search result, JSON payload, validation output, or repeated tool output is likely to be reused and exceeds about 300 lines or 10 KB, call `headroom_compress`, keep the returned hash in working notes or final evidence when relevant, and call `headroom_retrieve` before exact claims.
+- Do not use Headroom MCP for small outputs, exact code under active edit, short errors already visible, or safety-critical details that must be quoted exactly.
 - For validation output, report summaries and failures first; read full saved tool output only when the preview lacks the cause.
 - Preserve exact code, commands, paths, errors, protocol terms, and safety warnings; do not compress away meaning.
 

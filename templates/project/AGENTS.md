@@ -41,5 +41,7 @@ Apply the same process for every task, scaled to the size and risk of the change
 
 - Treat source, tests, schemas, scripts, generated artifacts, and live output as primary evidence.
 - Keep TDD proportional: one smallest useful test or gate is enough unless risk requires more. If test-first work is infeasible, state why and name the closest substitute evidence.
+- When Headroom MCP tools are available and a log, search result, JSON payload, validation output, or repeated tool output is likely to be reused and exceeds about 300 lines or 10 KB, call `headroom_compress`, keep the returned hash in working notes or final evidence when relevant, and call `headroom_retrieve` before exact claims.
+- Do not use Headroom MCP for small outputs, exact code under active edit, short errors already visible, or safety-critical details that must be quoted exactly.
 - Prefer deterministic helpers, validators, fixtures, or generated reports over repeated manual inspection.
 - Reviewer agents are read-only leaf validators by default.
