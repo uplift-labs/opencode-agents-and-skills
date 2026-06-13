@@ -30,6 +30,15 @@
 - If deterministic helper code cannot answer something from its inputs, report `unknown`, `unreadable`, `unsupported`, or `blocked` instead of guessing.
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
 
+## Token Efficiency
+
+- Keep responses compact by default: outcome, changed files, validation, blockers, and only necessary rationale.
+- Remove filler and repeated caveats from responses, but preserve exact commands, paths, errors, code, safety warnings, and user-facing decisions.
+- Prefer targeted searches, symbols, and bounded file reads over broad file or log dumps.
+- On native Windows, `rtk` filters work only when invoked explicitly; use `rtk <command>` for shell-heavy read-only commands instead of relying on hook auto-rewrite.
+- For validation output, report summaries and failures first; read full saved tool output only when the preview lacks the cause.
+- Preserve exact code, commands, paths, errors, protocol terms, and safety warnings; do not compress away meaning.
+
 ## Autonomous Work Contract
 
 - The main session owns skill selection, decomposition, validation, reviewer gates, MR/PR-ready handoff, and final synthesis.
@@ -60,7 +69,7 @@
 
 - Run independent read/search/tool calls in parallel whenever there is no data dependency.
 - Use subagents only when the work is broad enough to benefit from separate context, parallel coverage, or independent review; keep simple searches, single-file reads, and tightly coupled reasoning in the main session.
-- Prefer `openspec-autopilot` over ad-hoc orchestration when an explicit Autopilot request, ready OpenSpec task ledger/queue, strict task-type phase contract, or safe parallel OpenSpec workstream exists; let `autopilot_run_next` drive until blocker, MR wait, or limit only when that Autopilot plugin tool is visible in the current available tool list. If it is unavailable, report the missing plugin tool surface instead of searching for CLI/script substitutes or simulating plugin-owned state.
+- Prefer `openspec-autopilot` over ad-hoc orchestration when an explicit Autopilot request, ready OpenSpec task ledger/queue, strict task-type phase contract, or safe parallel OpenSpec workstream exists; use read-only `autopilot_status` for status-only inspection or free-form prompt queue inventory, and let `autopilot_run_next` drive empty or exact `changeId`/`taskId` continuation until blocker, MR wait, or limit only when that Autopilot plugin tool is visible in the current available tool list. If it is unavailable, report the missing plugin tool surface instead of searching for CLI/script substitutes or simulating plugin-owned state.
 - Auto-enter master-orchestrator posture only for broad work with multiple independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead; stay serial for small, unclear, or tightly coupled work.
 - When entering master-orchestrator posture, the main session owns decomposition, dispatch, report reconciliation, integration, tests, reviewer gates, cleanup, user decisions, and final synthesis; it should not do substantial worker-assigned implementation directly.
 - Before finishing an orchestrated run, close or explicitly skip with reasons: worker report reconciliation, integration, focused/final validation, review gate, cleanup, residual risks, and next actions.

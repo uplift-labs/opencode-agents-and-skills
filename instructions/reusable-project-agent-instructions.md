@@ -28,6 +28,13 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 - Keep TDD proportional: do not expand into unrelated coverage or speculative suites when one focused test/gate proves the scoped behavior.
 - After edits, run the closest relevant validation command or state why validation was skipped.
 
+## Token Efficiency
+
+- Prefer targeted search and bounded reads before loading broad file context.
+- Keep responses compact: outcome, changed files, validation, blockers, and necessary rationale; preserve exact commands, paths, errors, code, and safety warnings.
+- On native Windows, use `rtk <command>` explicitly for shell-heavy read-only commands; hook auto-rewrite is not supported there.
+- Keep handoffs compact while preserving exact commands, paths, errors, and safety warnings.
+
 ## Autonomy
 
 - Continue autonomously within the selected goal while safe, useful work remains.
@@ -39,7 +46,8 @@ Use one process for all technologies: `Intake -> Evidence -> Baseline Proof -> S
 
 - Use a direct single-agent path for clear small edits and questions.
 - Use `openspec-autopilot` when a ready OpenSpec task ledger/queue exists, the user explicitly invokes Autopilot, strict task-type phases must be enforced, or safe independent OpenSpec work can be advanced in parallel until blocker/MR/limit.
-- Use prompt-only orchestration only when Autopilot is unavailable or not the right control plane.
+- Use read-only `autopilot_status` for status-only inspection or free-form prompt queue inventory; use `autopilot_run_next` only for empty or exact `changeId`/`taskId` continuation when the plugin tool is visible in the current available tool list. If Autopilot tools are unavailable, report the missing plugin tool surface instead of using CLI/script substitutes or simulating plugin-owned state.
+- Use prompt-only orchestration only when Autopilot is unavailable or not the right control plane, and never as a substitute for plugin-owned ledger/runtime transitions.
 
 ## Review And Evidence
 

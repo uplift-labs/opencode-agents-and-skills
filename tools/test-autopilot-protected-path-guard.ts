@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { autopilotProtectedPathPatterns } from "./autopilot-contract.ts";
-import { guardAutopilotProtectedPathToolCall, type AutopilotProtectedPathGuardDecision } from "./autopilot-protected-path-guard.ts";
+import { guardAutopilotProtectedPathToolCall, guardAutopilotWorkerScopeToolCall, type AutopilotProtectedPathGuardDecision } from "./autopilot-protected-path-guard.ts";
 
 type TestCase = {
   name: string;
@@ -184,6 +184,49 @@ const tests: TestCase[] = [
         "openspec/changes/change-a/automation/task.json",
       );
       assertGuardAllowed(guardAutopilotProtectedPathToolCall("bash", { command: "Get-Content task.json", workdir: "openspec/changes/change-a/automation" }));
+    },
+  },
+  {
+    name: "worker scope guard allows only assigned write scope",
+    run: () => {
+      const scope = { read: ["tools/**", "openspec/**"], write: ["tools/**", "docs/autopilot.md"], forbidden: ["tools/secret/**", "openspec/changes/*/automation/**", ".autopilot/**"] };
+      assertGuardAllowed(guardAutopilotWorkerScopeToolCall("write", { filePath: "tools/autopilot-worker.ts", content: "safe" }, scope));
+      assertGuardAllowed(guardAutopilotWorkerScopeToolCall("write", { filePath: "tools\\windows-path.ts", content: "safe" }, scope));
+      assertGuardAllowed(guardAutopilotWorkerScopeToolCall("apply_patch", { patchText: "*** Begin Patch\n*** Update File: docs/autopilot.md\n@@\n-old\n+new\n*** End Patch" }, scope));
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("write", { filePath: "README.md", content: "outside" }, scope), "README.md");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("write", { filePath: "tools/secret/key.txt", content: "secret" }, scope), "tools/secret/key.txt");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("write", { filePath: "openspec/changes/change-a/automation/task.json", content: "{}" }, scope), "openspec/changes/change-a/automation/task.json");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("write", { filePath: "../outside.ts", content: "unsafe" }, scope), "../outside.ts");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("write", { filePath: "C:/repo/tools/autopilot-worker.ts", content: "unsafe" }, scope), "C:/repo/tools/autopilot-worker.ts");
+    },
+  },
+  {
+    name: "worker scope guard classifies shell write paths fail-closed",
+    run: () => {
+      const scope = { read: ["tools/**"], write: ["tools/**"], forbidden: ["openspec/changes/*/automation/**", ".autopilot/**"] };
+      assertGuardAllowed(guardAutopilotWorkerScopeToolCall("bash", { command: "Set-Content -LiteralPath tools/worker.txt -Value safe" }, scope));
+      assertGuardAllowed(guardAutopilotWorkerScopeToolCall("bash", { command: "Set-Content worker.txt safe", workdir: "tools" }, scope));
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "Set-Content README.md unsafe" }, scope), "README.md");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "Set-Content ../outside.txt unsafe", workdir: "tools" }, scope), "tools/../outside.txt");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "Set-Content openspec/changes/change-a/automation/task.json '{}'" }, scope), "openspec/changes/change-a/automation/task.json");
+    },
+  },
+  {
+    name: "worker scope guard allows safe validation commands without widening write scope",
+    run: () => {
+      const scope = { read: ["tools/**", "openspec/**"], write: ["tools/**"], forbidden: ["openspec/changes/*/automation/**", ".autopilot/**"] };
+      for (const command of [
+        "npm test",
+        "npm run validate",
+        "npm run openspec:validate",
+        "npm run autopilot:check -- --level standard --change change-a",
+        "node tools/test-autopilot-worker-session-adapter.ts",
+      ] as const) {
+        assertGuardAllowed(guardAutopilotWorkerScopeToolCall("bash", { command }, scope));
+      }
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm test && Set-Content tools/out.txt ok" }, scope), "unclassified");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm run validate > tools/out.txt" }, scope), "unclassified");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm run unknown-script" }, scope), "unclassified");
     },
   },
 ];

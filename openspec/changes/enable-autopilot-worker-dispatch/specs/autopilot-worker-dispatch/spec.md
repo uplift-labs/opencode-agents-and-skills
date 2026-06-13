@@ -157,7 +157,7 @@ Autopilot SHALL enforce worker write scope and protected Autopilot paths with ru
 #### Scenario: Worker cannot edit protected Autopilot state directly
 
 - **GIVEN** a tool call originates from a plugin-owned Autopilot worker session
-- **WHEN** the tool attempts to edit `.autopilot/**`, `openspec/changes/*/automation/task.json`, `openspec/changes/*/automation/feedback/**`, or `openspec/changes/*/automation/artifacts/**`
+- **WHEN** the tool attempts to edit `.autopilot/**` or `openspec/changes/*/automation/**`
 - **THEN** the plugin blocks the write unless the operation is the internal plugin-owned ledger writer path
 - **AND** the worker is instructed to return report evidence instead
 
@@ -165,8 +165,8 @@ Autopilot SHALL enforce worker write scope and protected Autopilot paths with ru
 
 - **GIVEN** a worker is assigned a task with `scope.write` and `scope.forbidden`
 - **WHEN** the worker attempts to write outside the allowed scope, write a forbidden path, or use an absolute/traversal path that cannot be compared safely
-- **THEN** Autopilot blocks or asks according to repository safety policy
-- **AND** fail-closed behavior applies when worker identity or scope ownership cannot be verified
+- **THEN** Autopilot blocks the write for plugin-owned worker sessions
+- **AND** fail-closed blocking applies when worker identity, active write ownership, or scope ownership cannot be verified
 
 ### Requirement: Event-Driven Collection Uses Owned Worker Evidence
 

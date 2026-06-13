@@ -33,12 +33,12 @@ The missing capability is a plugin-owned runtime loop that can claim one selecte
 - Do not use LLM judgment as the authority for locks, legal transitions, scope safety, report acceptance, or ledger mutation.
 - Do not require Desktop/Web UI changes; the server plugin path must work for any OpenCode client that talks to the same server.
 
-## Current Evidence
+## Pre-Implementation Evidence
 
-- `.opencode/plugins/openspec-autopilot.ts` exposes model-facing `autopilot_*` tools and delegates to `createAutopilotController`, but it does not create child worker sessions or durable runtime state.
-- `tools/openspec-autopilot-output.ts` can return `advanced` in claim mode when `runtimeState.claimReadyTasks` is supplied, but live plugin options do not enable that mode by default.
+- Before this change, `.opencode/plugins/openspec-autopilot.ts` exposed model-facing `autopilot_*` tools and delegated to `createAutopilotController`, but did not create child worker sessions or durable runtime state.
+- Before this change, `tools/openspec-autopilot-output.ts` could return `advanced` in claim mode when `runtimeState.claimReadyTasks` was supplied, but live plugin options did not enable that mode by default.
 - `tools/openspec-autopilot-runtime.ts` already validates in-memory claim and collect transitions, tracks active runtime state, consumes worker report ids, rejects duplicate/stale reports, and checks fan-in evidence for parallel runs.
-- `tools/autopilot-programmatic-triggers.ts` and `tools/autopilot-trigger-scheduler.ts` already classify worker-idle/report-marker events and debounce/suppress recursive trigger jobs, but the server plugin has not yet wired them to a real worker runtime.
+- `tools/autopilot-programmatic-triggers.ts` and `tools/autopilot-trigger-scheduler.ts` already classified worker-idle/report-marker events and debounce/suppress recursive trigger jobs; this change wires owned worker collect evidence to the real worker runtime while broader trigger policy remains in its own change.
 - `openspec/changes/improve-autopilot-runtime-e2e-harness/` established the harness and selection contract; this change implements the next live runtime layer rather than repeating harness-only behavior.
 - `openspec/changes/add-autopilot-programmatic-triggers/` owns scheduler/event-hook work; this change provides the runtime state and worker report data that controlled trigger jobs need.
 

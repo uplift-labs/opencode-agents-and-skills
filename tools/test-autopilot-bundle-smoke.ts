@@ -33,11 +33,11 @@ type TuiCommand = {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pluginPath = path.join(root, ".opencode", "plugins", "openspec-autopilot.ts");
-const tuiPluginPath = path.join(root, ".opencode", "plugins", "openspec-autopilot-tui.ts");
+const tuiPluginPath = path.join(root, ".opencode", "tui-plugins", "openspec-autopilot-tui.ts");
 const requiredBundleFiles = [
   ".opencode/skills/openspec-autopilot/SKILL.md",
   ".opencode/plugins/openspec-autopilot.ts",
-  ".opencode/plugins/openspec-autopilot-tui.ts",
+  ".opencode/tui-plugins/openspec-autopilot-tui.ts",
   ".opencode/package.json",
   "opencode.json",
 ] as const;

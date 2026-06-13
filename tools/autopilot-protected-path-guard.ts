@@ -4,6 +4,12 @@ export type AutopilotProtectedPathGuardDecision = {
   paths: string[];
 };
 
+export type AutopilotWorkerScope = {
+  read: string[];
+  write: string[];
+  forbidden: string[];
+};
+
 const directPathTools = new Set([
   "edit",
   "write",
@@ -150,7 +156,12 @@ function bashLooksReadOnly(command: string): boolean {
     return false;
   }
   return /^(get-content|test-path|rg|grep|select-string)\b/.test(normalized)
+    || /^npm\s+test(?:\s|$)/.test(normalized)
+    || /^npm\s+run\s+validate(?:\s|$)/.test(normalized)
+    || /^npm\s+run\s+openspec:validate(?:\s|$)/.test(normalized)
+    || /^npm\s+run\s+autopilot:check(?:\s|$)/.test(normalized)
     || /^npm\s+run\s+autopilot:validate\b/.test(normalized)
+    || /^node\s+tools\/test-[a-z0-9-]+\.ts(?:\s|$)/.test(normalized)
     || /^node\s+tools\/autopilot-ledger\.ts\b/.test(normalized);
 }
 
@@ -183,6 +194,82 @@ function block(paths: string[], reason: string): AutopilotProtectedPathGuardDeci
 
 function allow(reason: string): AutopilotProtectedPathGuardDecision {
   return { action: "allow", reason, paths: [] };
+}
+
+function workerBlock(paths: string[], reason: string): AutopilotProtectedPathGuardDecision {
+  return { action: "block", reason: `${reason}. protected Autopilot state and worker scope boundaries must be enforced by the plugin.`, paths: Array.from(new Set(paths)).sort((left, right) => left.localeCompare(right)) };
+}
+
+function globPatternToRegExp(pattern: string): RegExp {
+  const normalized = normalizedPath(pattern);
+  let source = "^";
+  for (let index = 0; index < normalized.length; index++) {
+    const char = normalized[index];
+    const next = normalized[index + 1];
+    if (char === "*" && next === "*") {
+      source += ".*";
+      index++;
+      continue;
+    }
+    if (char === "*") {
+      source += "[^/]*";
+      continue;
+    }
+    source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+  }
+  source += "$";
+  return new RegExp(source);
+}
+
+function pathMatchesAny(candidate: string, patterns: string[]): boolean {
+  const normalized = normalizedPath(candidate);
+  return patterns.some((pattern) => globPatternToRegExp(pattern).test(normalized));
+}
+
+function unsafeComparablePath(value: string): boolean {
+  const raw = value.trim().replace(/^['"]|['"]$/g, "").replaceAll("\\", "/");
+  return raw.length === 0 || raw.startsWith("/") || /^[A-Za-z]:\//.test(raw) || raw.split("/").includes("..");
+}
+
+function shellMutatingCandidatePaths(command: string, workdir?: string): string[] {
+  return bashPathTokens(command).map((token) => workdir == null ? token : `${workdir}/${token}`);
+}
+
+function workerMutationPaths(tool: string, args: unknown): { paths: string[]; readOnly: boolean; unclassified: boolean } {
+  if (tool === "apply_patch") {
+    return !isRecord(args) || typeof args.patchText !== "string"
+      ? { paths: ["unclassified"], readOnly: false, unclassified: true }
+      : { paths: patchPaths(args.patchText), readOnly: false, unclassified: false };
+  }
+
+  if (directPathTools.has(tool)) {
+    const paths = collectDirectPaths(args);
+    return { paths: paths.length > 0 ? paths : ["unclassified"], readOnly: false, unclassified: paths.length === 0 };
+  }
+
+  if (tool === "bash" || toolNameLooksShellLike(tool) || commandFromArgs(args) != null) {
+    const command = commandFromArgs(args);
+    if (!isRecord(args) || command == null) {
+      return { paths: ["unclassified"], readOnly: false, unclassified: true };
+    }
+    if (shellHasControlSyntax(command)) {
+      return { paths: ["unclassified"], readOnly: false, unclassified: true };
+    }
+    if (bashLooksReadOnly(command)) {
+      return { paths: [], readOnly: true, unclassified: false };
+    }
+    const cwd = typeof args.cwd === "string" && args.cwd.trim().length > 0 ? args.cwd : undefined;
+    const workdir = typeof args.workdir === "string" && args.workdir.trim().length > 0 ? args.workdir : cwd;
+    const paths = shellMutatingCandidatePaths(command, workdir);
+    return { paths: paths.length > 0 ? paths : ["unclassified"], readOnly: false, unclassified: paths.length === 0 };
+  }
+
+  if (toolNameLooksMutating(tool)) {
+    const paths = collectStrings(args);
+    return { paths: paths.length > 0 ? paths : ["unclassified"], readOnly: false, unclassified: paths.length === 0 };
+  }
+
+  return { paths: [], readOnly: true, unclassified: false };
 }
 
 export function guardAutopilotProtectedPathToolCall(tool: string, args: unknown): AutopilotProtectedPathGuardDecision {
@@ -228,4 +315,36 @@ export function guardAutopilotProtectedPathToolCall(tool: string, args: unknown)
   }
 
   return allow("tool is not a protected Autopilot path mutation surface");
+}
+
+export function guardAutopilotWorkerScopeToolCall(tool: string, args: unknown, scope: AutopilotWorkerScope): AutopilotProtectedPathGuardDecision {
+  const protectedDecision = guardAutopilotProtectedPathToolCall(tool, args);
+  if (protectedDecision.action === "block") {
+    return protectedDecision;
+  }
+
+  const classified = workerMutationPaths(tool, args);
+  if (classified.readOnly) {
+    return allow("worker tool call is read-only or does not expose a mutation surface");
+  }
+  if (classified.unclassified) {
+    return workerBlock(classified.paths, `${tool} arguments cannot be classified safely for worker write scope`);
+  }
+
+  const unsafe = classified.paths.filter(unsafeComparablePath);
+  if (unsafe.length > 0) {
+    return workerBlock(unsafe, "worker write path is absolute, empty, or contains traversal and cannot be compared safely");
+  }
+
+  const forbidden = classified.paths.filter((candidate) => protectedPath(candidate) || pathMatchesAny(candidate, scope.forbidden));
+  if (forbidden.length > 0) {
+    return workerBlock(forbidden, "worker write path targets forbidden scope");
+  }
+
+  const outside = classified.paths.filter((candidate) => !pathMatchesAny(candidate, scope.write));
+  if (outside.length > 0) {
+    return workerBlock(outside, "worker write path is outside assigned write scope");
+  }
+
+  return allow("worker write paths are inside assigned write scope and outside forbidden scope");
 }

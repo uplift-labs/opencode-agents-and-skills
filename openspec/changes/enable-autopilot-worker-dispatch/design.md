@@ -104,14 +104,16 @@ Add an adapter that hides OpenCode API details from runtime business logic:
 ```ts
 type AutopilotWorkerSessionAdapter = {
   capability(): Promise<{ available: boolean; reason?: string }>;
+  createSession(input: AutopilotWorkerDispatchInput): Promise<AutopilotWorkerCreateResult>;
+  promptSession(input: AutopilotWorkerDispatchInput & { sessionId: string }): Promise<AutopilotWorkerPromptResult>;
   dispatch(input: AutopilotWorkerDispatchInput): Promise<AutopilotWorkerDispatchResult>;
   readFinalReport(input: { sessionId: string; reportId: string }): Promise<AutopilotReportReadResult>;
 };
 ```
 
-The plugin adapter should use OpenCode session APIs, not UI automation. It should create a child session with metadata such as `autopilotRunId`, `taskId`, `workerId`, and `reportId`, then send the worker prompt asynchronously.
+The plugin adapter should use SDK-shaped OpenCode session APIs, not UI automation. `session.create` uses only supported `body.parentID/title` plus `query.directory`; runtime metadata such as `autopilotRunId`, `taskId`, `workerId`, and `reportId` is carried in prompt text-part metadata and the strict worker prompt. The controller creates the child session, persists `workerSessionId` to durable runtime state, and only then sends the worker prompt asynchronously so hook-based scope ownership exists before worker execution begins.
 
-If the OpenCode API is unavailable or incompatible, `autopilot_run_next` must return a clear blocked/deferred capability reason and must not claim the task.
+If the OpenCode API is unavailable or incompatible, including missing `session.messages`, `autopilot_run_next` must return a clear blocked/deferred capability reason and must not claim the task.
 
 ### Worker Prompt Builder
 
@@ -193,22 +195,23 @@ The validator remains the final authority. Phase policy chooses an action; it do
 4. Read queue summaries and compute deterministic selection.
 5. If selected task cannot legally advance, return existing reason-coded no-progress output.
 6. If worker dispatch capability is disabled or unavailable, return `ready_runtime_deferred` or a more specific blocked reason without mutation.
-7. Create a claim record with ledger revision evidence.
-8. Build a worker prompt.
-9. Dispatch worker session through adapter.
-10. Update the claim record with session id and status `running`.
-11. Return `advanced` with `tasksStarted[]`, `selection`, active runtime evidence, and `nextActions[]` recommending status/collect.
+7. Create a claim record with ledger revision evidence inside serialized runtime save.
+8. Create the worker session through the adapter.
+9. Persist `workerSessionId` before prompting so scope guards can identify the worker session.
+10. Build and send the worker prompt asynchronously.
+11. Update the claim record to status `running` only after prompt acceptance.
+12. Return `advanced` with `tasksStarted[]`, `selection`, active runtime evidence, and `nextActions[]` recommending status/collect.
 
 ### `autopilot_collect`
 
 1. Load runtime snapshot.
-2. Find active worker(s) matching optional `taskId`.
-3. Read final report from session adapter or runtime report buffer.
-4. Parse and validate report envelope.
-5. Reject stale, duplicate, mismatched, or illegal reports with `runtime_evidence_conflict`.
+2. Claim one collectable active worker by marking it `collecting` inside serialized runtime save.
+3. Read final report from session adapter or runtime report buffer, returning structured no-progress output and restoring `running` state on read errors.
+4. Parse and validate report envelope, ignoring prompt/user message text and failing closed on role-less SDK message entries when reading SDK message history; only explicit assistant output is report input.
+5. Reject stale, duplicate, mismatched, or illegal reports with `runtime_evidence_conflict` and no protected ledger mutation.
 6. Apply ledger transition through `LedgerTransitionWriter`.
 7. Mark report id consumed.
-8. Update or close active run state according to the new phase.
+8. Update or close active run state according to the new phase, preserving `blocked` and `waiting_mr` as active serial ownership states until stop/resolution.
 9. Return `advanced` with `tasksAdvanced[]` or a blocked/waiting state.
 
 ### `autopilot_status`
@@ -230,7 +233,9 @@ Required guards:
 - block worker writes to `scope.forbidden`;
 - normalize Windows and POSIX separators before comparisons;
 - reject absolute, traversal, empty, or unsupported write paths when they cannot be compared safely;
-- fail closed for worker sessions when scope ownership cannot be established.
+- allow simple no-control-syntax validation commands such as repository test/validate scripts without widening write scope;
+- fail closed for worker sessions when scope ownership cannot be established;
+- block writes from known worker sessions whose run is no longer actively `running` (`stopped`, `failed`, `done`, `blocked`, `waiting_mr`, or `collecting`).
 
 ## Event And Scheduler Integration
 

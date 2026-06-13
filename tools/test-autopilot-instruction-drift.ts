@@ -230,6 +230,23 @@ function assertProgrammaticTriggerDocs(text: string, label: string): void {
   assert(/restart OpenCode/i.test(text), `${label} must include restart guidance for plugin/TUI trigger changes.`);
 }
 
+function assertWorkerDispatchRuntimeBoundary(text: string, label: string): void {
+  assert(text.includes("workerDispatch.enabled"), `${label} must document workerDispatch.enabled.`);
+  assert(text.includes(".autopilot/runtime/state.json"), `${label} must document the worker dispatch runtime store path.`);
+  assert(
+    /workerDispatch\.enabled[\s\S]{0,320}(single|one)[\s\S]{0,180}OpenCode server\/plugin runtime instance|(?:single|one)[\s\S]{0,180}OpenCode server\/plugin runtime instance[\s\S]{0,320}workerDispatch\.enabled/i.test(text),
+    `${label} must warn that live worker dispatch assumes one OpenCode server/plugin runtime instance owns the repository.`,
+  );
+  assert(/multiple|concurrent/i.test(text), `${label} must mention the multiple/concurrent runtime risk.`);
+  assert(/external lock\/CAS|external lock|CAS/i.test(text), `${label} must mention external lock/CAS as the required multi-runtime boundary.`);
+}
+
+function assertAutopilotStatusOnlyBoundary(text: string, label: string): void {
+  assert(/status-only[\s\S]{0,180}autopilot_status|autopilot_status[\s\S]{0,180}status-only/i.test(text), `${label} must route status-only inspection through read-only autopilot_status.`);
+  assert(/free-form prompt[\s\S]{0,220}autopilot_status|autopilot_status[\s\S]{0,220}free-form prompt/i.test(text), `${label} must route free-form prompt queue inventory through autopilot_status.`);
+  assert(/autopilot_run_next[\s\S]{0,180}(empty|exact)|(?:empty|exact)[\s\S]{0,180}autopilot_run_next/i.test(text), `${label} must scope autopilot_run_next continuation guidance to empty/exact scopes.`);
+}
+
 function assertAutopilotToolAvailabilityGate(text: string, label: string): void {
   assert(/(current|available|visible)[\s\S]{0,120}tool list|tool list[\s\S]{0,120}(current|available|visible)/i.test(text), `${label} must check the current available tool list before public Autopilot tool calls.`);
   assert(/autopilot_run_next[\s\S]{0,220}(available|visible|present)|(?:available|visible|present)[\s\S]{0,220}autopilot_run_next/i.test(text), `${label} must require autopilot_run_next to be available before instructing a call.`);
@@ -391,6 +408,13 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "Autopilot worker dispatch runtime boundary stays documented",
+    run: () => {
+      assertWorkerDispatchRuntimeBoundary(readText(".opencode/skills/openspec-autopilot/SKILL.md"), "openspec-autopilot skill");
+      assertWorkerDispatchRuntimeBoundary(readText("README.md"), "README");
+    },
+  },
+  {
     name: "README Autopilot routing section documents current output fields",
     run: () => {
       const readme = readText("README.md");
@@ -398,6 +422,8 @@ const tests: TestCase[] = [
       assertContainsAllFields(routingBullet, "README Autopilot routing bullet");
       assertCompatibilityFallback(routingBullet, "README Autopilot routing bullet");
       assertNoAuthoritativeStaleFields(routingBullet, "README Autopilot routing bullet");
+      assert(/workerDispatch\.enabled[\s\S]{0,180}tasksStarted\[\]|tasksStarted\[\][\s\S]{0,180}workerDispatch\.enabled/i.test(routingBullet), "README Autopilot routing bullet must document live worker dispatch tasksStarted evidence.");
+      assert(routingBullet.includes('plugin-owned-protected-ledger'), "README Autopilot routing bullet must document live collect protected-ledger mutation evidence.");
       assert(readme.includes("command.autopilot"), "README must keep /autopilot command routing discoverable.");
     },
   },
@@ -411,8 +437,10 @@ const tests: TestCase[] = [
       assertActiveChangeHandoff(routing, "README Routing Map");
       assertAutopilotMaterialization(routing, "README Routing Map");
       assertActiveChangeTriggerBoundary(routing, "README Routing Map");
+      assertAutopilotStatusOnlyBoundary(routing, "README Routing Map status-only boundary");
       assertPromptIntakeDocs(routing, "README Routing Map prompt intake");
       assertAutopilotToolAvailabilityGate(routing, "README Routing Map tool availability gate");
+      assert(/scope\.write[\s\S]{0,160}scope\.forbidden|scope\.forbidden[\s\S]{0,160}scope\.write/i.test(routing), "README Routing Map must document worker-scope protected-path guard boundaries.");
     },
   },
   {
@@ -422,11 +450,24 @@ const tests: TestCase[] = [
       const catalog = extractMarkdownSection(readme, "## Skill Catalog");
       const openSpecCatalog = extractMarkdownSection(catalog, "### OpenSpec");
       const line = extractLineContaining(openSpecCatalog, "`openspec-autopilot`", "README OpenSpec Skill Catalog");
+      assertAutopilotStatusOnlyBoundary(openSpecCatalog, "README OpenSpec Skill Catalog status-only boundary");
       assertActiveChangeHandoff(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
       assertAutopilotMaterialization(line, "README OpenSpec Skill Catalog openspec-autopilot entry");
+      assert(line.includes("workerDispatch.enabled") && line.includes("tasksStarted[]"), "README OpenSpec Skill Catalog entry must document live worker dispatch evidence.");
+      assert(line.includes('plugin-owned-protected-ledger'), "README OpenSpec Skill Catalog entry must document live collect protected-ledger mutation evidence.");
       assertPromptIntakeDocs(openSpecCatalog, "README OpenSpec Skill Catalog prompt intake");
       assertAutopilotToolAvailabilityGate(openSpecCatalog, "README OpenSpec Skill Catalog tool availability gate");
       assert(line.includes("openspec-apply-change"), "README OpenSpec Skill Catalog entry must mention openspec-apply-change continuation for active_change_handoff.");
+    },
+  },
+  {
+    name: "Autopilot plugin tool descriptions document live runtime behavior",
+    run: () => {
+      const plugin = readText(".opencode/plugins/openspec-autopilot.ts");
+      assert(/autopilot_run_next[\s\S]{0,500}(workerDispatch\.enabled[\s\S]{0,160}worker|worker[\s\S]{0,160}workerDispatch\.enabled)/i.test(plugin), "autopilot_run_next tool description must mention enabled worker dispatch.");
+      assert(/autopilot_run_next[\s\S]{0,700}workerDispatch\.enabled is true[\s\S]{0,180}worker-session capability is available[\s\S]{0,220}safe deferred output/i.test(plugin), "autopilot_run_next tool description must distinguish enabled+capability dispatch from safe deferred fallback.");
+      assert(/autopilot_status[\s\S]{0,260}(worker|run) state/i.test(plugin), "autopilot_status tool description must mention active worker/run state.");
+      assert(/autopilot_collect[\s\S]{0,260}protected-ledger/i.test(plugin), "autopilot_collect tool description must mention protected-ledger advancement.");
     },
   },
   {
@@ -450,8 +491,18 @@ const tests: TestCase[] = [
     name: "adjacent Autopilot routing skills require tool availability",
     run: () => {
       assertAutopilotRunNextAvailabilityGate(readText(".opencode/skills/next-step/SKILL.md"), "next-step skill Autopilot routing");
-      assertAutopilotRunNextAvailabilityGate(readText(".opencode/skills/adaptive-delivery/SKILL.md"), "adaptive-delivery skill Autopilot lane");
-      assertAutopilotRunNextAvailabilityGate(readText("instructions/global-opencode-agent-instructions.md"), "global OpenCode agent instructions Autopilot routing");
+      const adaptiveDelivery = readText(".opencode/skills/adaptive-delivery/SKILL.md");
+      const globalInstructions = readText("instructions/global-opencode-agent-instructions.md");
+      const reusableProject = readText("instructions/reusable-project-agent-instructions.md");
+      const projectTemplate = readText("templates/project/AGENTS.md");
+      assertAutopilotRunNextAvailabilityGate(adaptiveDelivery, "adaptive-delivery skill Autopilot lane");
+      assertAutopilotRunNextAvailabilityGate(globalInstructions, "global OpenCode agent instructions Autopilot routing");
+      assertAutopilotRunNextAvailabilityGate(reusableProject, "reusable project instructions Autopilot routing");
+      assertAutopilotRunNextAvailabilityGate(projectTemplate, "project template Autopilot routing");
+      assertAutopilotStatusOnlyBoundary(adaptiveDelivery, "adaptive-delivery skill Autopilot lane");
+      assertAutopilotStatusOnlyBoundary(globalInstructions, "global OpenCode agent instructions Autopilot routing");
+      assertAutopilotStatusOnlyBoundary(reusableProject, "reusable project instructions Autopilot routing");
+      assertAutopilotStatusOnlyBoundary(projectTemplate, "project template Autopilot routing");
     },
   },
   {

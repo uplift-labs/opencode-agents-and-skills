@@ -1,6 +1,8 @@
 import { tool } from "@opencode-ai/plugin";
 import type { Plugin } from "@opencode-ai/plugin";
+import path from "node:path";
 import { runAutopilotCheck } from "../../tools/autopilot-check.ts";
+import { createFileAutopilotRuntimeStore, type AutopilotRunRecord, type AutopilotRuntimeStore } from "../../tools/autopilot-runtime-store.ts";
 import {
   classifyAutopilotEvent,
   classifyAutopilotToolExecutionAfter,
@@ -11,13 +13,14 @@ import {
   type AutopilotTriggerJob,
   type AutopilotTriggerRuntimeEvidence,
 } from "../../tools/autopilot-programmatic-triggers.ts";
-import { guardAutopilotProtectedPathToolCall } from "../../tools/autopilot-protected-path-guard.ts";
+import { guardAutopilotProtectedPathToolCall, guardAutopilotWorkerScopeToolCall } from "../../tools/autopilot-protected-path-guard.ts";
 import {
   createAutopilotTriggerScheduler,
   type AutopilotTriggerEnqueueResult,
   type AutopilotTriggerExecution,
 } from "../../tools/autopilot-trigger-scheduler.ts";
 import { completeAutopilotWorkerReportMarker } from "../../tools/autopilot-worker-report-marker.ts";
+import { createOpenCodeWorkerSessionAdapter } from "../../tools/autopilot-worker-session-adapter.ts";
 import type { AutopilotOptions } from "../../tools/openspec-autopilot-output.ts";
 import { createAutopilotController, toPluginToolOutput } from "../../tools/openspec-autopilot-controller.ts";
 
@@ -132,8 +135,88 @@ function runtimeEvidence(runtimeState: unknown, pendingWorkerReportIds: Map<stri
   };
 }
 
+type DurableRuntimeEvidenceResult = {
+  evidence: AutopilotTriggerRuntimeEvidence;
+  errors: string[];
+};
+
+function mergeRuntimeEvidence(left: AutopilotTriggerRuntimeEvidence, right: AutopilotTriggerRuntimeEvidence): AutopilotTriggerRuntimeEvidence {
+  return {
+    ...left,
+    ...right,
+    workerSessions: [...(left.workerSessions ?? []), ...(right.workerSessions ?? [])],
+    blockerQuestions: [...(left.blockerQuestions ?? []), ...(right.blockerQuestions ?? [])],
+    pendingPermissions: [...(left.pendingPermissions ?? []), ...(right.pendingPermissions ?? [])],
+    waitingWorkspaces: [...(left.waitingWorkspaces ?? []), ...(right.waitingWorkspaces ?? [])],
+    waitingWorktrees: [...(left.waitingWorktrees ?? []), ...(right.waitingWorktrees ?? [])],
+    activeRun: right.activeRun ?? left.activeRun,
+  };
+}
+
+async function durableRuntimeEvidence(store: AutopilotRuntimeStore | undefined, pendingWorkerReportIds: Map<string, string>): Promise<DurableRuntimeEvidenceResult> {
+  if (store == null) {
+    return { evidence: {}, errors: [] };
+  }
+  const loaded = await store.load();
+  if (loaded.recovered || loaded.errors.length > 0) {
+    const errors = loaded.errors.length > 0 ? loaded.errors : ["Runtime state recovered without diagnostic details."];
+    return {
+      evidence: { activeRun: { runId: "runtime-recovery-conflict", taskIds: [], sessionIDs: [], blockers: true, mrWait: false, locksValid: false } },
+      errors,
+    };
+  }
+  const snapshot = loaded.snapshot;
+  const activeRuns = Object.values(snapshot.runs).filter((run) => ["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr"].includes(run.status));
+  const workerSessions = activeRuns.flatMap((run) => {
+    if (run.workerSessionId == null) {
+      return [];
+    }
+    const reportId = pendingWorkerReportIds.get(run.workerSessionId) ?? run.expectedReportId;
+    return [{
+      sessionID: run.workerSessionId,
+      taskId: run.taskId,
+      reportId,
+      status: run.status === "running" ? "busy" as const : "idle" as const,
+      reportConsumed: snapshot.consumedWorkerReportIds.includes(reportId),
+    }];
+  });
+  return {
+    evidence: {
+      workerSessions,
+      activeRun: activeRuns[0] == null ? undefined : {
+        runId: activeRuns[0].runId,
+        taskIds: activeRuns.map((run) => run.taskId),
+        sessionIDs: activeRuns.flatMap((run) => run.workerSessionId == null ? [] : [run.workerSessionId]),
+        blockers: activeRuns.some((run) => (run.blockers ?? []).length > 0),
+        mrWait: activeRuns.some((run) => run.status === "waiting_mr"),
+        locksValid: true,
+      },
+    },
+    errors: [],
+  };
+}
+
 function triggerOptions(options: AutopilotPluginOptions): ReturnType<typeof parseAutopilotTriggerOptions> {
   return parseAutopilotTriggerOptions(isRecord(options.triggers) ? options.triggers : undefined);
+}
+
+function workerDispatchEnabled(options: AutopilotPluginOptions): boolean {
+  return isRecord(options.workerDispatch) && options.workerDispatch.enabled === true;
+}
+
+function runtimeStatePath(root: string): string {
+  return path.join(root, ".autopilot", "runtime", "state.json");
+}
+
+function workerRunForSession(snapshot: Awaited<ReturnType<AutopilotRuntimeStore["load"]>>["snapshot"], sessionID: string | undefined): AutopilotRunRecord | null {
+  if (sessionID == null || sessionID.trim().length === 0) {
+    return null;
+  }
+  return Object.values(snapshot.runs).find((run) => run.workerSessionId === sessionID) ?? null;
+}
+
+function workerRunAllowsWrites(run: AutopilotRunRecord): boolean {
+  return run.status === "running";
 }
 
 async function log(ctx: LogContext, level: "debug" | "info" | "warn" | "error", message: string, extra: Record<string, unknown>): Promise<void> {
@@ -241,7 +324,15 @@ export default {
   server: async (ctx, options?: AutopilotPluginOptions) => {
     const resolvedOptions = options ?? {};
     const root = repoRoot(ctx);
-    const controller = createAutopilotController({ root }, resolvedOptions);
+    const runtimeStore = resolvedOptions.runtimeStore ?? (workerDispatchEnabled(resolvedOptions) ? createFileAutopilotRuntimeStore(runtimeStatePath(root)) : undefined);
+    const controllerFor = (parentSessionId?: string) => createAutopilotController({ root }, {
+      ...resolvedOptions,
+      runtimeStore,
+      workerSessionAdapter: resolvedOptions.workerSessionAdapter ?? (workerDispatchEnabled(resolvedOptions)
+        ? createOpenCodeWorkerSessionAdapter({ client: ctx.client, parentSessionId, directory: ctx.directory, worktree: ctx.worktree })
+        : undefined),
+    });
+    const controller = controllerFor();
     const resolvedTriggerOptions = triggerOptions(resolvedOptions);
     const pendingWorkerReportIds = new Map<string, string>();
     void log(ctx, "debug", "trigger config resolved", {
@@ -255,11 +346,19 @@ export default {
       runNextEvents: resolvedTriggerOptions.runNextEvents?.enabled,
     });
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
+    async function mergedDurableEvidence(): Promise<AutopilotTriggerRuntimeEvidence> {
+      const durable = await durableRuntimeEvidence(runtimeStore, pendingWorkerReportIds);
+      if (durable.errors.length > 0) {
+        await log(ctx, "warn", "durable runtime evidence recovery conflict", { errors: durable.errors });
+      }
+      return mergeRuntimeEvidence(runtimeEvidence(resolvedOptions.runtimeState, pendingWorkerReportIds), durable.evidence);
+    }
+
     const scheduler = createAutopilotTriggerScheduler({
       execute: async (execution: AutopilotTriggerExecution) => {
         const job = execution.job;
         try {
-          const currentEvidence = runtimeEvidence(resolvedOptions.runtimeState, pendingWorkerReportIds);
+          const currentEvidence = await mergedDurableEvidence();
           if (!runtimeJobStillValid(job, resolvedTriggerOptions, currentEvidence)) {
             await log(ctx, "warn", "trigger job suppressed", loggableJob(job, execution.key, {
               coalescedCount: execution.coalescedCount,
@@ -387,15 +486,35 @@ export default {
         if (marker != null) {
           pendingWorkerReportIds.set(marker.sessionID, marker.reportId);
         }
-        await enqueueDecision(classifyAutopilotEvent(event, resolvedTriggerOptions, runtimeEvidence(resolvedOptions.runtimeState, pendingWorkerReportIds)));
+        await enqueueDecision(classifyAutopilotEvent(event, resolvedTriggerOptions, await mergedDurableEvidence()));
       },
-      "tool.execute.before": async (input: { tool: string }, output: { args: unknown }) => {
+      "tool.execute.before": async (input: { tool: string; sessionID?: string }, output: { args: unknown }) => {
         if (resolvedTriggerOptions.protectedPathGuard?.enabled === false) {
           return;
         }
-        const decision = guardAutopilotProtectedPathToolCall(input.tool, output.args);
+        const loadedRuntime = runtimeStore == null ? null : await runtimeStore.load();
+        if (loadedRuntime != null && (loadedRuntime.recovered || loadedRuntime.errors.length > 0) && input.sessionID != null) {
+          const decision = guardAutopilotWorkerScopeToolCall(input.tool, output.args, { read: [], write: [], forbidden: ["**"] });
+          if (decision.action === "block") {
+            await log(ctx, "warn", "worker scope mutation blocked because durable runtime evidence is invalid", { tool: input.tool, sessionID: input.sessionID, paths: decision.paths, errors: loadedRuntime.errors });
+            throw new Error(`Autopilot runtime state recovery failed; worker scope cannot be verified: ${(loadedRuntime.errors.length > 0 ? loadedRuntime.errors : ["unknown recovery error"]).join("; ")}. ${decision.reason}: ${decision.paths.join(", ")}.`);
+          }
+          return;
+        }
+        const workerRun = loadedRuntime == null ? null : workerRunForSession(loadedRuntime.snapshot, input.sessionID);
+        if (workerRun != null && !workerRunAllowsWrites(workerRun)) {
+          const inactiveDecision = guardAutopilotWorkerScopeToolCall(input.tool, output.args, { read: [], write: [], forbidden: ["**"] });
+          if (inactiveDecision.action === "block") {
+            await log(ctx, "warn", "inactive worker scope mutation blocked", { tool: input.tool, sessionID: input.sessionID, taskId: workerRun.taskId, runId: workerRun.runId, status: workerRun.status, paths: inactiveDecision.paths });
+            throw new Error(`Autopilot worker session is not active for writes (status ${workerRun.status}); worker scope expired for task ${workerRun.taskId}. ${inactiveDecision.reason}: ${inactiveDecision.paths.join(", ")}.`);
+          }
+          return;
+        }
+        const decision = workerRun == null
+          ? guardAutopilotProtectedPathToolCall(input.tool, output.args)
+          : guardAutopilotWorkerScopeToolCall(input.tool, output.args, workerRun.scope);
         if (decision.action === "block") {
-          await log(ctx, "warn", "protected path mutation blocked", { tool: input.tool, paths: decision.paths });
+          await log(ctx, "warn", workerRun == null ? "protected path mutation blocked" : "worker scope mutation blocked", { tool: input.tool, sessionID: input.sessionID, taskId: workerRun?.taskId, paths: decision.paths });
           throw new Error(`${decision.reason}: ${decision.paths.join(", ")}. Protected Autopilot state must be mutated only by plugin-owned controller paths.`);
         }
       },
@@ -405,31 +524,31 @@ export default {
       tool: {
         autopilot_run_next: tool({
           description:
-            "Continue OpenSpec Autopilot as far as safely possible until blocker, MR wait, idle state, or MVP limit. The plugin is authoritative for process/state transitions.",
+            "Continue OpenSpec Autopilot as far as safely possible until blocker, MR wait, idle state, or runtime limit; may dispatch one worker when workerDispatch.enabled is true and worker-session capability is available, otherwise safe deferred output remains possible. The plugin is authoritative for process/state transitions.",
           args: {
             changeId: tool.schema.string().optional().describe("Optional OpenSpec change id to prefer."),
             taskId: tool.schema.string().optional().describe("Optional task id to prefer."),
           },
-          async execute(args) {
-            return toPluginToolOutput(await controller.runNext({ changeId: args.changeId, taskId: args.taskId }, { kind: "model-tool", name: "autopilot_run_next" }));
+          async execute(args, toolCtx?: { sessionID?: string }) {
+            return toPluginToolOutput(await controllerFor(toolCtx?.sessionID).runNext({ changeId: args.changeId, taskId: args.taskId }, { kind: "model-tool", name: "autopilot_run_next" }));
           },
         }),
         autopilot_status: tool({
-          description: "Return concise OpenSpec Autopilot status for task ledgers, blockers, and MRs.",
+          description: "Return concise OpenSpec Autopilot status for task ledgers, blockers, MRs, and plugin-owned active worker/run state.",
           args: {
             changeId: tool.schema.string().optional().describe("Optional OpenSpec change id to inspect."),
           },
-          async execute(args) {
-            return toPluginToolOutput(await controller.status({ changeId: args.changeId }, { kind: "model-tool", name: "autopilot_status" }));
+          async execute(args, toolCtx?: { sessionID?: string }) {
+            return toPluginToolOutput(await controllerFor(toolCtx?.sessionID).status({ changeId: args.changeId }, { kind: "model-tool", name: "autopilot_status" }));
           },
         }),
         autopilot_collect: tool({
-          description: "Collect plugin-owned worker reports and attempt legal runtime advancement without direct protected-file mutation.",
+          description: "Collect plugin-owned worker reports and apply legal plugin-owned runtime or protected-ledger advancement when report evidence validates.",
           args: {
             taskId: tool.schema.string().optional().describe("Optional task id to collect."),
           },
-          async execute(args) {
-            return toPluginToolOutput(await controller.collect({ taskId: args.taskId }, { kind: "model-tool", name: "autopilot_collect" }));
+          async execute(args, toolCtx?: { sessionID?: string }) {
+            return toPluginToolOutput(await controllerFor(toolCtx?.sessionID).collect({ taskId: args.taskId }, { kind: "model-tool", name: "autopilot_collect" }));
           },
         }),
         autopilot_answer_blocker: tool({
@@ -440,8 +559,8 @@ export default {
             selectedLabel: tool.schema.string().optional().describe("Selected option label."),
             action: tool.schema.string().optional().describe("Selected blocker action."),
           },
-          async execute(args) {
-            return toPluginToolOutput(await controller.answerBlocker(args, { kind: "model-tool", name: "autopilot_answer_blocker" }));
+          async execute(args, toolCtx?: { sessionID?: string }) {
+            return toPluginToolOutput(await controllerFor(toolCtx?.sessionID).answerBlocker(args, { kind: "model-tool", name: "autopilot_answer_blocker" }));
           },
         }),
         autopilot_stop: tool({
@@ -451,8 +570,8 @@ export default {
             id: tool.schema.string().optional().describe("Run id or task id."),
             reason: tool.schema.string().optional().describe("Reason for pause or cancel."),
           },
-          async execute(args) {
-            return toPluginToolOutput(await controller.stop(args, { kind: "model-tool", name: "autopilot_stop" }));
+          async execute(args, toolCtx?: { sessionID?: string }) {
+            return toPluginToolOutput(await controllerFor(toolCtx?.sessionID).stop(args, { kind: "model-tool", name: "autopilot_stop" }));
           },
         }),
       },

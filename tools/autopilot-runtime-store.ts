@@ -334,7 +334,7 @@ export function createFileAutopilotRuntimeStore(filePath: string): AutopilotRunt
   let writeQueue: Promise<void> = Promise.resolve();
   const load = async (): Promise<AutopilotRuntimeStoreLoadResult> => {
     if (!fs.existsSync(absolutePath)) {
-      return { snapshot: createEmptyAutopilotRuntimeSnapshot(), recovered: true, errors: ["Runtime state file is missing; recovered empty snapshot."] };
+      return { snapshot: createEmptyAutopilotRuntimeSnapshot(), recovered: false, errors: [] };
     }
     return parseRuntimeSnapshot(fs.readFileSync(absolutePath, "utf8"));
   };
@@ -342,6 +342,10 @@ export function createFileAutopilotRuntimeStore(filePath: string): AutopilotRunt
     let savedSnapshot: AutopilotRuntimeSnapshot | undefined;
     const writeOperation = writeQueue.then(async () => {
       const loaded = await load();
+      if (loaded.recovered || loaded.errors.length > 0) {
+        const errors = loaded.errors.length > 0 ? loaded.errors.join("; ") : "unknown recovery error";
+        throw new Error(`Refusing to overwrite invalid Autopilot runtime state: ${errors}`);
+      }
       const draft = cloneSnapshot(loaded.snapshot);
       mutator(draft);
       const normalized = checkedNormalizedSnapshot(draft);

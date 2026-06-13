@@ -27,6 +27,16 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Keep judgment-heavy synthesis in the agent/reviewer layer; use helper code to gather, count, validate, redact, diff, inventory, or enforce explicit rules.
 - For OpenCode retro analytics in this repository, durable TypeScript helper scripts are allowed when they materially reduce analysis work; add or update a focused test first, expose reusable helpers through `package.json`, and update the relevant retro skill to call them.
 
+## Token Efficiency
+
+- Keep responses compact by default: outcome, changed files, validation, blockers, and only necessary rationale.
+- Remove filler and repeated caveats from responses, but preserve exact commands, paths, errors, code, safety warnings, and user-facing decisions.
+- Prefer targeted searches, symbols, and bounded file reads over broad file or log dumps.
+- On native Windows, `rtk` filters work only when invoked explicitly; use `rtk <command>` for shell-heavy read-only commands instead of relying on hook auto-rewrite.
+- When Headroom MCP tools are available, use them only for large logs, search results, JSON, or tool outputs where compression preserves the needed evidence; retrieve originals before relying on exact code, errors, or safety-critical details.
+- For validation output, report summaries and failures first; read full saved tool output only when the preview lacks the cause.
+- Preserve exact code, commands, paths, errors, protocol terms, and safety warnings; do not compress away meaning.
+
 ## Autonomous Work Contract
 
 - The main session owns skill selection, decomposition, validation, reviewer gates, MR/PR-ready handoff, and final synthesis.

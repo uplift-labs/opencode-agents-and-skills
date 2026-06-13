@@ -31,6 +31,8 @@ import {
   stoppedRuntimeEntries,
 } from "./openspec-autopilot-runtime.ts";
 import type { AutopilotRuntimeState } from "./openspec-autopilot-runtime.ts";
+import type { AutopilotRuntimeStore } from "./autopilot-runtime-store.ts";
+import type { AutopilotWorkerSessionAdapter } from "./autopilot-worker-session-adapter.ts";
 import { readActiveChangeSummaries } from "./openspec-autopilot-active-change-queue.ts";
 import {
   nextActionsAfterAnswerBlocker,
@@ -63,6 +65,10 @@ export type AutopilotOptions = {
   ledgerRoot?: string;
   prototypeLedgerRoot?: string;
   runtimeState?: AutopilotRuntimeState;
+  runtimeStore?: AutopilotRuntimeStore;
+  workerDispatch?: { enabled?: boolean };
+  workerSessionAdapter?: AutopilotWorkerSessionAdapter;
+  now?: () => string;
 };
 
 export type LedgerFilter = {

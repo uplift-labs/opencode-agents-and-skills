@@ -134,13 +134,14 @@ const tests: TestCase[] = [
     },
   },
   {
-    name: "file store recovers missing and corrupt state",
+    name: "file store treats missing state as clean first run and reports corrupt recovery",
     run: () => withTempDir("recover", async (dir) => {
       const filePath = path.join(dir, ".autopilot", "runtime", "state.json");
       const store = createFileAutopilotRuntimeStore(filePath);
       const missing = await store.load();
-      assert(missing.recovered === true, "Missing state should recover to empty snapshot.");
-      assert(missing.snapshot.schemaVersion === 1, "Recovered missing state must be schemaVersion 1.");
+      assert(missing.recovered === false, "Missing state should be a clean first-run empty snapshot, not a recovery event.");
+      assert(missing.errors.length === 0, `Missing state must not report recovery errors, got ${missing.errors.join("; ")}.`);
+      assert(missing.snapshot.schemaVersion === 1, "Missing state must load schemaVersion 1 empty snapshot.");
 
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, "{not json", "utf8");
@@ -148,6 +149,16 @@ const tests: TestCase[] = [
       assert(corrupt.recovered === true, "Corrupt state should recover instead of throwing.");
       assert(corrupt.errors.some((error) => error.includes("parse")), `Expected parse error, got ${corrupt.errors.join("; ")}.`);
       assert(Object.keys(corrupt.snapshot.runs).length === 0, "Corrupt state must recover to empty runs.");
+      let corruptSaveFailed = false;
+      try {
+        await store.save((draft) => {
+          draft.consumedWorkerReportIds.push("report-after-corruption");
+        });
+      } catch (error) {
+        corruptSaveFailed = true;
+        assert(String(error).includes("Refusing to overwrite invalid Autopilot runtime state"), `Corrupt save refusal must be explicit, got ${String(error)}.`);
+      }
+      assert(corruptSaveFailed, "File store must not overwrite corrupt runtime state after recovery.");
 
       fs.writeFileSync(filePath, JSON.stringify({ schemaVersion: 2, runs: {}, consumedWorkerReportIds: [] }), "utf8");
       const invalidSchema = await store.load();

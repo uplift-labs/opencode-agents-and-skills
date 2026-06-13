@@ -1,6 +1,6 @@
 ---
 name: codebase-audit-loop
-description: Use ONLY for large exhaustive autonomous codebase audits covering bugs, redundancy, maintainability, test gaps, failure modes, performance risks, ledgers, reviewers, and evidence-backed findings.
+description: Use ONLY for large exhaustive autonomous codebase audits covering bugs, structure ergonomics, redundancy, maintainability, test gaps, failure modes, performance risks, ledgers, reviewers, and evidence-backed findings.
 license: MIT
 ---
 
@@ -26,17 +26,18 @@ Before deep work, define:
 - Correctness bugs: panic, data corruption, wrong output, wrong defaults, resource leak, broken error handling, nondeterminism.
 - Concurrency and isolation: multi-client, multi-tenant, multi-worker, shared state, cancellation, backpressure, shutdown.
 - Performance and reliability: latency, throughput, queue wait, lock contention, blocking IO, retry/recovery, overload.
+- Project structure ergonomics: predictable folder taxonomy, clear entrypoints, bounded module ownership, no dumping-ground directories, and human/agent navigability without tribal knowledge.
 - Redundancy: duplicate code/tests/docs/instructions, unused exports, dead code, redundant wrappers, repeated fixtures.
 - Maintainability: giant files, mixed responsibilities, unclear boundaries, excessive public surface, hard-to-review logic.
 - Test gaps: missing negative, integration, recovery, property, fuzz, mutation, benchmark, or manual gates.
 - Whole-program failure modes: startup failure, config failure, dependency unavailable, partial IO, timeout, client drop, crash, stale state.
-- Documentation and instruction drift when it materially affects implementation or review.
+- Documentation, instruction, and tooling discoverability drift when it materially affects implementation, review, or reuse of existing tools.
 
 ## Workflow
 
 - Use `codebase-audit-ledger` for durable coverage when scope is large enough to risk skipped areas.
 - Before deep review at scale, decide whether a deterministic helper would reduce repeated counting, inventory, diffing, coverage bookkeeping, or validation effort without replacing reviewer judgment.
-- Inventory files, tests, specs, commands, and critical flows.
+- Inventory files, directories, entrypoints, tests, specs, commands, tool/documentation indexes, and critical flows.
 - For broad audits with independent file or subsystem ranges, consider `orchestrator` with read-only workers and ledger-assigned ranges; keep quick or non-shardable audits serial.
 - Delegate independent read-only reviewer agents when useful, but keep the main session responsible for synthesis and edits.
 - Use `code-quality-reviewer` for maintainability/readability, file-bloat, duplication, boundary, and overengineering findings that need an independent read-only gate.
@@ -63,6 +64,7 @@ Return:
 - `Verdict`: clean | findings | fixed | blocked | incomplete.
 - `Coverage`: what was reviewed and what was not.
 - `Findings`: severity, evidence, evidence type, impact, recommendation, confidence.
+- `Project Structure Ergonomics`: human navigability, agent navigability, folder taxonomy, dumping-ground candidates, canonical entrypoints, and tool/documentation discoverability.
 - `Redundancy Matrix`: duplicate/dead/merge/extract/keep candidates when in scope.
 - `Test Gap Matrix`: behavior -> evidence -> missing gate.
 - `Failure Mode Matrix`: scenario -> expected behavior -> evidence or blocker.
