@@ -667,7 +667,7 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "retro:inventory", "retro:analyze", "retro:project-ledger", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }
@@ -683,6 +683,12 @@ function validateDevKitContract(root: string): void {
   }
   if (scripts["openspec:retro-followups"] && scripts["openspec:retro-followups"] !== "node tools/openspec-retro-followups.ts") {
     addError("package.json script 'openspec:retro-followups' must run node tools/openspec-retro-followups.ts.");
+  }
+  if (scripts["retro:project-ledger"] && scripts["retro:project-ledger"] !== "node tools/opencode-project-session-retro-ledger.ts") {
+    addError("package.json script 'retro:project-ledger' must run node tools/opencode-project-session-retro-ledger.ts.");
+  }
+  if (scripts.test && !/(^|&&)\s*node\s+tools\/test-project-session-retro-ledger\.ts(\s|$|&&)/.test(scripts.test)) {
+    addError("package.json script 'test' must include node tools/test-project-session-retro-ledger.ts.");
   }
   if (scripts["validate:strict"] && !scripts["validate:strict"].includes("--fail-on-warnings")) {
     addError("package.json script 'validate:strict' must pass --fail-on-warnings.");

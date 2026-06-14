@@ -16,7 +16,7 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 
 - Use TypeScript for all repository automation and implementation code.
 - Do not add or keep PowerShell, Python, or JavaScript source/tooling files; rewrite any such code to TypeScript instead.
-- Run library tooling through `npm run validate`, `npm test`, `npm run install:global -- ...`, `npm run retro:inventory -- ...`, and `npm run retro:analyze -- ...`; do not introduce `.ps1`, `.py`, or `.js` entrypoints.
+- Run library tooling through `npm run validate`, `npm test`, `npm run install:global -- ...`, `npm run retro:inventory -- ...`, `npm run retro:analyze -- ...`, and `npm run retro:project-ledger -- ...`; do not introduce `.ps1`, `.py`, or `.js` entrypoints.
 - JSON, Markdown, YAML, and other config/data files are allowed when they are not implementation code.
 
 ## Deterministic Helper Automation

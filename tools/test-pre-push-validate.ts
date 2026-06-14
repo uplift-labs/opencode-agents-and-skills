@@ -84,6 +84,73 @@ const tests: TestCase[] = [
     }),
   },
   {
+    name: "pre-push plan validates root retro ledger when present",
+    run: () => withTempDir("with-retro-json", (root) => {
+      fs.writeFileSync(path.join(root, "retro.json"), "{}\n", "utf8");
+      const plan = buildPrePushValidationPlan(root);
+      assertEqual(plan.length, 3, "Plan with root retro.json should include repository gates plus retro ledger gate.");
+      assertArrayEqual(plan.map((command) => command.label), [
+        "Repository validation",
+        "Project session retro ledger",
+        "Repository tests",
+      ], "Retro ledger gate should run before tests.");
+      assertArrayEqual(plan[1].args, ["run", "retro:project-ledger", "--", "validate", "--input", "retro.json", "--root", ".", "--require-complete", "--require-proposals"], "Retro ledger gate should require complete proposal-backed ledger.");
+    }),
+  },
+  {
+    name: "pre-push fake runner short-circuits on retro ledger failure",
+    run: () => withTempDir("runner-retro-fails", (root) => {
+      fs.writeFileSync(path.join(root, "retro.json"), "{}\n", "utf8");
+      const calls: string[] = [];
+      const exitCode = runPrePushValidation(root, {
+        runner: (_root: string, command: ValidationCommand): ValidationCommandResult => {
+          calls.push(commandKey(command));
+          return command.label === "Project session retro ledger" ? { status: 9, signal: null } : { status: 0, signal: null };
+        },
+        output: { log: () => undefined, error: () => undefined },
+      });
+
+      assertEqual(exitCode, 9, "Retro ledger failure should propagate.");
+      assertArrayEqual(calls, [
+        "Repository validation:npm run validate",
+        "Project session retro ledger:npm run retro:project-ledger -- validate --input retro.json --root . --require-complete --require-proposals",
+      ], "Retro ledger failure should stop before tests.");
+    }),
+  },
+  {
+    name: "pre-push plan orders root retro before OpenSpec gates",
+    run: () => withOpenSpecRoot("with-retro-and-openspec", (root) => {
+      fs.writeFileSync(path.join(root, "retro.json"), "{}\n", "utf8");
+      const plan = buildPrePushValidationPlan(root);
+      assertArrayEqual(plan.map((command) => command.label), [
+        "Repository validation",
+        "Project session retro ledger",
+        "OpenSpec operation prepush gate",
+        "Repository tests",
+        "OpenSpec validation",
+      ], "Root retro gate should run before OpenSpec operation gate and tests.");
+    }),
+  },
+  {
+    name: "pre-push root retro failure stops before OpenSpec gates",
+    run: () => withOpenSpecRoot("retro-fails-before-openspec", (root) => {
+      fs.writeFileSync(path.join(root, "retro.json"), "{}\n", "utf8");
+      const calls: string[] = [];
+      const exitCode = runPrePushValidation(root, {
+        runner: (_root: string, command: ValidationCommand): ValidationCommandResult => {
+          calls.push(commandKey(command));
+          return command.label === "Project session retro ledger" ? { status: 9, signal: null } : { status: 0, signal: null };
+        },
+        output: { log: () => undefined, error: () => undefined },
+      });
+      assertEqual(exitCode, 9, "Root retro failure should propagate before OpenSpec gates.");
+      assertArrayEqual(calls, [
+        "Repository validation:npm run validate",
+        "Project session retro ledger:npm run retro:project-ledger -- validate --input retro.json --root . --require-complete --require-proposals",
+      ], "Root retro failure should short-circuit before OpenSpec operation gate.");
+    }),
+  },
+  {
     name: "pre-push exit code treats killed commands as failure",
     run: () => {
       assertEqual(exitCodeFromSpawnResult({ status: null, signal: "SIGTERM" }), 1, "Signal-terminated command should fail.");

@@ -26,6 +26,9 @@ const requiredScripts = {
   "project:inventory": "node tools/project-inventory.ts",
   "instruction:inventory": "node tools/instruction-artifacts-inventory.ts",
   "code-quality:inventory": "node tools/code-quality-inventory.ts",
+  "retro:inventory": "node tools/opencode-session-retro-inventory.ts",
+  "retro:analyze": "node tools/opencode-session-retro-analyze.ts",
+  "retro:project-ledger": "node tools/opencode-project-session-retro-ledger.ts",
   "openspec:validate": "openspec validate --all",
   "openspec:gate": "node tools/openspec-operation-gate.ts",
   "openspec:retro-gate": "node tools/openspec-retro-gate.ts",
@@ -33,7 +36,7 @@ const requiredScripts = {
   "prepush:validate": "node tools/pre-push-validate.ts",
   validate: "node tools/validate-library.ts",
   "validate:strict": "node tools/validate-library.ts --fail-on-warnings",
-  test: "node tools/test-library.ts",
+  test: "node tools/test-library.ts && node tools/test-project-session-retro-ledger.ts",
 } as const;
 
 function newTempDir(name: string): string {
@@ -133,6 +136,51 @@ const tests: TestCase[] = [
         const result = invokeValidator(fixture);
         assertFailure(result, "Missing documented OpenSpec retro followups script should fail validation.");
         assertOutputContains(result, "openspec:retro-followups", "Missing OpenSpec retro followups script should name the required script.");
+      });
+    },
+  },
+  {
+    name: "validator rejects missing project session retro ledger script",
+    run: () => {
+      withTempDir("missing-project-retro-ledger-script", (fixture) => {
+        writePackageJson(fixture, withoutScript("retro:project-ledger"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Missing project session retro ledger script should fail validation.");
+        assertOutputContains(result, "retro:project-ledger", "Missing project retro ledger script should name the required script.");
+      });
+    },
+  },
+  {
+    name: "validator rejects wrong project session retro ledger script",
+    run: () => {
+      withTempDir("wrong-project-retro-ledger-script", (fixture) => {
+        writePackageJson(fixture, withScript("retro:project-ledger", "node wrong.ts"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Wrong project session retro ledger script should fail validation.");
+        assertOutputContains(result, "retro:project-ledger", "Wrong project retro ledger script should name the script.");
+        assertOutputContains(result, "node tools/opencode-project-session-retro-ledger.ts", "Wrong project retro ledger script should name the required command.");
+      });
+    },
+  },
+  {
+    name: "validator rejects test script missing project retro ledger tests",
+    run: () => {
+      withTempDir("test-script-missing-project-retro-ledger", (fixture) => {
+        writePackageJson(fixture, withScript("test", "node tools/test-library.ts"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Test script missing project retro ledger tests should fail validation.");
+        assertOutputContains(result, "node tools/test-project-session-retro-ledger.ts", "Missing test wiring should name the required test command.");
+      });
+    },
+  },
+  {
+    name: "validator rejects non-executed project retro ledger test mention",
+    run: () => {
+      withTempDir("test-script-echoes-project-retro-ledger", (fixture) => {
+        writePackageJson(fixture, withScript("test", "node tools/test-library.ts && echo node tools/test-project-session-retro-ledger.ts"));
+        const result = invokeValidator(fixture);
+        assertFailure(result, "Echoed project retro ledger test command should fail validation.");
+        assertOutputContains(result, "node tools/test-project-session-retro-ledger.ts", "Echoed test wiring should name the required executable command.");
       });
     },
   },
