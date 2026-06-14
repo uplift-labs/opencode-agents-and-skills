@@ -6,10 +6,7 @@
 | --- | --- | --- |
 | Propose gate | Proposal And Apply Gates Protect Scope Quality | Tests First: Operation Coverage, Implementation |
 | Apply gate | Proposal And Apply Gates Protect Scope Quality | Tests First: Operation Coverage, Implementation |
-| Task update gate | Task And Ledger Gates Prevent Stale Or Unsafe Work | Tests First: Operation Coverage, Implementation |
-| Ledger materialize gate | Task And Ledger Gates Prevent Stale Or Unsafe Work | Tests First: Operation Coverage, Implementation |
-| Worker dispatch gate | Worker Dispatch And Collect Gates Require Plugin-Owned Evidence | Tests First: Operation Coverage, Implementation |
-| Collect gate | Worker Dispatch And Collect Gates Require Plugin-Owned Evidence | Tests First: Operation Coverage, Implementation |
+| Task update gate | Task Gates Prevent Stale Or Unsafe Work | Tests First: Operation Coverage, Implementation |
 | Review gate | Review And Acceptance Gates Require Evidence Before Terminal Readiness | Tests First: Operation Coverage, Implementation |
 | Acceptance gate | Review And Acceptance Gates Require Evidence Before Terminal Readiness | Tests First: Operation Coverage, Implementation |
 | Archive gate | Archive And Post-Archive Gates Close The Lifecycle | Tests First: Operation Coverage, Implementation |
@@ -22,12 +19,9 @@
 | Existing Tool/Artifact | Reuse |
 | --- | --- |
 | `openspec validate --all` | OpenSpec structural/spec validation |
-| `tools/autopilot-ledger.ts` | Task ledger validation |
-| `tools/autopilot-check.ts` | Active changes, ledgers, freshness, prepush levels |
-| `tools/autopilot-report-freshness.ts` | Archive-strict freshness checks |
-| `tools/openspec-retro-gate.ts` | Existing archive retro behavior to migrate to JSON |
+| `tools/openspec-operation-gate.ts` | Operation gate registry and JSON output contract |
+| `tools/openspec-retro-gate.ts` | Archive retro behavior and JSON gate |
 | `tools/pre-push-validate.ts` | Hook integration point |
-| `tools/autopilot-programmatic-triggers.ts` | Programmatic trigger integration point |
 
 ## Validation Mapping
 

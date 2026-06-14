@@ -80,10 +80,10 @@ function defaultProblems(): Record<string, unknown>[] {
       noFollowUpReason: null,
     },
     {
-      problem: "Autopilot escape friction",
-      evidence: "ready_runtime_deferred repeated",
+      problem: "Workflow routing friction",
+      evidence: "No-progress handoff repeated",
       impact: "Token waste",
-      rootCause: "Escape-hatch guidance did not distinguish safe handoff from repeated no-progress calls",
+      rootCause: "Routing guidance did not distinguish safe handoff from repeated no-progress calls",
       recommendation: "Improve reusable skill guidance",
       confidence: "high",
       target: "opencode-dev-kit",
@@ -150,7 +150,7 @@ const tests: TestCase[] = [
       }
       const retro = JSON.parse(fs.readFileSync(path.join(repo, "openspec", "changes", "example", "automation", "retro.json"), "utf8")) as Record<string, unknown>;
       assert(JSON.stringify(retro).includes("retro-example-01-project-docs-drift"), "Project output must reference generated follow-up change.");
-      assert(JSON.stringify(retro).includes("retro-example-02-autopilot-escape-friction"), "Reusable output must reference generated follow-up change.");
+      assert(JSON.stringify(retro).includes("retro-example-02-workflow-routing-friction"), "Reusable output must reference generated follow-up change.");
       assert((retro.outputs as { noFindingsReason?: unknown }).noFindingsReason === null, "No-findings reason must be cleared when findings create changes.");
       const gate = evaluateRetroGate(repo, "example");
       assert(gate.valid && gate.archiveAllowed, `Generated follow-ups should satisfy retro gate, got ${JSON.stringify(gate.errors)}.`);

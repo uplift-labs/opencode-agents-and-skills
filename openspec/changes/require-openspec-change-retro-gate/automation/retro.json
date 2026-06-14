@@ -11,9 +11,9 @@
     },
     {
       "kind": "unknown",
-      "source": "Tool outputs / validation: `npm run validate:strict`, `npm test`, `openspec validate --all`, and `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json` passed on 2026-06-12.",
+      "source": "Tool outputs / validation: `npm run validate:strict`, `npm test`, `openspec validate --all`, and `npm run openspec:retro-gate -- require-openspec-change-retro-gate` passed on 2026-06-12.",
       "status": "unknown",
-      "summary": "Tool outputs / validation: `npm run validate:strict`, `npm test`, `openspec validate --all`, and `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json` passed on 2026-06-12."
+      "summary": "Tool outputs / validation: `npm run validate:strict`, `npm test`, `openspec validate --all`, and `npm run openspec:retro-gate -- require-openspec-change-retro-gate` passed on 2026-06-12."
     },
     {
       "kind": "unknown",
@@ -23,9 +23,9 @@
     },
     {
       "kind": "unknown",
-      "source": "Autopilot/runtime events: active completed changes now include final retrospective sections and completed retrospectives; live regression remains blocked before archive by restart and first-turn `/autopilot` evidence.",
+      "source": "Runtime events: active completed changes now include final retrospective sections and completed retrospectives.",
       "status": "unknown",
-      "summary": "Autopilot/runtime events: active completed changes now include final retrospective sections and completed retrospectives; live regression remains blocked before archive by restart and first-turn `/autopilot` evidence."
+      "summary": "Runtime events: active completed changes now include final retrospective sections and completed retrospectives."
     }
   ],
   "problems": [

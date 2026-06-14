@@ -36,14 +36,14 @@ const projectFinding: FindingFixture = {
   noFollowUpReason: null,
 };
 const devkitFinding: FindingFixture = {
-  problem: "Autopilot escape friction",
-  evidence: "ready_runtime_deferred repeated",
+  problem: "Workflow routing friction",
+  evidence: "No-progress handoff repeated",
   impact: "Token waste",
-  rootCause: "Escape-hatch guidance did not distinguish safe handoff from repeated no-progress calls",
+  rootCause: "Routing guidance did not distinguish safe handoff from repeated no-progress calls",
   recommendation: "Improve reusable skill guidance",
   confidence: "high",
   target: "opencode-dev-kit",
-  followUpChangeId: "retro-example-02-autopilot-escape-friction",
+  followUpChangeId: "retro-example-02-workflow-routing-friction",
   noFollowUpReason: null,
 };
 const unknownFinding: FindingFixture = {
@@ -135,7 +135,7 @@ function writeRetroJson(repo: string, changeId: string, json = retroJson(changeI
 }
 
 function findingForFollowUp(changeId: string): FindingFixture {
-  if (changeId.includes("autopilot-escape")) {
+  if (changeId.includes("workflow-routing")) {
     return devkitFinding;
   }
   if (changeId.includes("mystery-failure")) {
@@ -165,7 +165,7 @@ function writeFollowUp(repo: string, changeId: string, finding = findingForFollo
 
 function routedFindingsRetro(changeId = "example"): string {
   const projectFollowUp = `retro-${changeId}-01-project-docs-drift`;
-  const devkitFollowUp = `retro-${changeId}-02-autopilot-escape-friction`;
+  const devkitFollowUp = `retro-${changeId}-02-workflow-routing-friction`;
   return `# Retrospective: example
 
 ## Evidence Reviewed
@@ -178,7 +178,7 @@ function routedFindingsRetro(changeId = "example"): string {
 | Problem | Evidence | Impact | Root Cause | Recommendation | Confidence | Target |
 | --- | --- | --- | --- | --- | --- | --- |
 | Project docs drift | README section stale | Reviewers miss current commands | README routing was not updated with the changed command contract | Create follow-up | high | project-local |
-| Autopilot escape friction | ready_runtime_deferred repeated | Token waste | Escape-hatch guidance did not distinguish safe handoff from repeated no-progress calls | Improve reusable skill guidance | high | opencode-dev-kit |
+| Workflow routing friction | No-progress handoff repeated | Token waste | Routing guidance did not distinguish safe handoff from repeated no-progress calls | Improve reusable skill guidance | high | opencode-dev-kit |
 
 ## Outputs
 
@@ -246,7 +246,7 @@ const tests: TestCase[] = [
     run: () => withTempRepo("finding-routing", (repo) => {
       writeRetroJson(repo, "example", retroJson("example", [projectFinding, devkitFinding]));
       writeFollowUp(repo, "retro-example-01-project-docs-drift");
-      writeFollowUp(repo, "retro-example-02-autopilot-escape-friction");
+      writeFollowUp(repo, "retro-example-02-workflow-routing-friction");
       const accepted = evaluateRetroGate(repo, "example");
       assert(accepted.valid && accepted.archiveAllowed, `Routed findings should pass, got ${JSON.stringify(accepted.errors)}.`);
 
@@ -283,13 +283,13 @@ const tests: TestCase[] = [
       const migrated = migrateLegacyRetrospective(repo, "example", { generatedAt });
       assert(migrated.migrated, `Expected migrated result, got ${JSON.stringify(migrated)}.`);
       writeFollowUp(repo, "retro-example-01-project-docs-drift");
-      writeFollowUp(repo, "retro-example-02-autopilot-escape-friction");
+      writeFollowUp(repo, "retro-example-02-workflow-routing-friction");
       const accepted = evaluateRetroGate(repo, "example");
       assert(accepted.valid && accepted.archiveAllowed, `Migrated retro.json should satisfy gate, got ${JSON.stringify(accepted.errors)}.`);
 
       writeChange(repo, "malformed", {
         "tasks.md": legacyTasksWithRetro().replaceAll("example", "malformed"),
-        "retrospective.md": routedFindingsRetro("malformed").replace("| Autopilot escape friction | ready_runtime_deferred repeated | Token waste | Escape-hatch guidance did not distinguish safe handoff from repeated no-progress calls | Improve reusable skill guidance | high | opencode-dev-kit |", "| Autopilot escape friction | ready_runtime_deferred repeated | Token waste | opencode-dev-kit |"),
+        "retrospective.md": routedFindingsRetro("malformed").replace("| Workflow routing friction | No-progress handoff repeated | Token waste | Routing guidance did not distinguish safe handoff from repeated no-progress calls | Improve reusable skill guidance | high | opencode-dev-kit |", "| Workflow routing friction | No-progress handoff repeated | Token waste | opencode-dev-kit |"),
       });
       const blocked = migrateLegacyRetrospective(repo, "malformed", { dryRun: true, generatedAt });
       assert(!blocked.migrated, "Malformed Markdown table must block migration.");
@@ -302,17 +302,15 @@ const tests: TestCase[] = [
       const archive = readRepoText(".opencode/skills/openspec-archive-change/SKILL.md");
       const propose = readRepoText(".opencode/skills/openspec-propose/SKILL.md");
       const apply = readRepoText(".opencode/skills/openspec-apply-change/SKILL.md");
-      const autopilot = readRepoText(".opencode/skills/openspec-autopilot/SKILL.md");
       const readme = readRepoText("README.md");
 
-      for (const [label, text] of Object.entries({ archive, propose, apply, autopilot, readme })) {
+      for (const [label, text] of Object.entries({ archive, propose, apply, readme })) {
         assert(text.includes("automation/retro.json"), `${label} must require automation/retro.json.`);
         assert(!text.includes("Write `retrospective.md`"), `${label} must not instruct agents to write retrospective.md.`);
       }
       assert(archive.includes("openspec:retro-followups") && archive.includes("openspec:retro-gate") && archive.toLowerCase().includes("root cause") && archive.includes("approved skip"), "openspec-archive-change must enforce follow-up generation, root-cause evidence, the retro gate, and approved skip path.");
       assert(propose.includes("## Retrospective Before Archive") && propose.includes("openspec:retro-followups"), "openspec-propose must include the final JSON retrospective task template.");
       assert(apply.includes("openspec:retro-followups") && apply.includes("before archive"), "openspec-apply-change must hand completed changes to follow-up generation and the JSON retrospective gate before archive.");
-      assert(autopilot.includes("openspec:retro-followups") && autopilot.includes("archive gate"), "openspec-autopilot must treat missing JSON retrospectives/follow-ups as an acceptance/archive blocker.");
     },
   },
 ];

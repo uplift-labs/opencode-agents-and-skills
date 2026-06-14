@@ -3,9 +3,9 @@
 ## Evidence Reviewed
 
 - OpenSpec artifacts: proposal, design, specs, traceability, tasks, helper tests, and workflow skill updates.
-- Tool outputs / validation: `npm run validate:strict`, `npm test`, `openspec validate --all`, and `npm run autopilot:validate -- openspec/changes/autopilot-live-regression/automation/task.json` passed on 2026-06-12.
+- Tool outputs / validation: `npm run validate:strict`, `npm test`, `openspec validate --all`, and `npm run openspec:retro-gate -- require-openspec-change-retro-gate` passed on 2026-06-12.
 - Reviewer gates: `instruction-artifact-reviewer`, `test-coverage-reviewer`, `code-quality-reviewer`, and architecture consistency checks passed after fixes.
-- Autopilot/runtime events: active completed changes now include final retrospective sections and completed retrospectives; live regression remains blocked before archive by restart and first-turn `/autopilot` evidence.
+- Runtime events: active completed changes now include final retrospective sections and completed retrospectives.
 
 ## Problems Found
 

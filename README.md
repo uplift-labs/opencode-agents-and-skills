@@ -1,12 +1,12 @@
 # opencode-dev-kit
 
-Installable OpenCode development kit for one reusable AI-assisted engineering process across projects.
+Installable OpenCode development kit for reusable AI-assisted engineering workflows across projects.
 
 ## What This Is
 
-`opencode-dev-kit` packages reusable OpenCode skills, prototype plugins, read-only reviewer agents, project templates, and deterministic helper tools. Its purpose is to make development in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
+`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer agents, project templates, instruction templates, and deterministic helper tools. Its purpose is to make work in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
 
-The kit optimizes one process: gather evidence, prove the current state, choose the smallest useful slice, work test-first when behavior changes, validate, run proportional reviewer gates, and hand off with residual risks.
+The kit optimizes one process: gather evidence, prove current state, choose the smallest useful slice, work test-first when behavior changes, validate, run proportional reviewer gates, and hand off with residual risks.
 
 ## Universal Development Loop
 
@@ -16,14 +16,12 @@ The central contract is `instructions/universal-development-loop.md`:
 Intake -> Evidence -> Baseline Proof -> Small Slice -> Test First -> Implement -> Focused Validation -> Review Gate -> Final Validation -> Handoff -> Process Improvement
 ```
 
-Technology adapters may change commands and constraints, but not the loop. A TypeScript project, Rust project, legacy service, documentation repo, or desktop app should all use the same process with different validation commands.
+Technology adapters may change commands and constraints, but not the loop.
 
 ## Contents
 
 - `.opencode/skills/`: reusable OpenCode skills.
-- `.opencode/plugins/`: prototype OpenCode server plugins and model-facing tool surfaces.
 - `.opencode/agents/`: reusable read-only reviewer agents.
-- `fixtures/`: deterministic validation and acceptance fixtures for helper tooling.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
 - `templates/`: project bootstrap and CI templates for applying the Universal Development Loop to another repository.
 - `profiles/`: install manifests that choose artifacts without creating separate workflows.
@@ -50,7 +48,7 @@ Useful options:
 
 - `--dry-run` or `--what-if`: preview changes without writing files.
 - `--config-dir <path>`: install into a custom OpenCode config directory.
-- `--profile <standard|strict|advanced|autopilot-live>`: optionally restrict the installed artifact set without changing the Universal Development Loop. `autopilot-live` extends `advanced` and also installs the source-equivalent OpenSpec Autopilot plugin, `/autopilot` command, helper closure, and nested plugin options with `workerDispatch.enabled: true` and `triggers.triggerMode: "observe"`.
+- `--profile <standard|strict|advanced>`: restrict the installed artifact set without changing the Universal Development Loop.
 - `--agents-md-source <path>`: install a custom source file into the global `AGENTS.md` block.
 - `--skip-agents-md`: install only skills and agents.
 - `--no-prune`: keep destination skills/agents not present in this repository.
@@ -58,11 +56,7 @@ Useful options:
 
 Use `--agents-md-source AGENTS.md` only if you intentionally want this repository's local maintenance rules in the global `AGENTS.md` block.
 
-Omit `--profile` when you want the full dev kit globally. Use most profiles only when you intentionally want a smaller skills/agents set; `autopilot-live` is different because it extends `advanced` and adds the live plugin/command/helper bundle.
-
 Restart OpenCode after installing; config-time files are loaded at startup.
-
-Use `npm run install:global -- --profile autopilot-live` only for a config directory where the OpenSpec Autopilot plugin should own live worker-dispatch runtime state. After installing, run the printed `npm install --prefix <config-dir>/.opencode` dependency command or provide a packaged equivalent for `@opencode-ai/plugin`, then restart OpenCode. Skill-only installs warn that `openspec-autopilot` model-facing tools are unavailable until the live bundle, dependency, and restart are complete.
 
 Keep project-specific skills out of global discovery unless their descriptions explicitly scope them to that project. Global skills are visible in unrelated repositories through the skill catalog, so broad or local-product triggers add avoidable routing noise.
 
@@ -96,10 +90,10 @@ npm run project:inventory -- --root <project-path> --format markdown
 
 ## Token Economy
 
-- Use the Universal Development Loop instead of choosing among many competing workflows.
+- Use the Universal Development Loop instead of choosing among competing workflows.
 - Use `project:inventory`, `code-quality:inventory`, `glob`, and `grep` before broad file reads.
 - On native Windows, use `rtk <command>` explicitly for shell-heavy read-only commands; do not rely on hook auto-rewrite.
-- Use Headroom MCP tools only as an on-demand compression pilot for large logs, search results, JSON, or tool outputs; retrieve originals before trusting exact code, errors, or safety-critical details.
+- Use Headroom MCP tools only on demand for large logs, search results, JSON, or tool outputs; retrieve originals before trusting exact code, errors, or safety-critical details.
 - Route Headroom MCP through `tools/headroom-mcp-wrapper.ts` when OpenCode expects MCP prompts; the wrapper adds a small `headroom_usage_policy` prompt and proxies Headroom tools unchanged.
 - Keep heavyweight skills in optional profiles and load them only when they reduce total work.
 - Run focused validation first; run broad validation when the change crosses boundaries.
@@ -133,90 +127,16 @@ Use an absolute path or a path relative to the config file that declares it.
 
 ### Manual Agents
 
-OpenCode agents are loaded from project or global agent folders. Copy the selected files from `.opencode/agents/` into one of these locations:
+OpenCode agents are loaded from project or global agent folders. Copy selected files from `.opencode/agents/` into one of these locations:
 
 - Project: `.opencode/agents/<name>.md`
 - Global: `~/.config/opencode/agents/<name>.md`
 
 Copy only the reviewers that are useful for the target project. They are read-only leaf validators by default.
 
-### Manual Plugins
-
-OpenCode project server plugins are loaded from `.opencode/plugins/`. The prototype `openspec-autopilot.ts` plugin exposes the model-facing `autopilot_*` tools, server programmatic trigger hooks, and write gate. The separate `.opencode/tui-plugins/openspec-autopilot-tui.ts` entrypoint registers optional terminal TUI commands; keep it outside `.opencode/plugins/` for OpenCode Desktop/server installs because the server loader expects `server()` plugins there. Server and TUI entrypoints stay split because the OpenCode loader rejects a default plugin object containing both `server` and `tui`. The bundle depends on this repository's TypeScript Autopilot output helper and ledger validator during MVP development.
-
-For reusable installation, prefer `npm run install:global -- --profile autopilot-live` for an OpenCode config directory that should receive the source-equivalent MVP bundle. Manual packaging remains valid for custom layouts; copy or package the full MVP bundle, install or bundle `@opencode-ai/plugin`, then restart OpenCode so config-time plugin files are reloaded.
-Autopilot MVP bundle:
-
-After copying `.opencode/package.json`, install or package its `@opencode-ai/plugin` dependency for the target plugin runtime, or use a bundled equivalent that already resolves it. Only merge `command.autopilot` where the Autopilot skill and plugin bundle are available.
-The repository bundle smoke is source-equivalent: it verifies file presence, helper import closure, command config, and plugin server/tool execution without claiming a live OpenCode restart/loader E2E.
-
-- `.opencode/skills/openspec-autopilot/SKILL.md`
-- `.opencode/plugins/openspec-autopilot.ts`
-- `.opencode/tui-plugins/openspec-autopilot-tui.ts`
-- `.opencode/package.json`
-- `tools/openspec-autopilot-controller.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/openspec-autopilot-output.ts` or a bundled equivalent at the plugin's import path
-- `tools/openspec-autopilot-active-change-queue.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-change-graph.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/openspec-autopilot-materializer.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/openspec-autopilot-materialization-output.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/openspec-autopilot-next-actions.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/openspec-autopilot-runtime.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-prompt-intake.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-runtime-store.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-phase-dispatcher.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-worker-prompt-builder.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-worker-session-adapter.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-worker-report-parser.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-intake-lock.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-ledger-transition-writer.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-check.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-programmatic-triggers.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-protected-path-guard.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-write-gate.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-trigger-scheduler.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-worker-report-marker.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-evidence.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-report-freshness.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-worktree-lifecycle.ts` when auto/fixed parallel stream worktree create/cleanup planning is in scope
-- `tools/autopilot-active-run.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-scope-policy.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-ledger.ts` or a bundled equivalent at the plugin's import path
-- `tools/autopilot-contract.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-ledger-type-gates.ts` or a bundled equivalent at the plugin/helper import path
-- `tools/autopilot-path-safety.ts` or a bundled equivalent at the plugin/helper import path
-- `opencode.json` `command.autopilot` entry when `/autopilot` should be available
-
-Autopilot trigger mode defaults are intentionally conservative. Configure them through the canonical nested plugin option shape `{ "triggers": { ... } }` when packaging the plugin for a target project; nested `triggers` options are the only documented trigger configuration surface. Invalid `triggerMode` values fail closed to `off`; invalid nested event-trigger option shapes disable that event trigger, while invalid protected/write-gate option shapes keep protection enabled. Restart OpenCode after config, plugin, skill, command, or TUI changes because these files are loaded at startup.
-
-| `triggerMode` | Behavior |
-| --- | --- |
-| `off` | Disable event-driven status, check, collect, blocker, permission, workspace, and autonomous jobs. Explicit `autopilot_*` tools still work. |
-| `observe` | Default. `file.watcher.updated` can schedule `autopilot_status` or `autopilot:check --level cheap`; `tool.execute.after` can schedule cheap checkpoints after progress output and status checkpoints after runtime evidence conflicts. Passive events never call `autopilot_run_next` by default. |
-| `controlled` | Observe mode plus plugin-owned runtime triggers: worker idle/report events can schedule `autopilot_collect`, blocker answers can schedule `autopilot_answer_blocker`, permission replies schedule MVP status-only evidence, and workspace/worktree readiness or failure can schedule status or scoped stop handling. Unknown sessions, questions, permissions, workspaces, and worktrees are ignored. |
-| `autonomous` | Controlled mode plus explicit opt-in `runNextEvents.enabled: true`; `autopilot_run_next` still requires plugin-owned active-run evidence, valid locks, cooldown eligibility, no blockers, no MR wait, and loop-guard safety. |
-
-When `workerDispatch.enabled` is true, the server plugin creates plugin-owned runtime state at `.autopilot/runtime/state.json` by default and uses SDK-shaped OpenCode session calls to create one child worker session for the selected serial task: `session.create` uses `body.parentID/title` plus `query.directory`, while `session.promptAsync` and `session.messages` use `path.id`, `query.directory`, and prompt `body.parts[]`. If capability is missing or disabled, the safe `ready_runtime_deferred` fallback remains loop-guarded. If durable runtime state is corrupt or schema-invalid, tools and triggers surface `runtime_evidence_conflict`/warning diagnostics instead of silently recovering empty state and dispatching.
-
-Autopilot queue scheduling accepts explicit OpenSpec markers in `proposal.md`, `design.md`, or `tasks.md`: `Priority: <critical|high|medium|low>`, `Depends-On: <change-id>`, and `Blocks: <change-id>`. New materialized ledgers persist `priority`, `dependencies`, `schedule`, and locked `intake` evidence. Status/run-next output includes `changeGraph` with stable `levels`, `parallelReady`, `dependencyBlocked`, `conflicts`, and `cycles` so selection and diagnostics use the same dependency evidence.
-
-`workerDispatch.enabled` assumes one OpenCode server/plugin runtime instance owns a repository at a time; do not enable live worker dispatch from multiple concurrent OpenCode server instances against the same `.autopilot/runtime/state.json` unless an external lock/CAS layer is added.
-
-Treat `.autopilot/` as private runtime state in target projects. This repository ignores `.autopilot/` through `.gitignore`; target installs should add an equivalent ignore rule or private ACL before enabling live dispatch. Rollback may retain `.autopilot/runtime/state.json` for diagnostics after all workers are stopped, or delete `.autopilot/` when no live Autopilot run evidence is needed. To uninstall the live bundle, remove the Autopilot plugin tuple and `command.autopilot` from target `opencode.json`, remove copied `.opencode/plugins/openspec-autopilot.ts`, `.opencode/tui-plugins/openspec-autopilot-tui.ts`, Autopilot helper `tools/*` files, and `.opencode/package.json` dependency entries that are no longer used, then restart OpenCode.
-
-The write gate uses `tool.execute.before` and blocks direct model-facing `apply_patch`, edit/write tools, or mutating or unclassified/non-allowlisted `bash` commands that target `.autopilot/**` or `openspec/changes/*/automation/**`. `triggers.protectedPathGuard.enabled` controls that protected-state guard. When durable runtime state has active Autopilot write ownership, `triggers.writeGate.activeLock.enabled` separately controls whether the same gate blocks main-session mutations to ordinary repository files until plugin-owned ownership is stopped, collected, or resolved; both guards default on. Running plugin-owned worker sessions may write only inside assigned `scope.write`; writes outside scope, inside `scope.forbidden`, through absolute/traversal paths, or after status leaves `running` fail closed. Corrupt runtime evidence blocks mutations but allows read-only validation commands. Repository-owned helpers such as `openspec:retro-gate -- --migrate-legacy`, `openspec:retro-followups`, and `openspec:gate -- --persist` may write their documented JSON outputs under `automation/retro.json` or `automation/operation-gates/*.json` only in write-authorized sessions with no active Autopilot write ownership; plugin-owned controller paths remain the only allowed writer for Autopilot runtime state, task ledgers, worker reports, and other protected Autopilot state.
-
-TUI commands are separate from the server prompt flow and are registered only when `triggers.tuiCommands.enabled` is true. With that option enabled, `autopilot.status` and `autopilot.check` are zero-LLM TUI commands that report through TUI feedback. `autopilot.run` and `autopilot.stop` are explicit user actions that use a prompt-mediated fallback unless a direct server-owned bridge is proven for the target OpenCode version.
-
-Rollback is the reverse operation: remove the `command.autopilot` config entry, remove both Autopilot plugin entrypoints and the Autopilot skill, remove the plugin package dependency if unused, then restart OpenCode.
-
 ### Manual Commands
 
-OpenCode prompt commands are configured through `opencode.json` under `command`. To expose `/autopilot` outside this repository, merge the `command.autopilot` entry from this repository's `opencode.json` into the target project or global config.
-
-Before copying or invoking the command, confirm the Autopilot plugin tools are visible in the current available tool list. If `autopilot_intake` is unavailable for non-empty `/autopilot` arguments, `autopilot_run_next` is unavailable for empty or exact-scope continuation, or required read-only `autopilot_status` is unavailable, the command should stop with a missing plugin tool-surface blocker rather than searching for CLI/script substitutes, using a CLI/script fallback, calling controller helpers directly, or simulating plugin-owned ledger/state transitions.
-
-The command uses schema-backed `template` syntax and enters a normal LLM turn that instructs the model to load `openspec-autopilot`, call read-only `autopilot_intake` for non-empty `$ARGUMENTS`, and call `autopilot_run_next` only for empty arguments or exact `changeId`/`taskId` scope. `autopilot_intake` is code-backed prompt intake with a separate schema: it reports derived prompt family, recommended workflow, queue summary, resolved scope, `firstTool`, and `firstToolArgs` without starting work. Ambiguous exact scopes, unresolved explicit scope flags, or incompatible `changeId`/`taskId` values block for user-choice options before any advancement. For `/autopilot <free-form prompt>`, free-form prompt text is not a scope id: inspect queue state read-only with `autopilot_intake`; use `autopilot_status` only for explicit status-only inspection or when helper output requires a read-only queue inventory step. Do not pass the prompt as `changeId` or `taskId`, do not advance unrelated queued work with `autopilot_run_next`, and do not persist or echo raw free-form prompt text in plugin-owned state or automation evidence by default. Report derived fields such as prompt family, recommended workflow, queue summary, and resolved scope; then hand off to `openspec-explore` for bugfix/research/planning/unclear prompts, `openspec-propose` for feature/refactor/tooling/config/performance/protocol prompts, or direct edit for docs/typo prompts. Restart OpenCode after changing command, skill, or plugin files.
+OpenCode prompt commands are configured through `opencode.json` under `command`. This repository does not currently ship project commands.
 
 ### Manual Instructions
 
@@ -224,7 +144,7 @@ Copy selected files from `instructions/` into a global or project `AGENTS.md` or
 
 ## Validate
 
-Run the structural validator and fixture-based acceptance checks after changing library artifacts:
+Run structural validation and fixture-based acceptance checks after changing library artifacts:
 
 ```sh
 npm run validate
@@ -245,42 +165,6 @@ For instruction-artifact context-cost reviews in this kit, gather deterministic 
 npm run instruction:inventory -- --format markdown
 ```
 
-Validate OpenSpec Autopilot task ledgers with:
-
-```sh
-npm run autopilot:validate -- <task-ledger.json>
-```
-
-Run layered Autopilot validation checkpoints with:
-
-```sh
-npm run autopilot:check -- --level cheap
-npm run autopilot:check -- --level standard --change <change-id>
-npm run autopilot:check -- --level prepush
-npm run autopilot:check -- --level final --change <change-id>
-```
-
-Use `cheap` after `autopilot_run_next` returns `ledger_materialized`/`outcome: "advanced"`, after `autopilot_run_next` or `autopilot_collect` returns `advanced`, after ledger edits, or before phase-transition checkpoints; do not require it for status-only reads. It validates scoped/discovered ledgers and reports no-ledger runs as not-applicable without running the full test suite. Use `standard` before reviewer or MR handoff for scoped evidence collect and freshness checks. Use `prepush` for repository push, MR handoff, or routine ready-to-land evidence. Use `final` only in write-authorized archive or final-closure contexts because it may create/update OpenSpec follow-up changes, retro follow-ups, and retrospective outputs before running the retro gate. Add `--fail-on-warnings` for strict CI or release flows.
-
-Collect deterministic Autopilot evidence packs for a change with:
-
-```sh
-npm run autopilot:evidence -- --change <change-id> --mode collect
-npm run autopilot:evidence -- --change <change-id> --mode validate
-npm run autopilot:evidence -- --change <change-id> --mode report --report openspec/changes/<change-id>/evidence-report.md
-```
-
-The evidence pack emits JSON or Markdown with stable schema/order plus a generated timestamp for ledgers, validation plans/results, reviewer routing, freshness, scenario skeletons, retrospective evidence, and residual risks. `collect` is read-only and does not run validation commands. `validate` runs the planned local validation commands and returns compact redacted summaries. `report` writes only to a new approved report path under `openspec/changes/<change-id>/` outside protected automation paths.
-
-Plan parallel Autopilot worktree creation or post-archive cleanup with JSON input:
-
-```sh
-node tools/autopilot-worktree-lifecycle.ts --input <worktree-plan.json>
-node tools/autopilot-worktree-lifecycle.ts --mode cleanup --input <cleanup-plan.json>
-```
-
-The worktree planner emits JSON actions and blockers only. It does not execute `git worktree` commands itself; callers must execute returned argv actions only after reviewing blockers, MR merged evidence, archive evidence, and repository policy.
-
 Validate all OpenSpec changes with the first-class package gate:
 
 ```sh
@@ -295,7 +179,7 @@ npm run openspec:gate -- --operation archive --change <change-id>
 npm run openspec:gate -- --operation prepush
 ```
 
-Use `--persist` only when a JSON evidence artifact should be written to `openspec/changes/<change-id>/automation/operation-gates/<operation>.json` from a write-authorized main session after status/write-gate evidence shows no active Autopilot write ownership. Default operation-gate runs are read-only.
+Use `--persist` only when a JSON evidence artifact should be written to `openspec/changes/<change-id>/automation/operation-gates/<operation>.json` from a write-authorized main session. Default operation-gate runs are read-only.
 
 Before archiving a completed OpenSpec change, create/update retrospective follow-ups with the mutating helper, then validate the read-only retrospective archive gate with:
 
@@ -305,20 +189,6 @@ npm run openspec:retro-gate -- <change-id>
 ```
 
 Use `npm run openspec:retro-followups -- <change-id> --dry-run` for read-only inspection. Without `--dry-run`, the follow-up helper reads actionable problem entries from `openspec/changes/<change-id>/automation/retro.json`, creates/updates OpenSpec follow-up changes before archive, and updates JSON follow-up ids. The retro gate then checks that `tasks.md` ends with `Retrospective Before Archive`, `automation/retro.json` exists, required schema fields are present, approved skips include reason and approver, actionable problems include `rootCause`, and actionable findings reference real follow-up changes with `proposal.md`, `tasks.md`, and `specs/<generated-id>/spec.md` that preserve the retrospective evidence and root cause.
-
-For Autopilot contract changes, run the direct source-equivalent bundle smoke and report freshness checks when those surfaces are in scope:
-
-```sh
-node tools/test-autopilot-prompt-intake.ts
-node tools/test-autopilot-contract.ts
-node tools/test-autopilot-instruction-drift.ts
-node tools/test-autopilot-bundle-smoke.ts
-node tools/test-autopilot-plugin-worker-dispatch-smoke.ts
-node tools/autopilot-report-freshness.ts <change-id> --mode advisory
-node tools/autopilot-report-freshness.ts <change-id> --mode archive-strict
-```
-
-The bundle smoke checks file presence, helper import paths, `.opencode/package.json`, `command.autopilot`, and plugin server/tool execution in a temp repository. The worker dispatch smoke exercises the source-equivalent plugin with fake SDK-shaped session calls, durable runtime state, idle-triggered collect, repeated-idle no-double-advance behavior, and worker-scope hook enforcement. These checks do not prove a live OpenCode restart or external target dependency installation; use them as the machine-checkable local gate before manual packaging or release notes.
 
 For installer changes, also prove the no-write path before using a real config directory:
 
@@ -338,7 +208,7 @@ Before pushing changes from this repository, run the pre-push gate:
 npm run prepush:validate
 ```
 
-The pre-push gate runs `npm run validate`, `npm run openspec:gate -- --operation prepush` when `openspec/` exists, active Autopilot ledger validation when ledgers exist, `npm test`, and `npm run openspec:validate`. When invoked by the tracked git hook, it parses pre-push stdin ref updates to add archive-strict Autopilot evidence freshness gates for changed active OpenSpec artifacts; new branches compare the local commit tree against the empty tree as a conservative changed-file scope, and git diff failures fall back to all active OpenSpec changes. Manual `npm run prepush:validate` runs the same repository gates but has no hook stdin scope, so it can miss committed-only OpenSpec freshness gates and only adds freshness gates from locally discoverable active-ledger evidence. Prefer enabling `.githooks/pre-push`; when running manually for known OpenSpec changes, also run `node tools/autopilot-report-freshness.ts <change-id> --mode archive-strict`. If no active Autopilot ledgers exist, the Autopilot ledger gate is reported as not-applicable and does not fail the push gate.
+The pre-push gate runs `npm run validate`, `npm run openspec:gate -- --operation prepush` when `openspec/` exists, `npm test`, and `npm run openspec:validate`.
 
 To enable the tracked local git hook for this clone, run:
 
@@ -370,23 +240,13 @@ After inventory, gather deterministic structured metrics without transcript-cont
 npm run retro:analyze -- --format markdown
 ```
 
-The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. Markdown output highlights action-oriented rollups for tool error hotspots, tool error categories, readiness signals, open TODOs, TODO status/priority counts, daily session buckets, and `session_message` types. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets. It may inspect tool `error`/`output`/`message` strings only to set fixed error-category buckets and bash command values only to set explicit validation/git-review proxy categories; it emits category names, booleans, and counts rather than those inspected values. These categories and proxies are mechanical signals that can seed investigation, not root-cause or intent findings. Use `--db <path>` or `--data-dir <path>` for explicit sources, `--only-explicit` to disable default path discovery, and `--show-paths` only when home-redacted source paths are acceptable. Use `--include-session-cards` with `--format json` when a redacted mechanical per-session envelope is needed; for large stores, combine it with an approved `--out <path>` because it emits one JSON card per session. Use `--out <path>` only for approved generated analysis reports; existing files are refused unless `--overwrite` is passed explicitly.
+The analysis tool reads OpenCode SQLite stores in read-only mode and emits redacted schema/table counts, session/day/project/agent/model buckets, message/part JSON envelope counts, tool names/statuses, input key names, deterministic tool-error categories, open TODO counts, edit/validation/git-review readiness proxies, event types, and session summary counters. It does not emit raw prompts, command values, session titles, project names, workspace names, stable IDs, account tokens, or share secrets.
 
 ## Routing Map
 
 - Broad, unclear, high-risk, or process-sensitive delivery -> `adaptive-delivery`; let it choose direct execution, planning, OpenSpec, architecture, orchestration, or reviewer gates.
 - Explicit planning-only work -> `deep-task-planning`; if the request is broad delivery rather than planning-only, start with `adaptive-delivery`.
-- Autopilot model-facing tool availability gate -> before any route that names `autopilot_intake`, `autopilot_run_next`, `autopilot_status`, or another public `autopilot_*` tool, check the current available tool list. If `autopilot_intake` is unavailable for non-empty `/autopilot` arguments, stop and report the missing plugin tool surface as a blocker; call `autopilot_run_next` only when it is visible/present in that current tool list; if any required Autopilot tool is unavailable, absent, or not visible, stop and report the missing plugin tool surface as a blocker. Do not search, scan, or look for CLI/script substitutes, do not use a CLI/script fallback, do not call controller helpers directly, and do not simulate, emulate, or manually mutate plugin-owned ledger/state transitions.
-- Autopilot status-only inspection or `/autopilot <free-form prompt>` queue inventory -> use read-only `autopilot_intake` for non-empty prompt intake; use `autopilot_status` for status-only inspection or helper-requested read-only queue inventory before any claim-capable action; `autopilot_run_next`-first guidance applies only to empty or exact `changeId`/`taskId` continuation.
-- Agent-oriented OpenSpec Autopilot continuation, explicit `/autopilot`, `autopilot`, ready OpenSpec task ledgers/queues, unfinished active OpenSpec changes in `tasks.md` during explicit `/autopilot` materialization or handoff, strict task-type phase enforcement, safe parallel OpenSpec work with plugin/runtime selection evidence, or `работай` inside an active Autopilot context -> `openspec-autopilot`; for empty or exact-scope continuation, the agent should call `autopilot_run_next` first; for non-empty prompt intake, call `autopilot_intake` first when visible; pass explicit user or command scope as `changeId`/`taskId`, treat the plugin as the authoritative process/state machine, prefer `nextActions`, `reasonCode`, `taskSummaries`, `selection`, and `loopGuard`, use `nextRecommendedCall` only as a compatibility fallback, and report deterministic selection evidence. `ledger_materialized` means the plugin created `<ledgerRoot>/<change>/automation/task.json` (default `<ledgerRoot>` is `openspec/changes`) for the selected active OpenSpec change and returned `tasksAdvanced[]` validation evidence; no implementation worker was claimed, and the agent should follow returned `nextActions[]` because a ledger-backed follow-up `autopilot_run_next` is safe after state changed. When `workerDispatch.enabled` and session capability are available, live serial dispatch may return `advanced` with `tasksStarted[]`, worker-session id, report id, and plugin-owned runtime evidence; disabled or unavailable capability may still return loop-guarded `ready_runtime_deferred`. For `active_change_handoff`, use `selection.selectedTaskId` to continue the selected unfinished active OpenSpec change through `openspec-apply-change`. Plugin-owned runtime output may report `advanced` for live serial worker dispatch, validated in-memory claim/collect/stop transitions, and live collect with `tasksAdvanced[].mutation: "plugin-owned-protected-ledger"`; runtime-only claim/stop does not mutate protected files, while live collect may mutate protected ledgers only through plugin-owned controller code. `selection.candidates[].parallelDecision: "parallel_ready"` is visibility evidence only; `parallel_started` requires explicit parallel runtime output plus matching `tasksStarted` evidence. Explicit auto parallel policy requires `parallelImplementation.enabled: true` plus auto mode or `maxImplementationClaims: "auto"`, and may return `selection.mode: "auto_parallel_implementation"`; `selection.maxImplementationClaims` stays numeric while `selection.autoDecision` records `riskClass`, `conflictTolerance`, accepted soft conflict scopes, rejected reasons, and fan-in requirements. Auto multi-start or accepted soft-conflict runs require passed fan-in evidence before terminal readiness. Archive-ready and MR-ready handoffs require the same fan-in evidence through agent/reviewer gates until first-class plugin checks exist.
-- `/autopilot <free-form prompt>` intake -> `openspec-autopilot` classifies `$ARGUMENTS` before any claim-capable action, using read-only `autopilot_intake`. Empty arguments may use unscoped `autopilot_run_next`; exact `changeId` or `taskId` arguments may use scoped `autopilot_run_next`; ambiguous exact scopes, unresolved explicit flags, or incompatible scope values block for user-choice options without advancement. Free-form prompt text is not `changeId` or `taskId`, uses read-only `autopilot_intake` for queue inventory and `autopilot_status` only for helper-requested read-only status, must not advance unrelated queued work with `autopilot_run_next`, and do not persist or echo raw free-form prompt text by default. Report derived prompt family, recommended workflow, queue summary, and resolved scope evidence. Route bugfix/research/planning/unclear prompts to `openspec-explore`, stable feature/refactor/tooling/config/performance/protocol prompts to `openspec-propose`, one obvious docs/typo prompts to direct edit, and exact existing scopes to `openspec-apply-change` or scoped Autopilot as appropriate.
-- Programmatic Autopilot server triggers -> no skill or assistant turn is required. `triggerMode: observe` allows passive `file.watcher.updated` and `tool.execute.after` hooks to schedule only `autopilot_status` or `autopilot:check --level cheap`; passive events never call `autopilot_run_next` by default. `triggerMode: controlled` additionally requires plugin-owned runtime evidence before `session.status`, worker report markers, `question.replied`, `permission.replied`, workspace, or worktree events can schedule controlled work: worker collect, blocker answer/status, MVP permission status-only evidence, and workspace/worktree status or scoped stop handling. `triggerMode: autonomous` remains opt-in and still needs explicit `runNextEvents.enabled`, ownership, locks, cooldown, no blockers, no MR wait, and loop-guard safety before any event-sourced `autopilot_run_next`.
-- Autopilot TUI commands -> when `triggers.tuiCommands.enabled` is true, `autopilot.status` and `autopilot.check` are zero-LLM TUI actions registered through `api.keymap.registerLayer({ commands })`; they report via TUI feedback rather than an assistant response. `autopilot.run` and `autopilot.stop` are explicit user actions and use a prompt-mediated fallback until a direct server-owned bridge is proven for the current OpenCode version. Normal `/autopilot` remains the prompt-flow command for agent-mediated continuation.
-- Autopilot write gate -> `tool.execute.before` blocks model-facing direct writes to `.autopilot/**` and `openspec/changes/*/automation/**`, including `apply_patch`, edit/write tools, and mutating or unclassified/non-allowlisted `bash` commands. During active Autopilot write ownership it also blocks main-session ordinary file mutations; for plugin-owned worker sessions it enforces assigned `scope.write`, `scope.forbidden`, and fail-closed absolute/traversal/unclassified path handling. Plugin-owned controller code remains the only allowed writer for protected Autopilot state.
-- Autopilot parallel worktree lifecycle -> fixed or auto parallel implementation streams require one owned `autopilot/...` git worktree per started stream, task-to-`worktreePath` evidence in selection/start/active-run output, MR integration back into the main repository, and cleanup only after MR merged evidence plus archived-change evidence. Use `tools/autopilot-worktree-lifecycle.ts`, or plugin-returned lifecycle action plans when explicitly present, for deterministic `git worktree add`, `git worktree remove`, and `git worktree prune` planning; do not rely on prose-only cleanup reminders.
-- Autopilot escape hatch -> for `ready_runtime_deferred`, `active_change_handoff`, `no_ledgers`, `no_actionable_tasks`, stale evidence, or evidence conflict, do not repeat equivalent no-progress Autopilot calls; hand off to `openspec-apply-change` for `active_change_handoff`, or to `next-step`, manual direct work, `orchestrator`, or a follow-up OpenSpec change according to the state reported by `nextActions[]` and local validation. Do not treat `ledger_materialized` as no-progress: follow the returned ledger-backed `nextActions[]` because the plugin-owned `task.json` now exists. `no_ledgers` means neither applicable Autopilot ledgers nor unfinished active OpenSpec changes in `tasks.md` were found.
-- Existing OpenSpec continuation or "what next" work without ready Autopilot ledgers -> `next-step` from the `advanced` profile; accepted OpenSpec implementation that does not need queue/runtime orchestration -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
-- Casual codebase questions and one obvious small edit -> use direct search/edit workflow unless an active Autopilot context or ready ledger requires the control plane.
+- Existing OpenSpec continuation or "what next" work -> `next-step` from the `advanced` profile; accepted OpenSpec implementation -> `openspec-apply-change`; new OpenSpec packages -> `openspec-propose`; consistency/archive work -> the matching OpenSpec review/archive skill.
 - Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
 - Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
@@ -423,7 +283,7 @@ This repository's OpenSpec guide starts at `openspec/project.md`; active changes
 
 Before archiving a completed OpenSpec change, write `openspec/changes/<change-id>/automation/retro.json`, run `npm run openspec:retro-followups -- <change-id>` when available to create/update follow-up OpenSpec changes for actionable findings, then run `npm run openspec:retro-gate -- <change-id>`. New `tasks.md` files should end with `Retrospective Before Archive` so the final learning step is machine-checkable and includes root-cause review.
 
-`automation/retro.json` should stay concise but evidence-backed. It includes `schemaVersion`, `changeId`, `evidenceReviewed`, `problems`, `outputs`, and `archiveGate`. Problem entries use `problem`, `evidence`, `impact`, `rootCause`, `recommendation`, `confidence`, `target`, `followUpChangeId`, and `noFollowUpReason`; actionable recommendations should address the cause or explicitly route an investigation/instrumentation follow-up when the cause is `unknown`. Actionable project-local or reusable Autopilot/skill/agent/instruction/validator/evidence-pack findings must become real OpenSpec follow-up changes referenced from JSON outputs; otherwise use `target` `none` only for findings fixed in scope, intentionally non-actionable items, or justified no-follow-up decisions. Approved skips must include a reason and approver.
+`automation/retro.json` should stay concise but evidence-backed. It includes `schemaVersion`, `changeId`, `evidenceReviewed`, `problems`, `outputs`, and `archiveGate`. Problem entries use `problem`, `evidence`, `impact`, `rootCause`, `recommendation`, `confidence`, `target`, `followUpChangeId`, and `noFollowUpReason`; actionable recommendations should address the cause or explicitly route an investigation/instrumentation follow-up when the cause is `unknown`. Actionable project-local or reusable skill/agent/instruction/validator findings must become real OpenSpec follow-up changes referenced from JSON outputs; otherwise use `target` `none` only for findings fixed in scope, intentionally non-actionable items, or justified no-follow-up decisions. Approved skips must include a reason and approver.
 
 ## Skill Catalog
 
@@ -431,12 +291,12 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 
 - `adaptive-delivery`: adaptive entrypoint for broad, unclear, high-risk, or process-sensitive work; chooses the smallest useful lane across direct execution, planning, OpenSpec, architecture, orchestration, and reviewer gates.
 - `deep-task-planning`: execution-grade plans for complex work.
-- `next-step`: discover OpenSpec-backed workstreams, route ready ledgers/queues to `openspec-autopilot`, request approval for non-Autopilot fan-out, or choose one concrete serial next step.
+- `next-step`: discover OpenSpec-backed workstreams and choose one concrete serial next step.
 - `merge-request-author`: reviewer-friendly PR/MR title/body/validation/risk authoring.
 - `merge-request-review-loop`: autonomous MR/PR review follow-up for status checks, reviewer feedback, local fixes, revalidation, outcome handoff, and remote-action gates.
 - `instruction-artifact-tuning`: review/tune skills, agents, prompts, and `AGENTS.md`.
-- `orchestrator`: prompt-only master coordination for broad independent non-Autopilot work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead; it is not a durable runtime orchestration service.
-- `opencode-total-session-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize session-level insights into trends/root causes, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
+- `orchestrator`: prompt-only master coordination for broad independent work, using bounded task fan-out, readable worker reports, report reconciliation, tests/review gates, and isolation only when worth the overhead.
+- `opencode-total-session-retro`: analyze all reachable OpenCode sessions across projects and installs, synthesize trends/root causes, and when authorized design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
 - `session-archive-retro`: analyze bounded/current-project session history, transcripts, and logs for recurring workflow problems, root causes, and improvements.
 
 ### Review And Learning
@@ -454,12 +314,6 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 
 ### OpenSpec
 
-Autopilot catalog note: the entries below are subject to the Routing Map tool availability gate. Check the current available tool list first; call `autopilot_intake`, `autopilot_run_next`, or read-only `autopilot_status` only when the required tool is visible/present. If `autopilot_intake` is unavailable for non-empty `/autopilot` arguments, stop and report the missing plugin tool surface as a blocker; if any required Autopilot tool is unavailable, absent, or not visible, stop and report the missing plugin tool surface as a blocker. Do not search for CLI/script substitutes, use a CLI/script fallback, call controller helpers directly, or simulate plugin-owned ledger/state transitions.
-
-For status-only inspection or `/autopilot <free-form prompt>` queue inventory, use read-only `autopilot_intake` for non-empty prompt intake and `autopilot_status` only for status-only or helper-requested read-only evidence; catalog `autopilot_run_next` continuation wording applies only to empty or exact `changeId`/`taskId` scopes.
-
-- `openspec-autopilot`: agent-oriented OpenSpec Autopilot control plane for ready task ledgers/queues, unfinished active OpenSpec changes in `tasks.md` during explicit `/autopilot` materialization or `active_change_handoff`, safe fixed or auto parallel OpenSpec work with plugin/runtime selection evidence, idempotent worker-report collect checks, and strict task-type phases; call `autopilot_run_next` to inspect/continue until blocker, MR wait, limit, `reasonCode: "ledger_materialized"`, `reasonCode: "active_change_handoff"`, live `advanced` worker dispatch when `workerDispatch.enabled` and session capability are available, or loop-guarded `ready_runtime_deferred`/no-op output when capability is disabled or unavailable. Live dispatch returns `tasksStarted[]` worker-session/report evidence, and live `autopilot_collect` may return `tasksAdvanced[].mutation: "plugin-owned-protected-ledger"` after a matching worker report is parsed and legally applied through plugin-owned controller code. `ledger_materialized` creates `<ledgerRoot>/<change>/automation/task.json` (default `<ledgerRoot>` is `openspec/changes`) with `tasksAdvanced[]` validation evidence, safe `nextActions[]`, and no implementation worker claim; for `active_change_handoff`, continue the selected change with `openspec-apply-change`. Auto parallel output requires `parallelImplementation.enabled: true`, uses numeric resolved `selection.maxImplementationClaims`, optional `selection.autoDecision`, task-to-`worktreePath` evidence for started streams, and fan-in validation before terminal readiness when multiple tasks start or soft conflicts are accepted. Archive-ready and MR-ready handoffs require the same fan-in evidence through agent/reviewer gates until first-class plugin checks exist. Parallel streams use one owned worktree per stream, MR integration, and post-archive cleanup gated by MR merged plus archive evidence. `no_ledgers` means neither applicable ledgers nor unfinished active OpenSpec changes were found.
-- `openspec-autopilot` prompt intake: `/autopilot <free-form prompt>` uses read-only `autopilot_intake` and exact scope matching before `autopilot_run_next`; ambiguous exact scopes block for user-choice options; free-form prompt text is never `changeId` or `taskId`, queue inventory is read-only through `autopilot_intake` and `autopilot_status` only for helper-requested status, unrelated queued work must not be advanced with `autopilot_run_next`, raw prompt text is not persisted or echoed by default, derived prompt family, recommended workflow, queue summary, and resolved scope evidence are preferred, and safe handoffs are `openspec-explore` for bugfix/research/planning/unclear, `openspec-propose` for feature/refactor/tooling/config/performance/protocol, direct edit for docs/typo, or `openspec-apply-change` after an exact scope is selected.
 - `openspec-explore`: explore requirements/options before a change.
 - `openspec-propose`: draft proposal/design/spec/tasks, including lightweight follow-up backlog changes from audit/retro/reviewer evidence.
 - `openspec-apply-change`: implement accepted OpenSpec changes with TDD-first task execution.

@@ -12,7 +12,7 @@ This change covers the complete requested retro idea:
 - Final retrospective task in every OpenSpec change task list.
 - Retrospective over the full work context for the specific change.
 - Search for quality, speed, wait-time, repetition, and token-consumption problems.
-- Search for ideas that optimize Autopilot, skills, agents, instructions, validators, report generation, reviewer gates, and project workflow.
+- Search for ideas that optimize skills, agents, instructions, validators, report generation, reviewer gates, and project workflow.
 - Durable output as generated OpenSpec follow-up changes in the current project or reusable OpenSpec proposals/changes for `https://github.com/uplift-labs/opencode-dev-kit`.
 - No archive until the retro result is recorded, actionable findings have real follow-up changes, or an approved skip reason exists.
 - Helper automation so this is enforceable rather than only a reminder.
@@ -41,7 +41,7 @@ The artifact should be concise but evidence-backed. Suggested sections:
 - OpenSpec artifacts:
 - Tool outputs / validation:
 - Reviewer gates:
-- Autopilot/runtime events:
+- Runtime or orchestration events:
 - MR/PR/review context:
 - Session notes or reports:
 
@@ -68,9 +68,8 @@ The artifact should be concise but evidence-backed. Suggested sections:
 - Acceptance gaps:
 - Documentation/spec gaps:
 
-## Autopilot/Skill/Agent/Instruction Improvements
+## Skill/Agent/Instruction Improvements
 
-- Autopilot:
 - Skills:
 - Agents:
 - Instructions:
@@ -100,7 +99,7 @@ The retro should inspect available context proportionally:
 | `live-regression-report.md`, reports, traces, logs | Durable evidence already produced during the change. |
 | Validation commands and results | Slow, repeated, flaky, skipped, or missing gates. |
 | Reviewer outputs | Missed reviewers, weak feedback loops, repeated findings. |
-| Autopilot tool outputs/events | No-op loops, unclear next actions, blocker/MR friction, dispatch gaps. |
+| Runtime or orchestration outputs/events | No-op loops, unclear next actions, blocker/MR friction, dispatch gaps. |
 | Git status/diff/log/MR context when allowed | Scope drift, review delay, branch/MR friction. |
 | Session transcript summaries when available and safe | Repeated manual steps, token-heavy operations, wait times. |
 
@@ -120,7 +119,7 @@ The retro should actively look for:
 - Overly broad tasks that should be split.
 - Under-scoped tasks that caused follow-up churn.
 - Skill/agent/instruction wording that triggered too often, too late, or with too much ceremony.
-- Autopilot gaps in `nextActions`, blocker questions, MR wait, worker dispatch, evidence packs, report generation, or validator gates.
+- Workflow gaps in next actions, blocker questions, MR wait, evidence packs, report generation, or validator gates.
 - Token waste from verbose commands, repeated context reconstruction, or missing compact evidence artifacts.
 
 ## Output Routing
@@ -131,7 +130,7 @@ Retrospective findings should be routed by ownership and reuse value:
 | --- | --- |
 | Current project behavior, docs, tests, or architecture | OpenSpec follow-up change in the current project. |
 | Current project-specific workflow only | OpenSpec follow-up change in the current project. |
-| Autopilot runtime, ledger validator, evidence pack, reusable skills, agents, templates, instructions, or OpenCode workflow library | OpenSpec proposal/change intended for `https://github.com/uplift-labs/opencode-dev-kit`. |
+| Evidence pack, reusable skills, agents, templates, instructions, or OpenCode workflow library | OpenSpec proposal/change intended for `https://github.com/uplift-labs/opencode-dev-kit`. |
 | Small local nit with no durable value | Record in retro only; do not create ceremony. |
 | No actionable findings | Record `No findings` with evidence reviewed. |
 
@@ -164,7 +163,7 @@ Every new OpenSpec `tasks.md` should end with a final section similar to:
 - [ ] Review the completed change context, validation, reviewer gates, blockers, repeated work, wait time, token-heavy steps, and likely root causes.
 - [ ] Write `retrospective.md` with evidence, problems, root causes, improvements, and archive gate decision.
 - [ ] Create or update project-local OpenSpec follow-up changes for project-local findings.
-- [ ] Create or update reusable `opencode-dev-kit` OpenSpec proposals/changes for Autopilot, skill, agent, instruction, validator, or evidence-pack findings.
+- [ ] Create or update reusable `opencode-dev-kit` OpenSpec proposals/changes for skill, agent, instruction, validator, or evidence-pack findings.
 - [ ] Run `npm run openspec:retro-followups -- <change-id>` when available so actionable retrospective findings create or update follow-up OpenSpec changes before archive.
 - [ ] Confirm archive is allowed only after the retro gate passes or an approved skip reason is recorded.
 ```
@@ -180,7 +179,6 @@ The implementation updates these artifacts:
 | `openspec-archive-change` skill | Refuse or block archive if retrospective follow-up generation or the retrospective gate is missing, incomplete, or skipped without approval. |
 | `openspec-propose` skill | Add final retrospective task to new `tasks.md` artifacts. |
 | `openspec-apply-change` skill | Prepare/require retro before handoff to archive. |
-| `openspec-autopilot` skill/policy | Treat retro as an acceptance/archive gate and produce blocker questions when missing. |
 | `next-step` skill | Surface pending retro gates as available work after implementation is otherwise complete. |
 | Evidence-pack workflow | Generate a retro section, evidence checklist, and candidate follow-up routing. |
 | README/OpenSpec guide | Document the archive gate once implementation is ready. |
@@ -194,7 +192,7 @@ npm run openspec:retro-followups -- <change-id>
 npm run openspec:retro-gate -- <change-id>
 ```
 
-`openspec:retro-followups` reads actionable `Problems Found` rows from `retrospective.md`, including `Root Cause`, creates or reuses `openspec/changes/<generated-id>/proposal.md`, `tasks.md`, and `specs/<generated-id>/spec.md`, and updates `Outputs` with those ids. It does not mutate protected Autopilot `automation/**` paths.
+`openspec:retro-followups` reads actionable `Problems Found` rows from `retrospective.md`, including `Root Cause`, creates or reuses `openspec/changes/<generated-id>/proposal.md`, `tasks.md`, and `specs/<generated-id>/spec.md`, and updates `Outputs` with those ids. It does not mutate unrelated runtime state.
 
 Implemented checks:
 

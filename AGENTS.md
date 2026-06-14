@@ -12,12 +12,6 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Keep each artifact cohesive. Split artifacts when triggers, permissions, or output contracts differ materially.
 - Preserve OpenCode compatibility: skill folders must match `name` in `SKILL.md`; agent files must use valid frontmatter and least-privilege permissions.
 
-## Autopilot Artifact Format
-
-- Autopilot-owned and OpenSpec automation wrapper artifacts must be JSON, not Markdown. Use JSON for task ledgers, runtime state, retrospectives, operation-gate reports, evidence packs, reviewer outputs, worker reports, and other machine-read Autopilot artifacts.
-- Markdown is allowed for canonical OpenSpec documents such as `proposal.md`, `design.md`, `tasks.md`, `spec.md`, and human-facing repository documentation. When an OpenSpec document needs automation evidence, store the machine-readable source in JSON such as `openspec/changes/<change>/automation/task.json` or `openspec/changes/<change>/automation/retro.json`, and reference it from Markdown only as explanatory text.
-- Do not introduce new Autopilot `*.md` wrapper artifacts such as `retrospective.md`; migrate existing Markdown wrappers to JSON-backed contracts before extending them.
-
 ## TypeScript Development
 
 - Use TypeScript for all repository automation and implementation code.
@@ -52,7 +46,6 @@ This repository stores reusable OpenCode skills, subagents, and instruction temp
 - Ask the user only for real blockers: scope or risk decisions, credentials/provider access, missing owner/product/security/legal decisions, destructive operations, remote-state actions, and MR/PR review outcomes.
 - Continue autonomously when local evidence, repository policy, or a safe reversible default is enough; do not ask routine preference or progress questions.
 - Subagents and read-only reviewer gates never ask the user directly; they return `Actionable Continuation Items` or `Suggested Next Options` for the main session.
-- Use `openspec-autopilot` as the process control plane when explicit Autopilot, ready OpenSpec task ledgers/queues, strict task-type phase enforcement, or safe parallel OpenSpec workstreams are in scope; keep small clear tasks direct.
 
 ## Completion Handoff
 

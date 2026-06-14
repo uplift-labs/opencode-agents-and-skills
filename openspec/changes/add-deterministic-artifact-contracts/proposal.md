@@ -2,7 +2,7 @@
 
 ## Why
 
-The repository already has useful validators for skills, agents, README catalogs, profiles, package scripts, OpenSpec retrospectives, Autopilot ledgers, and instruction drift. Several high-value library workflows still depend on duplicated prose and hardcoded rule lists spread across `README.md`, `package.json`, `tools/validate-library.ts`, `tools/test-library-validation-scripts.ts`, `instructions/leaf-reviewer-agent-contract.md`, reviewer agents, and porting checklists.
+The repository already has useful validators for skills, agents, README catalogs, profiles, package scripts, OpenSpec retrospectives, operation gates, and instruction drift. Several high-value library workflows still depend on duplicated prose and hardcoded rule lists spread across `README.md`, `package.json`, `tools/validate-library.ts`, `tools/test-library-validation-scripts.ts`, `instructions/leaf-reviewer-agent-contract.md`, reviewer agents, and porting checklists.
 
 This makes artifact maintenance slower and less reliable: adding or renaming a tool, skill, reviewer, profile entry, catalog row, or porting anchor requires manual synchronized edits. The failure mode is mechanical drift, not judgment failure, so it should be handled by explicit manifests, schemas, exact set equality checks, and generated/verified fragments.
 

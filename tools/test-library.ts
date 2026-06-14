@@ -6,7 +6,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { autopilotLiveBundleFiles } from "./autopilot-live-bundle-manifest.ts";
 
 type ProcessResult = {
   exitCode: number;
@@ -94,16 +93,6 @@ function newLibraryFixture(name: string): string {
     "# Demo Skill",
     "",
   ]));
-  writeText(path.join(dir, ".opencode", "skills", "openspec-autopilot", "SKILL.md"), lines([
-    "---",
-    "name: openspec-autopilot",
-    "description: Use when testing Autopilot profile contracts.",
-    "license: MIT",
-    "---",
-    "",
-    "# OpenSpec Autopilot",
-    "",
-  ]));
   writeText(path.join(dir, ".opencode", "agents", "demo-reviewer.md"), lines([
     "---",
     "description: Reviews demo fixture behavior.",
@@ -189,17 +178,8 @@ function newLibraryFixture(name: string): string {
     "{",
     "  \"name\": \"advanced\",",
     "  \"description\": \"Fixture advanced profile.\",",
-    "  \"skills\": [\"demo-skill\", \"openspec-autopilot\"],",
+    "  \"skills\": [\"demo-skill\"],",
     "  \"agents\": [\"demo-reviewer\"]",
-    "}",
-    "",
-  ]));
-  writeText(path.join(dir, "profiles", "autopilot-live.json"), lines([
-    "{",
-    "  \"name\": \"autopilot-live\",",
-    "  \"description\": \"Fixture Autopilot live profile.\",",
-    "  \"extends\": \"advanced\",",
-    "  \"autopilotLive\": true",
     "}",
     "",
   ]));
@@ -219,9 +199,6 @@ function newLibraryFixture(name: string): string {
     "    \"project:inventory\": \"node tools/project-inventory.ts\",",
     "    \"instruction:inventory\": \"node tools/instruction-artifacts-inventory.ts\",",
     "    \"code-quality:inventory\": \"node tools/code-quality-inventory.ts\",",
-    "    \"autopilot:validate\": \"node tools/autopilot-ledger.ts\",",
-    "    \"autopilot:evidence\": \"node tools/autopilot-evidence.ts\",",
-    "    \"autopilot:check\": \"node tools/autopilot-check.ts\",",
     "    \"openspec:validate\": \"openspec validate --all\",",
     "    \"openspec:gate\": \"node tools/openspec-operation-gate.ts\",",
     "    \"openspec:retro-gate\": \"node tools/openspec-retro-gate.ts\",",
@@ -302,7 +279,6 @@ function newLibraryFixture(name: string): string {
     "## Skill Catalog",
     "",
     "- `demo-skill`: Demo skill.",
-    "- `openspec-autopilot`: Demo Autopilot skill.",
     "",
     "## Agent Catalog",
     "",
@@ -1159,7 +1135,6 @@ const tests: TestCase[] = [
         "  \"description\": \"Broken profile.\",",
         "  \"skills\": [\"missing-skill\"],",
         "  \"agents\": [\"demo-reviewer\"],",
-        "  \"autopilotLive\": \"yes\",",
         "  \"validation\": { \"failOnWarnings\": true }",
         "}",
         "",
@@ -1167,27 +1142,7 @@ const tests: TestCase[] = [
       const result = invokeValidator(fixture);
       assertFailure(result, "Invalid profile references and unsupported fields should fail validation.");
       assertOutputContains(result, "Unsupported profile field 'validation'", "Profile validation should reject unsupported semantic fields.");
-      assertOutputContains(result, "Profile autopilotLive must be a boolean", "Profile validation should reject non-boolean Autopilot live flags.");
       assertOutputContains(result, "Profile references missing skill 'missing-skill'", "Profile validation should reject missing skill refs.");
-    },
-  },
-  {
-    name: "validator rejects Autopilot live profile without Autopilot skill",
-    run: () => {
-      const fixture = newLibraryFixture("invalid-autopilot-live-profile");
-      writeText(path.join(fixture, "profiles", "autopilot-live.json"), lines([
-        "{",
-        "  \"name\": \"autopilot-live\",",
-        "  \"description\": \"Broken Autopilot live profile.\",",
-        "  \"skills\": [\"demo-skill\"],",
-        "  \"agents\": [\"demo-reviewer\"],",
-        "  \"autopilotLive\": true",
-        "}",
-        "",
-      ]));
-      const result = invokeValidator(fixture);
-      assertFailure(result, "Autopilot live profiles must include the openspec-autopilot skill after inheritance.");
-      assertOutputContains(result, "Profile with autopilotLive=true must include skill 'openspec-autopilot'", "Profile validation should reject live bundle without Autopilot skill.");
     },
   },
   {
@@ -1345,235 +1300,6 @@ const tests: TestCase[] = [
           assertOutputExcludes(result, "agent deployment-config-reviewer", `${profile} should exclude advanced reviewers.`);
         }
       }
-    },
-  },
-  {
-    name: "installer previews Autopilot live bundle without writes",
-    run: () => {
-      const configDir = path.join(newTempDir("installer-autopilot-live-dry-run"), "config");
-      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--profile", "autopilot-live"]);
-      assertSuccess(result, "Autopilot live profile dry-run should succeed.");
-      assertOutputContains(result, "Install profile: autopilot-live", "Autopilot live dry-run should name the profile.");
-      assertOutputContains(result, "Autopilot live bundle: would enable", "Autopilot live dry-run should preview bundle packaging.");
-      assertOutputContains(result, "skill openspec-autopilot", "Autopilot live dry-run should include the Autopilot skill.");
-      assertOutputContains(result, "would install: Autopilot server plugin", "Autopilot live dry-run should preview server plugin install.");
-      assertOutputContains(result, "would install: Autopilot plugin package", "Autopilot live dry-run should preview package merge.");
-      assertOutputContains(result, "would install: Autopilot command/config", "Autopilot live dry-run should preview command/config merge.");
-      assertOutputContains(result, "tools/autopilot-prompt-intake.ts", "Autopilot live dry-run should include prompt-intake helper closure.");
-      assertOutputContains(result, "would require npm install --prefix", "Autopilot live dry-run should preview dependency gate.");
-      if (fs.existsSync(configDir)) {
-        throw new Error(`Autopilot live dry-run created config directory: ${configDir}`);
-      }
-    },
-  },
-  {
-    name: "installer warns when Autopilot skill lacks live bundle",
-    run: () => {
-      const configDir = path.join(newTempDir("installer-autopilot-skill-only"), "config");
-      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--profile", "advanced"]);
-      assertSuccess(result, "Advanced skill-only dry-run should succeed.");
-      assertOutputContains(result, "WARNING: openspec-autopilot skill installed without live Autopilot plugin/command bundle", "Skill-only Autopilot install should warn about missing live tool surface.");
-      assertOutputExcludes(result, "Autopilot live bundle:", "Advanced profile should not enable live bundle implicitly.");
-    },
-  },
-  {
-    name: "installer help documents Autopilot live profile",
-    run: () => {
-      const result = invokeInstaller(["--help"]);
-      assertSuccess(result, "Installer help should succeed.");
-      assertOutputContains(result, "autopilot-live", "Installer help should document the Autopilot live profile.");
-      assertOutputContains(result, "live worker-dispatch defaults", "Installer help should describe live worker-dispatch behavior.");
-      assertOutputContains(result, "--dry-run", "Installer help should keep dry-run option documented.");
-    },
-  },
-  {
-    name: "installer installs Autopilot live bundle config shape with backups",
-    run: () => {
-      const configDir = path.join(newTempDir("installer-autopilot-live"), "config");
-      const originalConfig = lines([
-        "{",
-        "  \"command\": {",
-        "    \"existing\": { \"description\": \"keep\", \"template\": \"keep\" }",
-        "  },",
-        "  \"plugin\": [",
-        "    \"existing-plugin\",",
-        "    [\"existing-tuple\", { \"enabled\": true }],",
-        "    [\".opencode\\\\plugins\\\\openspec-autopilot.ts\", {",
-        "      \"workerDispatch\": { \"runtimeStatePath\": \".custom/runtime.json\" },",
-        "      \"triggers\": { \"debounceMs\": 50 },",
-        "      \"customOption\": true",
-        "    }]",
-        "  ]",
-        "}",
-        "",
-      ]);
-      const originalPackage = lines([
-        "{",
-        "  \"scripts\": { \"keep\": \"true\" },",
-        "  \"dependencies\": { \"existing-dep\": \"1.0.0\" }",
-        "}",
-        "",
-      ]);
-      const originalPlugin = lines(["export default {}", ""]);
-      writeText(path.join(configDir, "opencode.json"), originalConfig);
-      writeText(path.join(configDir, ".opencode", "package.json"), originalPackage);
-      writeText(path.join(configDir, ".opencode", "plugins", "openspec-autopilot.ts"), originalPlugin);
-      const originalConfigBytes = fs.readFileSync(path.join(configDir, "opencode.json"), "utf8");
-      const originalPackageBytes = fs.readFileSync(path.join(configDir, ".opencode", "package.json"), "utf8");
-      const originalPluginBytes = fs.readFileSync(path.join(configDir, ".opencode", "plugins", "openspec-autopilot.ts"), "utf8");
-      const result = invokeInstaller(["--config-dir", configDir, "--profile", "autopilot-live"]);
-      assertSuccess(result, "Autopilot live install should succeed.");
-      assertOutputContains(result, "installed: Autopilot server plugin", "Autopilot live install should install server plugin.");
-      assertOutputContains(result, "installed: Autopilot plugin package", "Autopilot live install should merge package.json.");
-      assertOutputContains(result, "installed: Autopilot command/config", "Autopilot live install should merge command/config.");
-      assertOutputContains(result, "run npm install --prefix", "Autopilot live install should print dependency install gate.");
-      const config = asRecord(JSON.parse(fs.readFileSync(path.join(configDir, "opencode.json"), "utf8")), "Installed opencode.json must be an object.");
-      const command = asRecord(config.command, "Installed opencode.json command must be an object.");
-      const sourceConfig = asRecord(JSON.parse(fs.readFileSync(path.join(root, "opencode.json"), "utf8")), "Source opencode.json must be an object.");
-      const sourceCommand = asRecord(sourceConfig.command, "Source command must be an object.");
-      assertDeepEqual(command.autopilot, sourceCommand.autopilot, "Autopilot live install must copy command.autopilot exactly from source config.");
-      assert(typeof command.existing === "object" && command.existing != null, "Autopilot live install must preserve existing commands.");
-      const plugins = Array.isArray(config.plugin) ? config.plugin : [];
-      assert(plugins.includes("existing-plugin"), "Autopilot live install must preserve existing plugin specs.");
-      assert(plugins.some((item) => Array.isArray(item) && item[0] === "existing-tuple"), "Autopilot live install must preserve existing plugin tuples.");
-      const autopilotPlugins = plugins.filter((item) => Array.isArray(item) && item[0] === "./.opencode/plugins/openspec-autopilot.ts") as unknown[][];
-      assertEqual(autopilotPlugins.length, 1, "Autopilot live install must dedupe equivalent Autopilot plugin specs.");
-      const autopilotPlugin = autopilotPlugins[0];
-      assert(autopilotPlugin != null, "Autopilot live install must add explicit plugin tuple path.");
-      const pluginOptions = asRecord(autopilotPlugin[1], "Autopilot plugin tuple options must be an object.");
-      assertEqual(asRecord(pluginOptions.workerDispatch, "workerDispatch must be an object.").enabled, true, "Autopilot live install must enable workerDispatch.");
-      if ("runtimeStatePath" in asRecord(pluginOptions.workerDispatch, "workerDispatch must be an object.")) {
-        throw new Error("Autopilot live install must omit unsupported workerDispatch options so live dispatch does not fail closed.");
-      }
-      assertEqual(asRecord(pluginOptions.triggers, "triggers must be an object.").triggerMode, "observe", "Autopilot live install must default triggers to observe.");
-      assertEqual(asRecord(pluginOptions.triggers, "triggers must be an object.").debounceMs, 50, "Autopilot live install must preserve existing trigger options.");
-      assertEqual(pluginOptions.customOption, true, "Autopilot live install must preserve custom plugin options.");
-      const packageConfig = asRecord(JSON.parse(fs.readFileSync(path.join(configDir, ".opencode", "package.json"), "utf8")), "Installed .opencode/package.json must be an object.");
-      const packageDependencies = asRecord(packageConfig.dependencies, "Installed package dependencies must be an object.");
-      assertEqual(packageDependencies["existing-dep"], "1.0.0", "Autopilot live package merge must preserve existing dependencies.");
-      assertEqual(packageDependencies["@opencode-ai/plugin"], "1.17.3", "Autopilot live package merge must add plugin dependency.");
-      assertEqual(asRecord(packageConfig.scripts, "Installed package scripts must be an object.").keep, "true", "Autopilot live package merge must preserve existing package fields.");
-      for (const entry of autopilotLiveBundleFiles) {
-        const source = fs.readFileSync(path.join(root, entry.source), "utf8");
-        const destination = path.join(configDir, entry.destination);
-        if (!fs.existsSync(destination)) {
-          throw new Error(`Autopilot live install did not write bundle file: ${entry.destination}`);
-        }
-        assertEqual(fs.readFileSync(destination, "utf8"), source, `Autopilot live install must copy source-equivalent file: ${entry.destination}`);
-      }
-      const backupRoot = path.join(configDir, ".backups", "agents-and-skills");
-      const configBackup = findPathWithBasename(backupRoot, "opencode.json");
-      const packageBackup = findPathWithBasename(backupRoot, "package.json");
-      const pluginBackup = findPathWithBasename(backupRoot, "openspec-autopilot.ts");
-      if (configBackup == null || packageBackup == null || pluginBackup == null) {
-        throw new Error(`Autopilot live install did not back up overwritten config/package/plugin under: ${backupRoot}`);
-      }
-      assertEqual(fs.readFileSync(configBackup, "utf8"), originalConfigBytes, "Autopilot live install must back up original opencode.json contents.");
-      assertEqual(fs.readFileSync(packageBackup, "utf8"), originalPackageBytes, "Autopilot live install must back up original .opencode/package.json contents.");
-      assertEqual(fs.readFileSync(pluginBackup, "utf8"), originalPluginBytes, "Autopilot live install must back up original plugin contents.");
-    },
-  },
-  {
-    name: "installer dry-run leaves existing Autopilot live targets unchanged",
-    run: () => {
-      const configDir = path.join(newTempDir("installer-autopilot-live-existing-dry-run"), "config");
-      const existingConfig = "{\n  \"command\": { \"existing\": { \"template\": \"keep\" } }\n}\n";
-      const existingPackage = "{\n  \"dependencies\": { \"existing-dep\": \"1.0.0\" }\n}\n";
-      const existingPlugin = "export default { name: 'existing' }\n";
-      writeText(path.join(configDir, "opencode.json"), existingConfig);
-      writeText(path.join(configDir, ".opencode", "package.json"), existingPackage);
-      writeText(path.join(configDir, ".opencode", "plugins", "openspec-autopilot.ts"), existingPlugin);
-      const existingConfigBytes = fs.readFileSync(path.join(configDir, "opencode.json"), "utf8");
-      const existingPackageBytes = fs.readFileSync(path.join(configDir, ".opencode", "package.json"), "utf8");
-      const existingPluginBytes = fs.readFileSync(path.join(configDir, ".opencode", "plugins", "openspec-autopilot.ts"), "utf8");
-      const result = invokeInstaller(["--dry-run", "--config-dir", configDir, "--profile", "autopilot-live"]);
-      assertSuccess(result, "Autopilot live dry-run against existing targets should succeed.");
-      assertEqual(fs.readFileSync(path.join(configDir, "opencode.json"), "utf8"), existingConfigBytes, "Dry-run must not change existing opencode.json.");
-      assertEqual(fs.readFileSync(path.join(configDir, ".opencode", "package.json"), "utf8"), existingPackageBytes, "Dry-run must not change existing package.json.");
-      assertEqual(fs.readFileSync(path.join(configDir, ".opencode", "plugins", "openspec-autopilot.ts"), "utf8"), existingPluginBytes, "Dry-run must not change existing plugin file.");
-      if (fs.existsSync(path.join(configDir, ".backups"))) {
-        throw new Error("Autopilot live dry-run must not create backup tree.");
-      }
-    },
-  },
-  {
-    name: "installer refuses unsafe Autopilot config destinations",
-    run: () => {
-      const directoryConfigDir = path.join(newTempDir("installer-autopilot-live-opencode-dir"), "config");
-      fs.mkdirSync(path.join(directoryConfigDir, "opencode.json"), { recursive: true });
-      const directoryResult = invokeInstaller(["--config-dir", directoryConfigDir, "--profile", "autopilot-live"]);
-      assertFailure(directoryResult, "Autopilot live install should refuse non-file opencode.json destinations.");
-      assertOutputContains(directoryResult, "JSON path exists but is not a file", "Non-file opencode.json refusal should be explicit.");
-      if (fs.existsSync(path.join(directoryConfigDir, ".opencode", "plugins", "openspec-autopilot.ts"))) {
-        throw new Error("Autopilot live preflight failure must not leave partial plugin writes.");
-      }
-      if (fs.existsSync(path.join(directoryConfigDir, "skills"))) {
-        throw new Error("Autopilot live preflight failure must not leave partial skill install.");
-      }
-
-      const symlinkConfigDir = path.join(newTempDir("installer-autopilot-live-opencode-symlink"), "config");
-      fs.mkdirSync(symlinkConfigDir, { recursive: true });
-      const outsideConfig = path.join(newTempDir("installer-autopilot-live-outside"), "outside-opencode.json");
-      writeText(outsideConfig, "{}\n");
-      try {
-        fs.symlinkSync(outsideConfig, path.join(symlinkConfigDir, "opencode.json"), "file");
-      } catch (error) {
-        if (isNodeError(error) && (error.code === "EPERM" || error.code === "EINVAL")) {
-          console.log("SKIP: opencode.json symlink refusal branch unavailable on this platform");
-          return;
-        }
-        throw error;
-      }
-      const symlinkResult = invokeInstaller(["--config-dir", symlinkConfigDir, "--profile", "autopilot-live"]);
-      assertFailure(symlinkResult, "Autopilot live install should refuse symlinked opencode.json destinations.");
-      assertOutputContains(symlinkResult, "Refusing to read JSON through symlink", "Symlink opencode.json refusal should be explicit.");
-    },
-  },
-  {
-    name: "installer refuses unsafe Autopilot bundle file destinations",
-    run: () => {
-      const directoryConfigDir = path.join(newTempDir("installer-autopilot-live-plugin-dir"), "config");
-      fs.mkdirSync(path.join(directoryConfigDir, ".opencode", "plugins", "openspec-autopilot.ts"), { recursive: true });
-      const directoryResult = invokeInstaller(["--config-dir", directoryConfigDir, "--profile", "autopilot-live"]);
-      assertFailure(directoryResult, "Autopilot live install should refuse non-file plugin destinations.");
-      assertOutputContains(directoryResult, "Autopilot server plugin destination exists but is not a file", "Non-file plugin refusal should be explicit.");
-
-      const symlinkConfigDir = path.join(newTempDir("installer-autopilot-live-plugin-symlink"), "config");
-      const outsidePlugin = path.join(newTempDir("installer-autopilot-live-outside-plugin"), "outside-plugin.ts");
-      writeText(outsidePlugin, fs.readFileSync(path.join(root, ".opencode", "plugins", "openspec-autopilot.ts"), "utf8"));
-      fs.mkdirSync(path.join(symlinkConfigDir, ".opencode", "plugins"), { recursive: true });
-      let fileSymlinkCreated = false;
-      try {
-        fs.symlinkSync(outsidePlugin, path.join(symlinkConfigDir, ".opencode", "plugins", "openspec-autopilot.ts"), "file");
-        fileSymlinkCreated = true;
-      } catch (error) {
-        if (!isNodeError(error) || (error.code !== "EPERM" && error.code !== "EINVAL")) {
-          throw error;
-        }
-        console.log("SKIP: plugin file symlink refusal branch unavailable on this platform");
-      }
-      if (fileSymlinkCreated) {
-        const symlinkResult = invokeInstaller(["--config-dir", symlinkConfigDir, "--profile", "autopilot-live"]);
-        assertFailure(symlinkResult, "Autopilot live install should refuse symlinked plugin destinations even when bytes match.");
-        assertOutputContains(symlinkResult, "Refusing to overwrite symlinked Autopilot server plugin", "Symlink plugin refusal should be explicit.");
-      }
-
-      const parentLinkConfigDir = path.join(newTempDir("installer-autopilot-live-plugin-parent-link"), "config");
-      const outsidePlugins = path.join(newTempDir("installer-autopilot-live-outside-plugins"), "plugins");
-      fs.mkdirSync(path.join(parentLinkConfigDir, ".opencode"), { recursive: true });
-      fs.mkdirSync(outsidePlugins, { recursive: true });
-      try {
-        fs.symlinkSync(outsidePlugins, path.join(parentLinkConfigDir, ".opencode", "plugins"), process.platform === "win32" ? "junction" : "dir");
-      } catch (error) {
-        if (isNodeError(error) && (error.code === "EPERM" || error.code === "EINVAL")) {
-          console.log("SKIP: plugin parent symlink refusal branch unavailable on this platform");
-          return;
-        }
-        throw error;
-      }
-      const parentLinkResult = invokeInstaller(["--config-dir", parentLinkConfigDir, "--profile", "autopilot-live"]);
-      assertFailure(parentLinkResult, "Autopilot live install should refuse symlinked plugin parent directories.");
-      assertOutputContains(parentLinkResult, "Autopilot server plugin destination has symlinked ancestor", "Symlink parent refusal should be explicit.");
     },
   },
   {

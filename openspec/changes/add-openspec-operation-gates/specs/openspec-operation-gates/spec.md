@@ -35,11 +35,11 @@ OpenSpec proposal and apply operations SHALL be checked before implementation st
 
 - **GIVEN** an OpenSpec change is selected for implementation
 - **WHEN** the apply gate runs
-- **THEN** it verifies scope, blockers, requirements, test strategy, and routing to Autopilot when a task ledger owns the flow
+- **THEN** it verifies scope, blockers, requirements, test strategy, and task evidence
 
-### Requirement: Task And Ledger Gates Prevent Stale Or Unsafe Work
+### Requirement: Task Gates Prevent Stale Or Unsafe Work
 
-Task updates and ledger materialization SHALL be checked before they change actionability.
+Task updates SHALL be checked before they change actionability.
 
 #### Scenario: Task checkbox is marked complete
 
@@ -53,30 +53,6 @@ Task updates and ledger materialization SHALL be checked before they change acti
 - **GIVEN** all tasks in an active change are checked
 - **WHEN** task-update or prepush gate runs
 - **THEN** the gate reports archive/retro readiness requirements
-- **AND** stale non-terminal ledgers for that completed change are blocked or warned according to policy
-
-#### Scenario: Ledger is materialized
-
-- **GIVEN** Autopilot materializes `automation/task.json`
-- **WHEN** the ledger-materialize gate runs
-- **THEN** the active change has unchecked work, safe scopes, forbidden protected paths, validation commands, and a valid ledger schema
-
-### Requirement: Worker Dispatch And Collect Gates Require Plugin-Owned Evidence
-
-Worker dispatch and report collection SHALL require plugin-owned runtime evidence and legal transition checks.
-
-#### Scenario: Worker dispatch is requested
-
-- **GIVEN** a Ready or phase-eligible ledger task is selected
-- **WHEN** the worker-dispatch gate runs
-- **THEN** worker dispatch is explicitly enabled, session capability exists, runtime store is valid, dependencies are satisfied, blockers and MR waits are absent, scope is safe, and stale-ledger checks pass
-
-#### Scenario: Worker report is collected
-
-- **GIVEN** a worker report marker or idle event is observed
-- **WHEN** the collect gate runs
-- **THEN** session, report id, run id, task id, ledger path, ledger revision, status, and legal transition evidence match plugin-owned runtime state
-- **AND** duplicates are idempotent or rejected without protected ledger mutation
 
 ### Requirement: Review And Acceptance Gates Require Evidence Before Terminal Readiness
 
@@ -90,7 +66,7 @@ Review and acceptance operations SHALL require validation, reviewer, MR, and fan
 
 #### Scenario: Acceptance gate runs
 
-- **GIVEN** a change or ledger task is approaching terminal readiness
+- **GIVEN** a change is approaching terminal readiness
 - **WHEN** the acceptance gate runs
 - **THEN** MR policy, fan-in validation, unresolved feedback, docs/spec sync, and final validation evidence are checked before `Done` or archive-ready handoff
 
@@ -102,32 +78,32 @@ Archive and post-archive operations SHALL validate retrospectives, follow-ups, f
 
 - **GIVEN** archive is requested for an OpenSpec change
 - **WHEN** the archive gate runs
-- **THEN** tasks are complete or routed, `automation/retro.json` passes, follow-up changes exist, freshness gates pass, OpenSpec validation passes, and no active runtime or stale ledger references remain
+- **THEN** tasks are complete or routed, `automation/retro.json` passes, follow-up changes exist, freshness gates pass, and OpenSpec validation passes
 
 #### Scenario: Post-archive gate runs
 
 - **GIVEN** a change was archived
 - **WHEN** the post-archive gate runs
-- **THEN** active directories no longer contain the change, active ledgers/runs no longer reference it, follow-up changes are still valid, docs are synchronized when public behavior changed, and OpenSpec validation still passes
+- **THEN** active directories no longer contain the change, follow-up changes are still valid, docs are synchronized when public behavior changed, and OpenSpec validation still passes
 
 ### Requirement: Prepush Gate Composes OpenSpec Operation Checks
 
-Pre-push validation SHALL include OpenSpec operation gates for changed OpenSpec and Autopilot artifacts.
+Pre-push validation SHALL include OpenSpec operation gates for changed OpenSpec artifacts.
 
 #### Scenario: OpenSpec files changed
 
 - **GIVEN** changed files include active OpenSpec documents or automation JSON
 - **WHEN** pre-push validation runs
 - **THEN** it runs scoped OpenSpec operation checks appropriate to the changed files
-- **AND** stale completed changes, invalid ledgers, missing JSON retros, and archive/post-archive inconsistencies block or warn according to the configured gate level
+- **AND** stale completed changes, missing JSON retros, and archive/post-archive inconsistencies block or warn according to the configured gate level
 
 ### Requirement: Programmatic Triggers Use Operation Gates Safely
 
-Autopilot programmatic triggers SHALL use operation gates as read-only checkpoints unless controlled runtime evidence allows stronger action.
+Programmatic triggers SHALL use operation gates as read-only checkpoints unless explicit local evidence allows stronger action.
 
 #### Scenario: Passive file event changes OpenSpec state
 
-- **GIVEN** a passive file event updates `tasks.md`, spec deltas, `automation/task.json`, `automation/retro.json`, or operation-gate JSON
+- **GIVEN** a passive file event updates `tasks.md`, spec deltas, `automation/retro.json`, or operation-gate JSON
 - **WHEN** observe-mode triggers evaluate the event
-- **THEN** Autopilot may schedule a cheap read-only operation gate or status check
-- **AND** it does not call claim-capable `autopilot_run_next` from the passive event
+- **THEN** the workflow may schedule a cheap read-only operation gate or status check
+- **AND** it does not claim work from the passive event

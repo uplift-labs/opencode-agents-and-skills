@@ -9,41 +9,34 @@
 ## Tests First: Operation Coverage
 
 - [ ] Add `propose` gate tests for safe id, required artifacts, spec delta, duplicate id, test-first tasks, and JSON retro tail.
-- [ ] Add `apply` gate tests for accepted/selected change readiness, unresolved blockers, missing test plan, stale all-checked work, and Autopilot ledger handoff.
+- [ ] Add `apply` gate tests for accepted/selected change readiness, unresolved blockers, missing test plan, stale all-checked work, and task evidence.
 - [ ] Add `task-update` gate tests for checkbox evidence, validation evidence, final JSON retro tail preservation, and all-checked active change warnings/blockers.
-- [ ] Add `ledger-materialize` gate tests for unchecked tasks, safe scopes, forbidden protected paths, validation commands, and post-materialization ledger validation.
-- [ ] Add `worker-dispatch` gate tests for worker dispatch option, session capability, runtime store validity, serial active worker conflict, blockers, MR wait, scope, and stale ledger state.
-- [ ] Add `collect` gate tests for plugin-owned session/report evidence, complete marker, duplicate idempotency, stale ledger revision, legal transition, and mismatched report rejection.
 - [ ] Add `review` gate tests for reviewer outputs, test coverage, code quality, deployment/config review, docs/spec sync, and unresolved blocker handling.
 - [ ] Add `acceptance` gate tests for terminal readiness, MR policy, fan-in evidence, feedback, and docs/spec sync.
-- [ ] Add `archive` gate tests for complete tasks, `automation/retro.json`, follow-up ids, freshness, OpenSpec validation, no active runtime, and no active stale ledger.
-- [ ] Add `post-archive` gate tests for archive directory state, no active ledgers/runs, valid follow-ups, docs update signal, and OpenSpec validation.
-- [ ] Add `prepush` gate tests for changed-file scoped operation checks and stale ledger detection.
+- [ ] Add `archive` gate tests for complete tasks, `automation/retro.json`, follow-up ids, freshness, and OpenSpec validation.
+- [ ] Add `post-archive` gate tests for archive directory state, valid follow-ups, docs update signal, and OpenSpec validation.
+- [ ] Add `prepush` gate tests for changed-file scoped operation checks and stale completed-change detection.
 
 ## Implementation
 
 - [x] Add `tools/openspec-operation-gate.ts` with a typed operation registry and shared JSON output contract.
 - [x] Add `npm run openspec:gate` script.
-- [ ] Reuse existing validators: `openspec validate`, `autopilot:validate`, `autopilot:check`, freshness checks, and JSON retro gate.
+- [ ] Reuse existing validators: `openspec validate`, repository checks, freshness checks, and JSON retro gate.
 - [x] Implement cheap read-only gates first, then full gates where existing validators are available.
 - [x] Add optional `--persist` support for `automation/operation-gates/<operation>.json` reports.
 - [x] Integrate `openspec:gate -- --operation prepush` into `tools/pre-push-validate.ts` without duplicating existing gates unnecessarily.
-- [ ] Update Autopilot programmatic triggers to schedule cheap operation gates for relevant OpenSpec file changes when trigger mode allows observe checks.
 - [x] Update skills and README to call operation gates before sensitive lifecycle operations.
 
 ## Operation-Specific Implementation Notes
 
 - [ ] `propose`: validate `proposal.md`, `tasks.md`, spec deltas, safe id, and JSON retro task tail.
-- [ ] `apply`: validate implementation readiness and route ledger-owned changes to Autopilot.
+- [ ] `apply`: validate implementation readiness and task evidence.
 - [ ] `task-update`: validate evidence-backed checkbox updates and all-checked active-change state.
-- [ ] `ledger-materialize`: validate scope, task type, validation commands, and ledger output.
-- [ ] `worker-dispatch`: validate runtime ownership, capability, blockers, MR wait, dependencies, and stale state.
-- [ ] `collect`: validate report/session/ledger evidence and legal transition prerequisites.
 - [ ] `review`: validate reviewer/test/docs/deployment gates.
 - [ ] `acceptance`: validate terminal readiness, MR/fan-in, and unresolved feedback.
-- [ ] `archive`: validate JSON retro, follow-ups, freshness, no active runtime, no stale ledger, and OpenSpec validation.
+- [ ] `archive`: validate JSON retro, follow-ups, freshness, and OpenSpec validation.
 - [ ] `post-archive`: validate archive result and cleanup readiness.
-- [ ] `prepush`: compose repository, OpenSpec, Autopilot, freshness, stale-state, and operation-specific changed-file checks.
+- [ ] `prepush`: compose repository, OpenSpec, freshness, stale-state, and operation-specific changed-file checks.
 
 ## Review Gates
 

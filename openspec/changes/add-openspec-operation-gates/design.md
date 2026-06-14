@@ -4,7 +4,7 @@
 
 This change introduces a deterministic operation-gate layer for OpenSpec lifecycle actions. The gate is intentionally read-only by default. It gathers explicit evidence, applies operation-specific rules, returns a stable JSON envelope, and optionally persists that envelope under the change's `automation/operation-gates/` directory.
 
-The gate should reuse existing validators wherever possible rather than duplicate them: OpenSpec CLI validation, Autopilot ledger validation, Autopilot check/freshness helpers, retro gate, and repository validation remain authoritative for their domains.
+The gate should reuse existing validators wherever possible rather than duplicate them: OpenSpec CLI validation, retro gate, and repository validation remain authoritative for their domains.
 
 ## Output Contract
 
@@ -52,23 +52,11 @@ Validates safe id, required proposal/tasks/spec structure, test-first task order
 
 ### Apply
 
-Validates accepted or explicitly selected change, synchronized artifacts, no unresolved blockers, test-first plan, and routing to Autopilot when `automation/task.json` or strict typed phases own the flow.
+Validates accepted or explicitly selected change, synchronized artifacts, no unresolved blockers, test-first plan, and task evidence.
 
 ### Task Update
 
 Validates checkbox changes, evidence notes for completed tasks, validation evidence for validation tasks, final JSON retrospective tail preservation, and stale all-checked active changes.
-
-### Ledger Materialize
-
-Validates active change existence, unchecked tasks, safe scope, forbidden protected paths, validation commands, review policy, task type, and successful `autopilot:validate` after materialization.
-
-### Worker Dispatch
-
-Validates explicit worker dispatch enablement, OpenCode session capability, runtime store validity, no active serial worker conflict, dependencies, blockers, MR waits, legal phase, write scope, prompt/report contract, and stale ledger state.
-
-### Collect
-
-Validates plugin-owned worker session, expected report id, complete marker, unique report id, runtime identity match, ledger revision/status freshness, legal transition, and idempotent duplicate handling.
 
 ### Review
 
@@ -80,22 +68,21 @@ Validates terminal readiness, MR policy, fan-in evidence for parallel work, arch
 
 ### Archive
 
-Validates complete tasks, JSON retrospective, follow-up OpenSpec changes, freshness, OpenSpec validation, no active Autopilot runtime references, and no active ledger for completed archived work.
+Validates complete tasks, JSON retrospective, follow-up OpenSpec changes, freshness, and OpenSpec validation.
 
 ### Post-Archive
 
-Validates archive directory state, no active ledgers/runs for archived change, follow-up changes still valid, docs updated when behavior changed, and final OpenSpec validation.
+Validates archive directory state, follow-up changes still valid, docs updated when behavior changed, and final OpenSpec validation.
 
 ### Prepush
 
-Composes repository validation, tests, OpenSpec validation, active Autopilot ledger validation, freshness gates, stale ledger detection, changed OpenSpec artifact gates, and archive/post-archive gates when archive files changed.
+Composes repository validation, tests, OpenSpec validation, stale completed-change detection, changed OpenSpec artifact gates, and archive/post-archive gates when archive files changed.
 
 ## Trigger Integration
 
-- `file.watcher.updated` for active `tasks.md`, `proposal.md`, `design.md`, spec deltas, `automation/task.json`, `automation/retro.json`, and operation-gate JSON may schedule cheap read-only gate checks.
-- `tool.execute.after` for successful Autopilot progress may schedule status/check gates, not another claim-capable call.
-- Passive events never call `autopilot_run_next` by default.
-- Controlled/autonomous triggers may use operation gates as prerequisites before collect, worker dispatch, or scoped run-next.
+- `file.watcher.updated` for active `tasks.md`, `proposal.md`, `design.md`, spec deltas, `automation/retro.json`, and operation-gate JSON may schedule cheap read-only gate checks.
+- Passive events must not claim work or mutate OpenSpec state by default.
+- Controlled local workflows may use operation gates as prerequisites before sensitive lifecycle actions.
 
 ## Risks
 
@@ -104,7 +91,7 @@ Composes repository validation, tests, OpenSpec validation, active Autopilot led
 | Gate duplicates existing validators | Maintenance drift | Reuse existing validators and wrap their outputs rather than reimplementing. |
 | Gate becomes too slow for hooks | Developer friction | Define cheap vs full checks and scope by changed files. |
 | Gate writes protected automation state unsafely | Corrupt evidence | Default read-only; persist only via deterministic helper with protected-path rules. |
-| Too many operation statuses confuse agents | Routing mistakes | Use stable `status`, `checks[]`, and `nextActions[]` envelope similar to Autopilot checks. |
+| Too many operation statuses confuse agents | Routing mistakes | Use stable `status`, `checks[]`, and `nextActions[]` envelope. |
 
 ## Open Questions
 

@@ -52,12 +52,12 @@ The retrospective SHALL look for process problems that reduce quality or speed o
 - **WHEN** the retrospective evaluates the change
 - **THEN** it records the problem with evidence, impact, root cause, recommendation, confidence, and target owner
 
-#### Scenario: Autopilot routing or escape-hatch friction exists
+#### Scenario: Workflow routing friction exists
 
-- **GIVEN** an Autopilot run over-triggered, looped on no-progress output, hit runtime-deferred work, encountered stale evidence, or required a manual escape hatch
+- **GIVEN** a workflow over-triggered, looped on no-progress output, encountered stale evidence, or required a manual escape hatch
 - **WHEN** the retrospective evaluates the change
-- **THEN** it records the Autopilot friction with evidence, impact, root cause, recommendation, confidence, and target owner
-- **AND** it routes durable improvements to the current project or reusable Autopilot/OpenCode follow-up changes
+- **THEN** it records the workflow friction with evidence, impact, root cause, recommendation, confidence, and target owner
+- **AND** it routes durable improvements to the current project or reusable OpenCode follow-up changes
 
 ### Requirement: Findings Become Durable Follow-Ups
 
@@ -72,7 +72,7 @@ Retrospective findings SHALL become durable follow-up artifacts unless fixed in 
 
 #### Scenario: Reusable workflow finding is confirmed
 
-- **GIVEN** a retrospective finding applies to Autopilot, reusable skills, agents, instructions, validators, evidence packs, or shared OpenCode workflow
+- **GIVEN** a retrospective finding applies to reusable skills, agents, instructions, validators, evidence packs, or shared OpenCode workflow
 - **WHEN** the finding is not fixed immediately in approved scope
 - **THEN** the retrospective follow-up helper creates or reuses an `opencode-dev-kit` OpenSpec proposal/change when the current repository owns it, or a local handoff artifact when cross-repo writes are not approved
 - **AND** `retrospective.md` references the generated follow-up id in `Outputs`

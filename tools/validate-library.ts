@@ -574,7 +574,6 @@ function validateDevKitContract(root: string): void {
   requireFile(root, "profiles/standard.json", "standard profile");
   requireFile(root, "profiles/strict.json", "strict profile");
   requireFile(root, "profiles/advanced.json", "advanced profile");
-  requireFile(root, "profiles/autopilot-live.json", "Autopilot live profile");
   requireFile(root, "tools/init-project.ts", "project bootstrap tool");
   requireFile(root, "tools/doctor.ts", "doctor tool");
   requireFile(root, "tools/project-inventory.ts", "project inventory tool");
@@ -626,19 +625,10 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "autopilot:validate", "autopilot:evidence", "autopilot:check", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }
-  }
-  if (scripts["autopilot:validate"] && scripts["autopilot:validate"] !== "node tools/autopilot-ledger.ts") {
-    addError("package.json script 'autopilot:validate' must run node tools/autopilot-ledger.ts.");
-  }
-  if (scripts["autopilot:evidence"] && scripts["autopilot:evidence"] !== "node tools/autopilot-evidence.ts") {
-    addError("package.json script 'autopilot:evidence' must run node tools/autopilot-evidence.ts.");
-  }
-  if (scripts["autopilot:check"] && scripts["autopilot:check"] !== "node tools/autopilot-check.ts") {
-    addError("package.json script 'autopilot:check' must run node tools/autopilot-check.ts.");
   }
   if (scripts["openspec:validate"] && scripts["openspec:validate"] !== "openspec validate --all") {
     addError("package.json script 'openspec:validate' must run openspec validate --all.");
@@ -691,9 +681,8 @@ function validateProfiles(root: string, skillNames: string[], agentNames: string
   }
   const profileFiles = listFiles(profilesDir, ".json");
   const profileNames = new Set(profileFiles.map((file) => path.basename(file, ".json")));
-  const allowedKeys = new Set(["agents", "autopilotLive", "description", "extends", "name", "skills"]);
+  const allowedKeys = new Set(["agents", "description", "extends", "name", "skills"]);
   const extendsMap = new Map<string, string>();
-  const autopilotLiveMap = new Map<string, boolean | undefined>();
   const profileSkillsMap = new Map<string, string[] | undefined>();
   const skillSet = new Set(skillNames);
   const agentSet = new Set(agentNames);
@@ -715,10 +704,6 @@ function validateProfiles(root: string, skillNames: string[], agentNames: string
     if (profile.description != null && typeof profile.description !== "string") {
       addError(`Profile description must be a string: ${file}`);
     }
-    if (profile.autopilotLive != null && typeof profile.autopilotLive !== "boolean") {
-      addError(`Profile autopilotLive must be a boolean: ${file}`);
-    }
-    autopilotLiveMap.set(name, typeof profile.autopilotLive === "boolean" ? profile.autopilotLive : undefined);
     if (profile.extends != null) {
       if (typeof profile.extends !== "string" || profile.extends.trim() === "") {
         addError(`Profile extends must be a non-empty string: ${file}`);
@@ -768,23 +753,8 @@ function validateProfiles(root: string, skillNames: string[], agentNames: string
     return parent ? resolvedSkills(parent, seen) : [];
   };
 
-  const resolvedAutopilotLive = (name: string, seen = new Set<string>()): boolean => {
-    if (seen.has(name)) {
-      return false;
-    }
-    seen.add(name);
-    const own = autopilotLiveMap.get(name);
-    if (own !== undefined) {
-      return own;
-    }
-    const parent = extendsMap.get(name);
-    return parent ? resolvedAutopilotLive(parent, seen) : false;
-  };
-
   for (const profile of profileNames) {
-    if (resolvedAutopilotLive(profile) && !resolvedSkills(profile).includes("openspec-autopilot")) {
-      addError(`Profile with autopilotLive=true must include skill 'openspec-autopilot' after inheritance: ${path.join(profilesDir, `${profile}.json`)}`);
-    }
+    resolvedSkills(profile);
   }
 }
 
@@ -940,10 +910,6 @@ function jsonReplacementForAutomationMarkdown(relative: string): string | null {
   if (openspecMatch) {
     return `${openspecMatch[1]}.json`;
   }
-  const autopilotMatch = relative.match(/^(\.autopilot\/.+)\.md$/);
-  if (autopilotMatch) {
-    return `${autopilotMatch[1]}.json`;
-  }
   return null;
 }
 
@@ -954,7 +920,7 @@ function validateMarkdownFile(root: string, file: string, forbiddenAnchors: stri
   const relative = toPosixPath(path.relative(root, file));
   const jsonReplacement = jsonReplacementForAutomationMarkdown(relative);
   if (jsonReplacement != null) {
-    addError(`Autopilot/OpenSpec automation wrapper Markdown artifact is not allowed: ${relative}. Use ${jsonReplacement} with schemaVersion instead.`);
+    addError(`OpenSpec automation wrapper Markdown artifact is not allowed: ${relative}. Use ${jsonReplacement} with schemaVersion instead.`);
   }
 
   for (let index = 0; index < lines.length; index++) {

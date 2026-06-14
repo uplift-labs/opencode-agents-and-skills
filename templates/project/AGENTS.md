@@ -33,9 +33,8 @@ Apply the same process for every task, scaled to the size and risk of the change
 ## Process Control
 
 - Keep clear small tasks direct and cheap.
-- Use `openspec-autopilot` when a ready OpenSpec task ledger/queue exists, the user explicitly invokes Autopilot, strict task-type phases must be enforced, or safe independent OpenSpec work can be advanced in parallel until blocker/MR/limit.
-- Use read-only `autopilot_intake` first for non-empty `/autopilot` prompt intake; use `autopilot_status` only for status-only inspection or when intake returns `firstTool: "autopilot_status"`; use `autopilot_run_next` only for empty or exact `changeId`/`taskId` continuation when the required plugin tool is visible in the current available tool list. If Autopilot tools are unavailable, report the missing plugin tool surface instead of using CLI/script substitutes or simulating plugin-owned state.
-- Use prompt-only orchestration only when Autopilot is unavailable or not the right control plane, and never as a substitute for plugin-owned ledger/runtime transitions.
+- Use prompt-only orchestration only for broad work with independent bounded tracks where coordinated fan-out, fan-in, validation gates, or isolation is worth the overhead.
+- Keep task tracking, integration, validation, reviewer gates, cleanup, and final synthesis in the main session.
 
 ## Quality
 

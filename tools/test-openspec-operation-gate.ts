@@ -47,8 +47,9 @@ function writeChange(repo: string, changeId: string, tasks = "- [ ] Do work."): 
   writeText(path.join(changeRoot, "specs", "demo", "spec.md"), `# Demo Spec\n\n## ADDED Requirements\n\n### Requirement: Demo\n\n#### Scenario: Works\n\n- **WHEN** work runs\n- **THEN** result is visible\n`);
 }
 
-function writeInvalidLedger(repo: string, changeId: string): void {
-  writeText(path.join(repo, "openspec", "changes", changeId, "automation", "task.json"), JSON.stringify({ schemaVersion: 1, id: "invalid" }, null, 2));
+function writeIncompleteChange(repo: string, changeId: string): void {
+  const changeRoot = path.join(repo, "openspec", "changes", changeId);
+  writeText(path.join(changeRoot, "proposal.md"), `# Proposal\n\n## Why\n\nNeed change.\n`);
 }
 
 function spawnGate(repo: string, args: string[]): { status: number; stdout: string; stderr: string } {
@@ -94,14 +95,13 @@ const tests: TestCase[] = [
     }),
   },
   {
-    name: "ledger-materialize gate fails invalid ledger and unknown operation reports unknown",
+    name: "apply gate fails missing tasks and unknown operation reports unknown",
     run: () => withTempRepo("failed-unknown", (repo) => {
-      writeChange(repo, "change-a");
-      writeInvalidLedger(repo, "change-a");
-      const failed = runOpenSpecOperationGate(repo, { operation: "ledger-materialize", changeId: "change-a", generatedAt });
+      writeIncompleteChange(repo, "change-a");
+      const failed = runOpenSpecOperationGate(repo, { operation: "apply", changeId: "change-a", generatedAt });
       const unknown = runOpenSpecOperationGate(repo, { operation: "unsupported" as never, changeId: "change-a", generatedAt });
-      assert(failed.status === "failed" && failed.exitCode === 1, `Expected invalid ledger failure, got ${failed.status}.`);
-      assert(failed.checks.some((check) => check.id === "ledger:validation" && check.status === "failed"), "Invalid ledger should produce failed ledger validation check.");
+      assert(failed.status === "failed" && failed.exitCode === 1, `Expected missing tasks failure, got ${failed.status}.`);
+      assert(failed.checks.some((check) => check.id === "artifact:tasks" && check.status === "failed"), "Missing tasks should produce failed tasks artifact check.");
       assert(unknown.status === "unknown" && unknown.exitCode === 1, `Expected unknown operation, got ${unknown.status}.`);
     }),
   },
@@ -144,16 +144,15 @@ const tests: TestCase[] = [
   {
     name: "CLI reports blocked and failed operation gates",
     run: () => withTempRepo("cli-negative", (repo) => {
-      writeChange(repo, "change-a");
-      writeInvalidLedger(repo, "change-a");
+      writeIncompleteChange(repo, "change-a");
       const blocked = spawnGate(repo, ["--operation", "archive"]);
       const blockedParsed = JSON.parse(blocked.stdout) as Record<string, unknown>;
       assert(blocked.status === 1, `Blocked archive CLI should exit 1, stderr=${blocked.stderr}.`);
       assert(blockedParsed.status === "blocked", `Expected blocked status, got ${String(blockedParsed.status)}.`);
 
-      const failed = spawnGate(repo, ["--operation", "ledger-materialize", "--change", "change-a"]);
+      const failed = spawnGate(repo, ["--operation", "apply", "--change", "change-a"]);
       const failedParsed = JSON.parse(failed.stdout) as Record<string, unknown>;
-      assert(failed.status === 1, `Invalid ledger CLI should exit 1, stderr=${failed.stderr}.`);
+      assert(failed.status === 1, `Missing tasks CLI should exit 1, stderr=${failed.stderr}.`);
       assert(failedParsed.status === "failed", `Expected failed status, got ${String(failedParsed.status)}.`);
     }),
   },

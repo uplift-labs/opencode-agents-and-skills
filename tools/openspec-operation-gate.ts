@@ -2,8 +2,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateTaskLedger } from "./autopilot-ledger.ts";
-import { countMarkdownChecklistItems } from "./openspec-autopilot-active-change-queue.ts";
 
 export type OpenSpecOperationGateStatus = "passed" | "warning" | "failed" | "blocked" | "unknown" | "not-applicable";
 
@@ -41,9 +39,6 @@ const knownOperations = new Set([
   "propose",
   "apply",
   "task-update",
-  "ledger-materialize",
-  "worker-dispatch",
-  "collect",
   "review",
   "acceptance",
   "archive",
@@ -57,10 +52,6 @@ function normalizePath(value: string): string {
   return value.replaceAll("\\", "/");
 }
 
-function relativePath(root: string, filePath: string): string {
-  return normalizePath(path.relative(root, filePath));
-}
-
 function safeChangeId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== "." && value !== "..";
 }
@@ -71,6 +62,23 @@ function redactRoot(root: string, text: string): string {
 
 function check(id: string, label: string, status: OpenSpecOperationGateStatus, blocking: boolean, source: string, summary: string): OpenSpecOperationGateCheck {
   return { id, label, status, blocking, source, summary };
+}
+
+function countMarkdownChecklistItems(text: string): { checked: number; unchecked: number; total: number } {
+  let checked = 0;
+  let unchecked = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^\s*[-*]\s+\[([ xX])\]\s+/.exec(line);
+    if (match == null) {
+      continue;
+    }
+    if (match[1] === " ") {
+      unchecked++;
+    } else {
+      checked++;
+    }
+  }
+  return { checked, unchecked, total: checked + unchecked };
 }
 
 function changeRoot(root: string, changeId: string): string {
@@ -111,14 +119,14 @@ function artifactChecks(root: string, operation: string, changeId: string | unde
       ? check("artifact:proposal", "OpenSpec proposal", "passed", false, `openspec/changes/${changeId}/proposal.md`, "proposal.md exists.")
       : check("artifact:proposal", "OpenSpec proposal", "failed", true, `openspec/changes/${changeId}/proposal.md`, "proposal.md is required."));
   }
-  if (["apply", "task-update", "ledger-materialize", "review", "acceptance", "archive"].includes(operation)) {
+  if (["apply", "task-update", "review", "acceptance", "archive"].includes(operation)) {
     if (!fs.existsSync(tasksPath) || !fs.statSync(tasksPath).isFile()) {
       checks.push(check("artifact:tasks", "OpenSpec tasks", "failed", true, `openspec/changes/${changeId}/tasks.md`, "tasks.md is required."));
     } else {
       const counts = countMarkdownChecklistItems(fs.readFileSync(tasksPath, "utf8"));
       checks.push(check("artifact:tasks", "OpenSpec tasks", "passed", false, `openspec/changes/${changeId}/tasks.md`, `tasks.md exists with ${counts.unchecked}/${counts.total} unchecked task(s).`));
       if (counts.total > 0 && counts.unchecked === 0 && operation === "task-update") {
-        checks.push(check("task-update:all-checked", "OpenSpec task update freshness", "warning", false, `openspec/changes/${changeId}/tasks.md`, "tasks.md is all checked; active change may need archive, terminal ledger, or stale-state reconciliation."));
+        checks.push(check("task-update:all-checked", "OpenSpec task update freshness", "warning", false, `openspec/changes/${changeId}/tasks.md`, "tasks.md is all checked; active change may need archive or stale-state reconciliation."));
       }
     }
   }
@@ -129,33 +137,6 @@ function artifactChecks(root: string, operation: string, changeId: string | unde
       : check("artifact:spec-delta", "OpenSpec spec delta", "warning", false, `openspec/changes/${changeId}/specs`, "No spec delta was found; confirm this operation is docs/tooling-only or add spec coverage."));
   }
   return checks;
-}
-
-function ledgerChecks(root: string, operation: string, changeId: string | undefined): OpenSpecOperationGateCheck[] {
-  if (changeId == null || !safeChangeId(changeId)) {
-    return [];
-  }
-  const ledgerPath = changePath(root, changeId, "automation", "task.json");
-  if (!fs.existsSync(ledgerPath)) {
-    return operation === "ledger-materialize" || operation === "worker-dispatch" || operation === "collect"
-      ? [check("ledger:validation", "Autopilot ledger validation", "not-applicable", false, `openspec/changes/${changeId}/automation/task.json`, "No materialized Autopilot ledger exists yet.")]
-      : [];
-  }
-  try {
-    const parsed = JSON.parse(fs.readFileSync(ledgerPath, "utf8")) as unknown;
-    const validation = validateTaskLedger(parsed, { sourcePath: relativePath(root, ledgerPath) });
-    return [check(
-      "ledger:validation",
-      "Autopilot ledger validation",
-      validation.valid ? "passed" : "failed",
-      !validation.valid,
-      relativePath(root, ledgerPath),
-      validation.valid ? "Autopilot task ledger validates." : `Invalid Autopilot task ledger: ${validation.errors.join("; ")}`,
-    )];
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return [check("ledger:validation", "Autopilot ledger validation", "failed", true, relativePath(root, ledgerPath), `Autopilot task ledger is unreadable: ${message}`)];
-  }
 }
 
 function prepushChecks(root: string): OpenSpecOperationGateCheck[] {
@@ -173,7 +154,7 @@ function operationChecks(root: string, operation: string, changeId: string | und
   if (operation === "prepush") {
     return prepushChecks(root);
   }
-  return [...requiredChangeChecks(root, operation, changeId), ...artifactChecks(root, operation, changeId), ...ledgerChecks(root, operation, changeId)];
+  return [...requiredChangeChecks(root, operation, changeId), ...artifactChecks(root, operation, changeId)];
 }
 
 function statusFor(checks: OpenSpecOperationGateCheck[]): Exclude<OpenSpecOperationGateStatus, "not-applicable"> {

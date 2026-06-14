@@ -6,15 +6,13 @@ license: MIT
 
 # OpenSpec Apply Change
 
-Use this skill when the user asks to implement, continue, or complete tasks from one existing OpenSpec change and no Autopilot task ledger/queue should own the process.
-
-If the change has an automation task ledger, the user invoked `/autopilot`, strict task-type phases must be enforced, or multiple independent OpenSpec tasks should be advanced until blocker/MR/limit, use `openspec-autopilot` instead.
+Use this skill when the user asks to implement, continue, or complete tasks from one existing OpenSpec change.
 
 ## Workflow
 
 - Read the selected change: proposal, design, specs, tasks, traceability, and related docs/source/tests.
 - Confirm the next implementation slice and non-goals.
-- If an accepted change has independent tasks with bounded write scopes, prefer `openspec-autopilot` when a ledger/control-plane is available; otherwise consider `orchestrator` and keep task tracking, integration, validation, and reviewer gates in the master session.
+- If an accepted change has independent tasks with bounded write scopes, consider `orchestrator` and keep task tracking, integration, validation, and reviewer gates in the master session.
 - Use TDD by default for behavior-changing slices: add or update the focused failing, acceptance, or characterization test before code. If infeasible, document the blocker and substitute the closest reproducible evidence gate.
 - Keep TDD proportional: stop at the smallest test/gate set that proves the scoped requirement unless the risk profile requires broader coverage.
 - Make the smallest correct code/doc changes that satisfy the scoped requirement.

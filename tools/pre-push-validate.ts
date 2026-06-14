@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { buildPrePushAutopilotFreshnessGates, buildPrePushAutopilotLedgerGate } from "./autopilot-check.ts";
 
 export type ValidationCommand = {
   label: string;
@@ -131,14 +130,9 @@ export function buildPrePushValidationPlan(root: string, options: BuildPrePushVa
   ];
 
   if (fs.existsSync(path.join(root, "openspec"))) {
-    const autopilotLedgerGate = buildPrePushAutopilotLedgerGate(root);
     plan.push({ label: "OpenSpec operation prepush gate", command: "npm", args: ["run", "openspec:gate", "--", "--operation", "prepush"] });
-    plan.push({ label: autopilotLedgerGate.label, command: autopilotLedgerGate.command, args: autopilotLedgerGate.args, skipReason: autopilotLedgerGate.skipReason });
     plan.push({ label: "Repository tests", command: "npm", args: ["test"] });
     plan.push({ label: "OpenSpec validation", command: "npm", args: ["run", "openspec:validate"] });
-    for (const freshnessGate of buildPrePushAutopilotFreshnessGates(root, { changedFiles: options.changedFiles })) {
-      plan.push({ label: freshnessGate.label, command: freshnessGate.command, args: freshnessGate.args, skipReason: freshnessGate.skipReason });
-    }
   } else {
     plan.push({ label: "Repository tests", command: "npm", args: ["test"] });
   }

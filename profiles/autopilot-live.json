@@ -1,6 +1,0 @@
-{
-  "name": "autopilot-live",
-  "description": "Advanced profile plus source-equivalent OpenSpec Autopilot plugin, command, helper bundle, workerDispatch.enabled=true, triggers.triggerMode=observe default, @opencode-ai/plugin dependency guidance, restart guidance, and single-runtime-owner safety boundary.",
-  "extends": "advanced",
-  "autopilotLive": true
-}
