@@ -240,6 +240,13 @@ const tests: TestCase[] = [
 
       await hooks.tool!.autopilot_run_next.execute({ changeId: "worker-change" }, { sessionID: "parent-session" });
       await hooks["tool.execute.before"]!({ tool: "write", sessionID: "live-worker-session-1", callID: "inside-running" }, { args: { filePath: "openspec/changes/worker-task/notes.md", content: "x" } });
+      let blockedMainSession = false;
+      try {
+        await hooks["tool.execute.before"]!({ tool: "write", sessionID: "parent-session", callID: "main-active-lock" }, { args: { filePath: "docs/main-session.md", content: "x" } });
+      } catch (error) {
+        blockedMainSession = error instanceof Error && error.message.includes("active write ownership");
+      }
+      assert(blockedMainSession, "Main session must block ordinary repository writes while active Autopilot write ownership exists.");
       let blockedOutsideScope = false;
       try {
         await hooks["tool.execute.before"]!({ tool: "write", sessionID: "live-worker-session-1", callID: "outside-scope" }, { args: { filePath: "docs/out.md", content: "x" } });
@@ -318,6 +325,50 @@ const tests: TestCase[] = [
       } finally {
         fs.rmSync(failedRepo, { recursive: true, force: true });
       }
+    }),
+  },
+  {
+    name: "write gate option split keeps protected paths separate from active lock",
+    run: () => withTempRepo("write-gate-option-split", async (repo) => {
+      writeLedger(repo, "worker-change", readyResearchLedger("worker-task", "high"));
+      const logs: Array<Record<string, unknown>> = [];
+      const sdkCalls: Array<{ method: string; input: unknown }> = [];
+      const hooks = await workerDispatchHooks(repo, logs, {
+        workerDispatch: { enabled: true },
+        triggers: { triggerMode: "controlled", writeGate: { activeLock: { enabled: false } } },
+      }, fakeLiveClient(repo, logs, sdkCalls));
+      await hooks.tool!.autopilot_run_next.execute({ changeId: "worker-change" }, { sessionID: "parent-session" });
+      assert(typeof hooks["tool.execute.before"] === "function", "Autopilot plugin must expose before hook for write gate option split.");
+      await hooks["tool.execute.before"]!({ tool: "write", sessionID: "parent-session", callID: "active-lock-disabled" }, { args: { filePath: "docs/main-session.md", content: "x" } });
+
+      let protectedBlocked = false;
+      try {
+        await hooks["tool.execute.before"]!({ tool: "write", sessionID: "parent-session", callID: "protected-still-enabled" }, { args: { filePath: "openspec/changes/worker-change/automation/task.json", content: "{}" } });
+      } catch (error) {
+        protectedBlocked = error instanceof Error && error.message.includes("protected Autopilot state");
+      }
+      assert(protectedBlocked, "Disabling active-lock gate must not disable protected Autopilot state guard.");
+
+      let workerScopeBlocked = false;
+      try {
+        await hooks["tool.execute.before"]!({ tool: "write", sessionID: "live-worker-session-1", callID: "worker-scope-still-enabled" }, { args: { filePath: "docs/out.md", content: "x" } });
+      } catch (error) {
+        workerScopeBlocked = error instanceof Error && error.message.includes("worker scope boundaries");
+      }
+      assert(workerScopeBlocked, "Disabling active-lock gate must not disable plugin-owned worker scope guard.");
+
+      const bothDisabledHooks = await workerDispatchHooks(repo, logs, {
+        workerDispatch: { enabled: true },
+        triggers: { protectedPathGuard: { enabled: false }, writeGate: { activeLock: { enabled: false } } },
+      }, fakeLiveClient(repo, logs, sdkCalls));
+      await bothDisabledHooks["tool.execute.before"]!({ tool: "write", sessionID: "live-worker-session-1", callID: "both-disabled-worker-scope-allow" }, { args: { filePath: "openspec/changes/worker-task/notes.md", content: "x" } });
+      let bothDisabledWorkerScopeBlocked = false;
+      try {
+        await bothDisabledHooks["tool.execute.before"]!({ tool: "write", sessionID: "live-worker-session-1", callID: "both-disabled-worker-scope" }, { args: { filePath: "docs/out.md", content: "x" } });
+      } catch (error) {
+        bothDisabledWorkerScopeBlocked = error instanceof Error && error.message.includes("worker scope boundaries");
+      }
+      assert(bothDisabledWorkerScopeBlocked, "Disabling both model-facing guards must not disable known worker scope enforcement.");
     }),
   },
   {

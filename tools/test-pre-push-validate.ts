@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { buildPrePushValidationPlan, exitCodeFromSpawnResult, runPrePushValidation, type ValidationCommand, type ValidationCommandResult } from "./pre-push-validate.ts";
+import { buildPrePushValidationPlan, collectPrePushChangedFiles, exitCodeFromSpawnResult, runPrePushValidation, runPrePushValidationFromInput, type ValidationCommand, type ValidationCommandResult } from "./pre-push-validate.ts";
 
 type TestCase = {
   name: string;
@@ -100,11 +100,13 @@ const tests: TestCase[] = [
     name: "pre-push plan includes OpenSpec validation when present",
     run: () => withOpenSpecRoot("with-openspec", (root) => {
       const plan = buildPrePushValidationPlan(root);
-      assertEqual(plan.length, 4, "Plan with OpenSpec should include repository gates, Autopilot ledger gate, and OpenSpec validation.");
-      assertEqual(plan[1].label, "Autopilot ledger validation", "Second gate should be Autopilot ledger validation.");
-      assertEqual(plan[1].skipReason, "No active Autopilot ledgers discovered.", "No-ledger gate should be not-applicable.");
-      assertEqual(plan[3].command, "openspec", "Fourth gate should use OpenSpec CLI.");
-      assertArrayEqual(plan[3].args, ["validate", "--all"], "Fourth gate should validate all OpenSpec changes.");
+      assertEqual(plan.length, 5, "Plan with OpenSpec should include repository gates, operation gate, Autopilot ledger gate, and OpenSpec validation.");
+      assertEqual(plan[1].label, "OpenSpec operation prepush gate", "Second gate should be OpenSpec operation prepush gate.");
+      assertArrayEqual(plan[1].args, ["run", "openspec:gate", "--", "--operation", "prepush"], "Operation gate should use npm script wrapper.");
+      assertEqual(plan[2].label, "Autopilot ledger validation", "Third gate should be Autopilot ledger validation.");
+      assertEqual(plan[2].skipReason, "No active Autopilot ledgers discovered.", "No-ledger gate should be not-applicable.");
+      assertEqual(plan[4].command, "npm", "Fifth gate should use package OpenSpec validation wrapper.");
+      assertArrayEqual(plan[4].args, ["run", "openspec:validate"], "Fifth gate should validate all OpenSpec changes through package script.");
     }),
   },
   {
@@ -125,10 +127,11 @@ const tests: TestCase[] = [
       ], "Active ledger gate should validate every active ledger in sorted order.");
       assertArrayEqual(plan.map((command) => command.label), [
         "Repository validation",
+        "OpenSpec operation prepush gate",
         "Autopilot ledger validation",
         "Repository tests",
         "OpenSpec validation",
-      ], "Autopilot ledger validation should run before repository tests.");
+      ], "Operation and Autopilot ledger validation should run before repository tests.");
     }),
   },
   {
@@ -139,12 +142,13 @@ const tests: TestCase[] = [
 
       assertArrayEqual(plan.map((command) => command.label), [
         "Repository validation",
+        "OpenSpec operation prepush gate",
         "Autopilot ledger validation",
         "Repository tests",
         "OpenSpec validation",
         "Autopilot evidence freshness",
       ], "Freshness gate should run after OpenSpec validation for changed active artifacts.");
-      assertArrayEqual(plan[4].args, ["tools/autopilot-report-freshness.ts", "change-a", "--mode", "archive-strict"], "Freshness gate should run archive-strict report freshness for changed active change.");
+      assertArrayEqual(plan[5].args, ["tools/autopilot-report-freshness.ts", "change-a", "--mode", "archive-strict"], "Freshness gate should run archive-strict report freshness for changed active change.");
     }),
   },
   {
@@ -154,6 +158,118 @@ const tests: TestCase[] = [
       assertEqual(exitCodeFromSpawnResult({ status: 0, signal: null }), 0, "Status 0 should pass.");
       assertEqual(exitCodeFromSpawnResult({ status: 2, signal: null }), 2, "Non-zero status should propagate.");
     },
+  },
+  {
+    name: "pre-push stdin ref updates produce changed-file scope",
+    run: () => withOpenSpecRoot("stdin-ref-updates", (root) => {
+      const localSha = "1111111111111111111111111111111111111111";
+      const remoteSha = "2222222222222222222222222222222222222222";
+      const calls: string[][] = [];
+      const changedFiles = collectPrePushChangedFiles(root, `refs/heads/main ${localSha} refs/heads/main ${remoteSha}\n`, (_root, args) => {
+        calls.push(args);
+        return { status: 0, stdout: "openspec/changes/change-a/tasks.md\r\nREADME.md\n" };
+      });
+
+      assertArrayEqual(calls[0] ?? [], ["diff", "--name-only", "--diff-filter=ACMRT", remoteSha, localSha], "Existing-branch pre-push scope should diff remote to local sha.");
+      assertArrayEqual(changedFiles ?? [], ["openspec/changes/change-a/tasks.md", "README.md"], "Pre-push changed files should be normalized and sorted.");
+    }),
+  },
+  {
+    name: "pre-push stdin new branch uses local commit tree fallback",
+    run: () => withOpenSpecRoot("stdin-new-branch", (root) => {
+      const localSha = "3333333333333333333333333333333333333333";
+      const zeroSha = "0000000000000000000000000000000000000000";
+      const calls: string[][] = [];
+      const changedFiles = collectPrePushChangedFiles(root, `refs/heads/topic ${localSha} refs/heads/topic ${zeroSha}\n`, (_root, args) => {
+        calls.push(args);
+        return { status: 0, stdout: "openspec\\changes\\change-a\\tasks.md\n" };
+      });
+
+      assertArrayEqual(calls[0] ?? [], ["diff", "--name-only", "--diff-filter=ACMRT", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", localSha], "New-branch pre-push scope should compare empty tree to local commit tree.");
+      assertArrayEqual(changedFiles ?? [], ["openspec/changes/change-a/tasks.md"], "Pre-push changed files should normalize Windows separators.");
+    }),
+  },
+  {
+    name: "pre-push stdin diff failure falls back to all active changes",
+    run: () => withOpenSpecRoot("stdin-diff-failure", (root) => {
+      writeActiveChange(root, "change-b");
+      writeActiveChange(root, "change-a");
+      const localSha = "3333333333333333333333333333333333333333";
+      const remoteSha = "2222222222222222222222222222222222222222";
+      const changedFiles = collectPrePushChangedFiles(root, `refs/heads/main ${localSha} refs/heads/main ${remoteSha}\n`, () => ({ status: 128, stdout: "", error: new Error("bad revision") }));
+
+      assertArrayEqual(changedFiles ?? [], ["openspec/changes/change-a/tasks.md", "openspec/changes/change-b/tasks.md"], "Failed git diff must conservatively scope all active OpenSpec changes.");
+    }),
+  },
+  {
+    name: "pre-push input harness feeds stdin scope into freshness gates",
+    run: () => withOpenSpecRoot("stdin-harness", (root) => {
+      writeActiveChange(root, "change-a");
+      const localSha = "4444444444444444444444444444444444444444";
+      const remoteSha = "5555555555555555555555555555555555555555";
+      const calls: string[] = [];
+      const exitCode = runPrePushValidationFromInput(root, `refs/heads/main ${localSha} refs/heads/main ${remoteSha}\n`, {
+        diffRunner: (_root, args) => {
+          assertArrayEqual(args, ["diff", "--name-only", "--diff-filter=ACMRT", remoteSha, localSha], "Input harness should use stdin ref update diff args.");
+          return { status: 0, stdout: "openspec/changes/change-a/tasks.md\n" };
+        },
+        runner: (_root: string, command: ValidationCommand): ValidationCommandResult => {
+          calls.push(commandKey(command));
+          return { status: 0, signal: null };
+        },
+        output: { log: () => undefined, error: () => undefined },
+      });
+
+      assertEqual(exitCode, 0, "Input harness should pass when all fake gates pass.");
+      assertEqual(calls.includes("Autopilot evidence freshness:node tools/autopilot-report-freshness.ts change-a --mode archive-strict"), true, "Input harness should add freshness gate from stdin changed active artifact.");
+    }),
+  },
+  {
+    name: "pre-push input harness feeds new-branch stdin scope into freshness gates",
+    run: () => withOpenSpecRoot("stdin-harness-new-branch", (root) => {
+      writeActiveChange(root, "change-a");
+      const localSha = "6666666666666666666666666666666666666666";
+      const zeroSha = "0000000000000000000000000000000000000000";
+      const calls: string[] = [];
+      const exitCode = runPrePushValidationFromInput(root, `refs/heads/topic ${localSha} refs/heads/topic ${zeroSha}\n`, {
+        diffRunner: (_root, args) => {
+          assertArrayEqual(args, ["diff", "--name-only", "--diff-filter=ACMRT", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", localSha], "New-branch input harness should use empty-tree diff args.");
+          return { status: 0, stdout: "openspec/changes/change-a/tasks.md\n" };
+        },
+        runner: (_root: string, command: ValidationCommand): ValidationCommandResult => {
+          calls.push(commandKey(command));
+          return { status: 0, signal: null };
+        },
+        output: { log: () => undefined, error: () => undefined },
+      });
+
+      assertEqual(exitCode, 0, "New-branch input harness should pass when all fake gates pass.");
+      assertEqual(calls.includes("Autopilot evidence freshness:node tools/autopilot-report-freshness.ts change-a --mode archive-strict"), true, "New-branch input harness should add freshness gate from stdin changed active artifact.");
+    }),
+  },
+  {
+    name: "pre-push input harness diff failure scopes all active freshness gates",
+    run: () => withOpenSpecRoot("stdin-harness-diff-failure", (root) => {
+      writeActiveChange(root, "change-b");
+      writeActiveChange(root, "change-a");
+      const localSha = "7777777777777777777777777777777777777777";
+      const remoteSha = "8888888888888888888888888888888888888888";
+      const calls: string[] = [];
+      const exitCode = runPrePushValidationFromInput(root, `refs/heads/main ${localSha} refs/heads/main ${remoteSha}\n`, {
+        diffRunner: () => ({ status: 128, stdout: "", error: new Error("bad revision") }),
+        runner: (_root: string, command: ValidationCommand): ValidationCommandResult => {
+          calls.push(commandKey(command));
+          return { status: 0, signal: null };
+        },
+        output: { log: () => undefined, error: () => undefined },
+      });
+
+      assertEqual(exitCode, 0, "Diff-failure input harness should pass when all fake gates pass.");
+      assertArrayEqual(calls.slice(-2), [
+        "Autopilot evidence freshness:node tools/autopilot-report-freshness.ts change-a --mode archive-strict",
+        "Autopilot evidence freshness:node tools/autopilot-report-freshness.ts change-b --mode archive-strict",
+      ], "Diff-failure input harness should conservatively run freshness for every active change in sorted order.");
+    }),
   },
   {
     name: "pre-push fake runner executes gates in deterministic order",
@@ -170,8 +286,9 @@ const tests: TestCase[] = [
       assertEqual(exitCode, 0, "Successful fake runner should return zero.");
       assertArrayEqual(calls, [
         "Repository validation:npm run validate",
+        "OpenSpec operation prepush gate:npm run openspec:gate -- --operation prepush",
         "Repository tests:npm test",
-        "OpenSpec validation:openspec validate --all",
+        "OpenSpec validation:npm run openspec:validate",
       ], "Fake runner should execute gates in deterministic order.");
     }),
   },
@@ -204,8 +321,29 @@ const tests: TestCase[] = [
       assertEqual(exitCode, 9, "Autopilot ledger validation failure should propagate.");
       assertArrayEqual(calls, [
         "Repository validation:npm run validate",
+        "OpenSpec operation prepush gate:npm run openspec:gate -- --operation prepush",
         "Autopilot ledger validation:npm run autopilot:validate -- openspec/changes/change-a/automation/task.json",
       ], "Invalid active ledger should stop pre-push before repository tests and OpenSpec validation.");
+    }),
+  },
+  {
+    name: "pre-push fake runner short-circuits on operation gate failure",
+    run: () => withOpenSpecRoot("runner-operation-gate-fails", (root) => {
+      writeLedger(root, "change-a", "task-a");
+      const calls: string[] = [];
+      const exitCode = runPrePushValidation(root, {
+        runner: (_root: string, command: ValidationCommand): ValidationCommandResult => {
+          calls.push(commandKey(command));
+          return command.label === "OpenSpec operation prepush gate" ? { status: 6, signal: null } : { status: 0, signal: null };
+        },
+        output: { log: () => undefined, error: () => undefined },
+      });
+
+      assertEqual(exitCode, 6, "Operation gate failure should propagate.");
+      assertArrayEqual(calls, [
+        "Repository validation:npm run validate",
+        "OpenSpec operation prepush gate:npm run openspec:gate -- --operation prepush",
+      ], "Operation gate failure should stop before Autopilot ledger validation and repository tests.");
     }),
   },
   {
@@ -225,8 +363,9 @@ const tests: TestCase[] = [
       assertEqual(exitCode, 5, "Freshness gate failure should propagate.");
       assertArrayEqual(calls, [
         "Repository validation:npm run validate",
+        "OpenSpec operation prepush gate:npm run openspec:gate -- --operation prepush",
         "Repository tests:npm test",
-        "OpenSpec validation:openspec validate --all",
+        "OpenSpec validation:npm run openspec:validate",
         "Autopilot evidence freshness:node tools/autopilot-report-freshness.ts change-a --mode archive-strict",
       ], "Freshness failure should stop after the labeled freshness gate.");
     }),
@@ -237,6 +376,7 @@ const tests: TestCase[] = [
       writeInvalidLedger(root, "change-a");
       writePackageJson(root, {
         validate: "node -e \"process.exit(0)\"",
+        "openspec:gate": "node -e \"process.exit(0)\" --",
         "autopilot:validate": `node ${normalizePath(path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), "tools", "autopilot-ledger.ts"))}`,
         test: "node -e \"process.exit(99)\"",
       });
@@ -282,8 +422,9 @@ const tests: TestCase[] = [
       assertEqual(exitCode, 42, "OpenSpec failure code should propagate.");
       assertArrayEqual(calls, [
         "Repository validation:npm run validate",
+        "OpenSpec operation prepush gate:npm run openspec:gate -- --operation prepush",
         "Repository tests:npm test",
-        "OpenSpec validation:openspec validate --all",
+        "OpenSpec validation:npm run openspec:validate",
       ], "OpenSpec failure should occur after earlier gates pass.");
       assertEqual(errors.includes("Pre-push validation failed at OpenSpec validation."), true, "Failure output should name OpenSpec validation gate.");
     }),

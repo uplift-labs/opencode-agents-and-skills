@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const autopilotRuntimeRunStatuses = ["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr", "stopped", "failed", "done"] as const;
+export const autopilotActiveRuntimeRunStatuses = ["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr"] as const;
+export const autopilotCollectClaimableRuntimeRunStatuses = ["claiming", "dispatching", "running"] as const;
+export const autopilotWorkerWritableRuntimeRunStatuses = ["running"] as const;
 
 export type AutopilotRuntimeRunStatus = (typeof autopilotRuntimeRunStatuses)[number];
 
@@ -9,6 +12,24 @@ export type AutopilotRuntimeScope = {
   read: string[];
   write: string[];
   forbidden: string[];
+};
+
+export type AutopilotRuntimeBlockerQuestion = {
+  requestID: string;
+  questionId: string;
+  taskId?: string;
+  options?: Array<{ label: string; action?: string }>;
+};
+
+export type AutopilotRuntimePendingPermission = {
+  requestID: string;
+  taskId?: string;
+};
+
+export type AutopilotRuntimeWaitRecord = {
+  name: string;
+  taskId?: string;
+  runId?: string;
 };
 
 export type AutopilotRunRecord = {
@@ -28,12 +49,17 @@ export type AutopilotRunRecord = {
   blockers?: Array<{ reason: string; questionId?: string }>;
   mr?: { status: string; url?: string };
   stopReason?: string;
+  lastRunNextOutput?: Record<string, unknown>;
 };
 
 export type AutopilotRuntimeSnapshot = {
   schemaVersion: 1;
   runs: Record<string, AutopilotRunRecord>;
   consumedWorkerReportIds: string[];
+  blockerQuestions?: AutopilotRuntimeBlockerQuestion[];
+  pendingPermissions?: AutopilotRuntimePendingPermission[];
+  waitingWorkspaces?: AutopilotRuntimeWaitRecord[];
+  waitingWorktrees?: AutopilotRuntimeWaitRecord[];
 };
 
 export type AutopilotRuntimeValidationResult = {
@@ -57,6 +83,25 @@ export type AutopilotRuntimeStore = {
 };
 
 const runStatusSet = new Set<string>(autopilotRuntimeRunStatuses);
+const activeRuntimeRunStatusSet = new Set<string>(autopilotActiveRuntimeRunStatuses);
+const collectClaimableRuntimeRunStatusSet = new Set<string>(autopilotCollectClaimableRuntimeRunStatuses);
+const workerWritableRuntimeRunStatusSet = new Set<string>(autopilotWorkerWritableRuntimeRunStatuses);
+
+export function isAutopilotRuntimeRunStatus(value: unknown): value is AutopilotRuntimeRunStatus {
+  return typeof value === "string" && runStatusSet.has(value);
+}
+
+export function isActiveAutopilotRuntimeStatus(value: unknown): value is AutopilotRuntimeRunStatus {
+  return typeof value === "string" && activeRuntimeRunStatusSet.has(value);
+}
+
+export function isCollectClaimableAutopilotRuntimeStatus(value: unknown): value is AutopilotRuntimeRunStatus {
+  return typeof value === "string" && collectClaimableRuntimeRunStatusSet.has(value);
+}
+
+export function isWorkerWritableAutopilotRuntimeStatus(value: unknown): value is AutopilotRuntimeRunStatus {
+  return typeof value === "string" && workerWritableRuntimeRunStatusSet.has(value);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value != null && !Array.isArray(value);
@@ -88,6 +133,18 @@ function validateAllowedKeys(value: Record<string, unknown>, prefix: string, all
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function compareOptionalStrings(left: unknown, right: unknown): number {
+  const leftString = typeof left === "string" ? left : "";
+  const rightString = typeof right === "string" ? right : "";
+  return leftString.localeCompare(rightString);
+}
+
+function validateOptionalStringField(value: Record<string, unknown>, key: string, prefix: string, errors: string[]): void {
+  if (hasOwn(value, key) && !isNonEmptyString(value[key])) {
+    errors.push(`${prefix}.${key}: non-empty string is required when present.`);
+  }
 }
 
 function validateScope(value: unknown, prefix: string, errors: string[]): void {
@@ -152,6 +209,95 @@ function validateMr(value: unknown, prefix: string, errors: string[]): void {
   }
 }
 
+function validateLastRunNextOutput(value: unknown, prefix: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${prefix}.lastRunNextOutput: object is required when present.`);
+  }
+}
+
+function validateBlockerQuestionOptions(value: unknown, prefix: string, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${prefix}.options: array is required when present.`);
+    return;
+  }
+  value.forEach((option, index) => {
+    const optionPrefix = `${prefix}.options[${index}]`;
+    if (!isRecord(option)) {
+      errors.push(`${optionPrefix}: object is required.`);
+      return;
+    }
+    validateAllowedKeys(option, optionPrefix, ["label", "action"], errors);
+    if (!isNonEmptyString(option.label)) {
+      errors.push(`${optionPrefix}.label: non-empty string is required.`);
+    }
+    validateOptionalStringField(option, "action", optionPrefix, errors);
+  });
+}
+
+function validateBlockerQuestions(value: unknown, prefix: string, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${prefix}: array is required when present.`);
+    return;
+  }
+  value.forEach((question, index) => {
+    const questionPrefix = `${prefix}[${index}]`;
+    if (!isRecord(question)) {
+      errors.push(`${questionPrefix}: object is required.`);
+      return;
+    }
+    validateAllowedKeys(question, questionPrefix, ["requestID", "questionId", "taskId", "options"], errors);
+    if (!isNonEmptyString(question.requestID)) {
+      errors.push(`${questionPrefix}.requestID: non-empty string is required.`);
+    }
+    if (!isNonEmptyString(question.questionId)) {
+      errors.push(`${questionPrefix}.questionId: non-empty string is required.`);
+    }
+    validateOptionalStringField(question, "taskId", questionPrefix, errors);
+    if (hasOwn(question, "options")) {
+      validateBlockerQuestionOptions(question.options, questionPrefix, errors);
+    }
+  });
+}
+
+function validatePendingPermissions(value: unknown, prefix: string, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${prefix}: array is required when present.`);
+    return;
+  }
+  value.forEach((permission, index) => {
+    const permissionPrefix = `${prefix}[${index}]`;
+    if (!isRecord(permission)) {
+      errors.push(`${permissionPrefix}: object is required.`);
+      return;
+    }
+    validateAllowedKeys(permission, permissionPrefix, ["requestID", "taskId"], errors);
+    if (!isNonEmptyString(permission.requestID)) {
+      errors.push(`${permissionPrefix}.requestID: non-empty string is required.`);
+    }
+    validateOptionalStringField(permission, "taskId", permissionPrefix, errors);
+  });
+}
+
+function validateWaitRecords(value: unknown, prefix: string, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${prefix}: array is required when present.`);
+    return;
+  }
+  value.forEach((wait, index) => {
+    const waitPrefix = `${prefix}[${index}]`;
+    if (!isRecord(wait)) {
+      errors.push(`${waitPrefix}: object is required.`);
+      return;
+    }
+    validateAllowedKeys(wait, waitPrefix, ["name", "taskId", "runId"], errors);
+    if (!isNonEmptyString(wait.name)) {
+      errors.push(`${waitPrefix}.name: non-empty string is required.`);
+    }
+    validateOptionalStringField(wait, "taskId", waitPrefix, errors);
+    validateOptionalStringField(wait, "runId", waitPrefix, errors);
+  });
+}
+
 function validateRunRecord(runId: string, value: unknown, errors: string[]): void {
   const prefix = `runs.${runId}`;
   if (!isRecord(value)) {
@@ -175,6 +321,7 @@ function validateRunRecord(runId: string, value: unknown, errors: string[]): voi
     "blockers",
     "mr",
     "stopReason",
+    "lastRunNextOutput",
   ], errors);
   for (const key of ["runId", "createdAt", "updatedAt", "taskId", "ledgerPath", "fromStatus", "expectedReportId", "workerId"] as const) {
     if (!isNonEmptyString(value[key])) {
@@ -205,6 +352,9 @@ function validateRunRecord(runId: string, value: unknown, errors: string[]): voi
   if (hasOwn(value, "mr")) {
     validateMr(value.mr, prefix, errors);
   }
+  if (hasOwn(value, "lastRunNextOutput")) {
+    validateLastRunNextOutput(value.lastRunNextOutput, prefix, errors);
+  }
   validateScope(value.scope, prefix, errors);
 }
 
@@ -217,7 +367,7 @@ export function validateAutopilotRuntimeSnapshot(value: unknown): AutopilotRunti
   if (!isRecord(value)) {
     return { valid: false, errors: ["snapshot: object is required."] };
   }
-  validateAllowedKeys(value, "snapshot", ["schemaVersion", "runs", "consumedWorkerReportIds"], errors);
+  validateAllowedKeys(value, "snapshot", ["schemaVersion", "runs", "consumedWorkerReportIds", "blockerQuestions", "pendingPermissions", "waitingWorkspaces", "waitingWorktrees"], errors);
   if (value.schemaVersion !== 1) {
     errors.push("schemaVersion: must be 1.");
   }
@@ -230,6 +380,18 @@ export function validateAutopilotRuntimeSnapshot(value: unknown): AutopilotRunti
   }
   if (nonEmptyStringArray(value.consumedWorkerReportIds) == null) {
     errors.push("consumedWorkerReportIds: non-empty string array is required.");
+  }
+  if (hasOwn(value, "blockerQuestions")) {
+    validateBlockerQuestions(value.blockerQuestions, "blockerQuestions", errors);
+  }
+  if (hasOwn(value, "pendingPermissions")) {
+    validatePendingPermissions(value.pendingPermissions, "pendingPermissions", errors);
+  }
+  if (hasOwn(value, "waitingWorkspaces")) {
+    validateWaitRecords(value.waitingWorkspaces, "waitingWorkspaces", errors);
+  }
+  if (hasOwn(value, "waitingWorktrees")) {
+    validateWaitRecords(value.waitingWorktrees, "waitingWorktrees", errors);
   }
   return { valid: errors.length === 0, errors };
 }
@@ -269,7 +431,30 @@ function normalizeRunRecord(record: AutopilotRunRecord): AutopilotRunRecord {
   if (record.stopReason != null) {
     normalized.stopReason = record.stopReason;
   }
+  if (record.lastRunNextOutput != null) {
+    normalized.lastRunNextOutput = JSON.parse(JSON.stringify(record.lastRunNextOutput)) as Record<string, unknown>;
+  }
   return normalized;
+}
+
+function normalizeBlockerQuestions(value: AutopilotRuntimeBlockerQuestion[]): AutopilotRuntimeBlockerQuestion[] {
+  return value
+    .map((question) => {
+      const normalized: AutopilotRuntimeBlockerQuestion = { ...question };
+      if (question.options != null) {
+        normalized.options = question.options.map((option) => ({ ...option }));
+      }
+      return normalized;
+    })
+    .sort((left, right) => compareOptionalStrings(left.requestID, right.requestID) || compareOptionalStrings(left.questionId, right.questionId));
+}
+
+function normalizePendingPermissions(value: AutopilotRuntimePendingPermission[]): AutopilotRuntimePendingPermission[] {
+  return value.map((permission) => ({ ...permission })).sort((left, right) => compareOptionalStrings(left.requestID, right.requestID) || compareOptionalStrings(left.taskId, right.taskId));
+}
+
+function normalizeWaitRecords(value: AutopilotRuntimeWaitRecord[]): AutopilotRuntimeWaitRecord[] {
+  return value.map((wait) => ({ ...wait })).sort((left, right) => compareOptionalStrings(left.name, right.name) || compareOptionalStrings(left.taskId, right.taskId) || compareOptionalStrings(left.runId, right.runId));
 }
 
 function normalizeSnapshot(snapshot: AutopilotRuntimeSnapshot): AutopilotRuntimeSnapshot {
@@ -278,11 +463,24 @@ function normalizeSnapshot(snapshot: AutopilotRuntimeSnapshot): AutopilotRuntime
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([runId, record]) => [runId, normalizeRunRecord(record)]),
   );
-  return {
+  const normalized: AutopilotRuntimeSnapshot = {
     schemaVersion: 1,
     runs: normalizedRuns,
     consumedWorkerReportIds: [...new Set(snapshot.consumedWorkerReportIds)].sort(),
   };
+  if (snapshot.blockerQuestions != null) {
+    normalized.blockerQuestions = normalizeBlockerQuestions(snapshot.blockerQuestions);
+  }
+  if (snapshot.pendingPermissions != null) {
+    normalized.pendingPermissions = normalizePendingPermissions(snapshot.pendingPermissions);
+  }
+  if (snapshot.waitingWorkspaces != null) {
+    normalized.waitingWorkspaces = normalizeWaitRecords(snapshot.waitingWorkspaces);
+  }
+  if (snapshot.waitingWorktrees != null) {
+    normalized.waitingWorktrees = normalizeWaitRecords(snapshot.waitingWorktrees);
+  }
+  return normalized;
 }
 
 function checkedNormalizedSnapshot(value: AutopilotRuntimeSnapshot): AutopilotRuntimeSnapshot {

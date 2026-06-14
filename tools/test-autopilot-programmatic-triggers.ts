@@ -461,6 +461,8 @@ const tests: TestCase[] = [
       assert(defaults.fileWatch?.enabled === true, "Default file watch trigger must be enabled for observe-only status/checks.");
       assert(defaults.postToolCheckpoints?.enabled === true, "Default post-tool checkpoints must be enabled for cheap checks.");
       assert(defaults.workerCollect?.enabled === true, "Worker collect config can be enabled by default because triggerMode gates controlled actions.");
+      assert(defaults.protectedPathGuard?.enabled === true, "Protected Autopilot path guard must default on.");
+      assert(defaults.writeGate?.activeLock?.enabled === true, "Active-lock write gate must default on.");
       assert(defaults.runNextEvents?.enabled === false, "Autonomous run-next events must default to disabled.");
 
       const parsed = parseAutopilotTriggerOptions({
@@ -470,6 +472,8 @@ const tests: TestCase[] = [
         workerCollect: { debounceMs: 15 },
         blockerReplies: { enabled: false },
         permissionReplies: { enabled: false },
+        protectedPathGuard: { enabled: false },
+        writeGate: { activeLock: { enabled: false } },
         tuiCommands: { enabled: true },
         runNextEvents: { enabled: true, cooldownMs: 9000 },
       });
@@ -480,6 +484,8 @@ const tests: TestCase[] = [
       assert(parsed.workerCollect?.debounceMs === 15, `Parser must preserve worker debounce, got ${JSON.stringify(parsed.workerCollect)}.`);
       assert(parsed.blockerReplies?.enabled === false, "Parser must preserve blocker disabled flag.");
       assert(parsed.permissionReplies?.enabled === false, "Parser must preserve permission disabled flag.");
+      assert(parsed.protectedPathGuard?.enabled === false, "Parser must preserve protected path guard disabled flag.");
+      assert(parsed.writeGate?.activeLock?.enabled === false, "Parser must preserve active-lock write gate disabled flag.");
       assert(parsed.tuiCommands?.enabled === true, "Parser must preserve TUI enabled flag.");
       assert(parsed.runNextEvents?.enabled === true && parsed.runNextEvents.cooldownMs === 9000, `Parser must preserve explicit autonomous settings, got ${JSON.stringify(parsed.runNextEvents)}.`);
 
@@ -494,6 +500,38 @@ const tests: TestCase[] = [
       const huge = parseAutopilotTriggerOptions({ fileWatch: { debounceMs: 999999999, cooldownMs: 999999999 } });
       assert(huge.fileWatch?.debounceMs === 250, `Huge debounce must fall back to default, got ${huge.fileWatch?.debounceMs}.`);
       assert(huge.fileWatch?.cooldownMs === 1000, `Huge cooldown must fall back to default, got ${huge.fileWatch?.cooldownMs}.`);
+
+      const invalidShapes = parseAutopilotTriggerOptions({
+        fileWatch: false,
+        postToolCheckpoints: "off",
+        workerCollect: false,
+        blockerReplies: "off",
+        permissionReplies: false,
+        tuiCommands: "on",
+        runNextEvents: true,
+        protectedPathGuard: false,
+        writeGate: false,
+      });
+      assert(invalidShapes.fileWatch?.enabled === false, "Invalid fileWatch option shape must fail closed to disabled.");
+      assert(invalidShapes.postToolCheckpoints?.enabled === false, "Invalid postToolCheckpoints option shape must fail closed to disabled.");
+      assert(invalidShapes.workerCollect?.enabled === false, "Invalid workerCollect option shape must fail closed to disabled.");
+      assert(invalidShapes.blockerReplies?.enabled === false, "Invalid blockerReplies option shape must fail closed to disabled.");
+      assert(invalidShapes.permissionReplies?.enabled === false, "Invalid permissionReplies option shape must fail closed to disabled.");
+      assert(invalidShapes.tuiCommands?.enabled === false, "Invalid tuiCommands option shape must stay disabled.");
+      assert(invalidShapes.runNextEvents?.enabled === false, "Invalid runNextEvents option shape must stay disabled.");
+      assert(invalidShapes.protectedPathGuard?.enabled === true, "Invalid protectedPathGuard shape must keep protected-state guard enabled.");
+      assert(invalidShapes.writeGate?.activeLock?.enabled === true, "Invalid writeGate shape must keep active-lock guard enabled.");
+
+      const invalidTopLevel = parseAutopilotTriggerOptions(false);
+      assert(invalidTopLevel.triggerMode === "off", `Invalid top-level triggers shape must fail closed to off, got ${invalidTopLevel.triggerMode}.`);
+      assert(invalidTopLevel.fileWatch?.enabled === false, "Invalid top-level triggers must disable file watcher jobs.");
+      assert(invalidTopLevel.postToolCheckpoints?.enabled === false, "Invalid top-level triggers must disable post-tool jobs.");
+      assert(invalidTopLevel.workerCollect?.enabled === false, "Invalid top-level triggers must disable worker collect jobs.");
+      assert(invalidTopLevel.blockerReplies?.enabled === false, "Invalid top-level triggers must disable blocker reply jobs.");
+      assert(invalidTopLevel.permissionReplies?.enabled === false, "Invalid top-level triggers must disable permission reply jobs.");
+      assert(invalidTopLevel.runNextEvents?.enabled === false, "Invalid top-level triggers must disable autonomous run-next jobs.");
+      assert(invalidTopLevel.protectedPathGuard?.enabled === true, "Invalid top-level triggers must keep protected-state guard enabled.");
+      assert(invalidTopLevel.writeGate?.activeLock?.enabled === true, "Invalid top-level triggers must keep active-lock guard enabled.");
     },
   },
   {

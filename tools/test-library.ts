@@ -223,6 +223,7 @@ function newLibraryFixture(name: string): string {
     "    \"autopilot:evidence\": \"node tools/autopilot-evidence.ts\",",
     "    \"autopilot:check\": \"node tools/autopilot-check.ts\",",
     "    \"openspec:validate\": \"openspec validate --all\",",
+    "    \"openspec:gate\": \"node tools/openspec-operation-gate.ts\",",
     "    \"openspec:retro-gate\": \"node tools/openspec-retro-gate.ts\",",
     "    \"openspec:retro-followups\": \"node tools/openspec-retro-followups.ts\",",
     "    \"prepush:validate\": \"node tools/pre-push-validate.ts\",",

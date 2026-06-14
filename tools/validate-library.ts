@@ -626,7 +626,7 @@ function validateDevKitContract(root: string): void {
   }
 
   const scripts = readPackageScripts(root);
-  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "autopilot:validate", "autopilot:evidence", "autopilot:check", "openspec:validate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
+  for (const script of ["install:global", "init:project", "doctor", "project:inventory", "instruction:inventory", "code-quality:inventory", "autopilot:validate", "autopilot:evidence", "autopilot:check", "openspec:validate", "openspec:gate", "openspec:retro-gate", "openspec:retro-followups", "prepush:validate", "validate", "validate:strict", "test"]) {
     if (!scripts[script]) {
       addError(`package.json missing required opencode-dev-kit script '${script}'`);
     }
@@ -642,6 +642,9 @@ function validateDevKitContract(root: string): void {
   }
   if (scripts["openspec:validate"] && scripts["openspec:validate"] !== "openspec validate --all") {
     addError("package.json script 'openspec:validate' must run openspec validate --all.");
+  }
+  if (scripts["openspec:gate"] && scripts["openspec:gate"] !== "node tools/openspec-operation-gate.ts") {
+    addError("package.json script 'openspec:gate' must run node tools/openspec-operation-gate.ts.");
   }
   if (scripts["openspec:retro-gate"] && scripts["openspec:retro-gate"] !== "node tools/openspec-retro-gate.ts") {
     addError("package.json script 'openspec:retro-gate' must run node tools/openspec-retro-gate.ts.");

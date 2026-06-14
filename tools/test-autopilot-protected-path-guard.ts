@@ -37,6 +37,14 @@ const tests: TestCase[] = [
         guardAutopilotProtectedPathToolCall("write", { filePath: ".autopilot/state.json", content: "{}" }),
         ".autopilot/state.json",
       );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("write", { filePath: ".AUTOPILOT/state.json", content: "{}" }),
+        ".AUTOPILOT/state.json",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("write", { filePath: "OpenSpec/Changes/change-a/Automation/runtime.json", content: "{}" }),
+        "OpenSpec/Changes/change-a/Automation/runtime.json",
+      );
     },
   },
   {
@@ -53,6 +61,12 @@ const tests: TestCase[] = [
           patchText: "*** Begin Patch\n*** Add File: .autopilot/state.json\n+{}\n*** End Patch",
         }),
         ".autopilot/state.json",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("apply_patch", {
+          patchText: "*** Begin Patch\n*** Update File: OpenSpec/Changes/change-a/Automation/task.json\n@@\n-old\n+new\n*** End Patch",
+        }),
+        "OpenSpec/Changes/change-a/Automation/task.json",
       );
       assertGuardBlocked(
         guardAutopilotProtectedPathToolCall("apply_patch", { text: "missing canonical patchText" }),
@@ -140,7 +154,7 @@ const tests: TestCase[] = [
       assertGuardBlocked(guardAutopilotProtectedPathToolCall("bash", {}), "unclassified");
       assertGuardBlocked(guardAutopilotProtectedPathToolCall("bash", { cmd: "Set-Content openspec/changes/change-a/automation/task.json" }), "openspec/changes/change-a/automation/task.json");
       assertGuardAllowed(guardAutopilotProtectedPathToolCall("bash", { command: "Get-Content -LiteralPath \"openspec/changes/change-a/automation/task.json\"" }));
-      assertGuardAllowed(guardAutopilotProtectedPathToolCall("bash", { command: "npm run autopilot:validate -- openspec/changes/change-a/automation/task.json" }));
+      assertGuardAllowed(guardAutopilotProtectedPathToolCall("bash", { command: "node tools/autopilot-ledger.ts openspec/changes/change-a/automation/task.json" }));
       assertGuardAllowed(guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content -LiteralPath docs/autopilot.md -Value safe" }));
     },
   },
@@ -183,6 +197,62 @@ const tests: TestCase[] = [
         guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content automation/task.json '{}'", workdir: "openspec/changes/change-a" }),
         "openspec/changes/change-a/automation/task.json",
       );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Location openspec/changes/change-a; Set-Content automation/task.json '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "$p = Join-Path openspec/changes/change-a automation/task.json; Set-Content $p '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content (Join-Path openspec changes/change-a/automation/task.json) '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Location openspec; Set-Location changes/change-a; Set-Content automation/task.json '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "node -e \"require('fs').writeFileSync(['openspec','changes','change-a','automation','task.json'].join('/'),'{}')\"" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('.auto' + 'pilot/state.json') '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('.aut' + 'opilot/state.json') '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "node -e \"require('fs').writeFileSync(['.auto','pilot','runtime','state.json'].join('/'),'{}')\"" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('.' + 'autopilot/state.json') '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "node -e \"require('fs').writeFileSync(['.','autopilot','runtime','state.json'].join('/'),'{}')\"" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('open' + 'spec/changes/change-a/auto' + 'mation/task.json') '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('opens' + 'pec/changes/change-a/automation/task.json') '{}'" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('auto' + 'mation/task.json') '{}'", workdir: "openspec/changes/change-a" }),
+        "unclassified",
+      );
+      assertGuardBlocked(
+        guardAutopilotProtectedPathToolCall("bash", { command: "Set-Content ('automat' + 'ion/task.json') '{}'", workdir: "openspec/changes/change-a" }),
+        "unclassified",
+      );
       assertGuardAllowed(guardAutopilotProtectedPathToolCall("bash", { command: "Get-Content task.json", workdir: "openspec/changes/change-a/automation" }));
     },
   },
@@ -212,18 +282,42 @@ const tests: TestCase[] = [
     },
   },
   {
-    name: "worker scope guard allows safe validation commands without widening write scope",
+    name: "worker scope guard allows direct read-only helpers without widening write scope",
     run: () => {
       const scope = { read: ["tools/**", "openspec/**"], write: ["tools/**"], forbidden: ["openspec/changes/*/automation/**", ".autopilot/**"] };
+      for (const command of [
+        "rg activeRun tools/autopilot-runtime-store.ts",
+        "node tools/autopilot-ledger.ts openspec/changes/change-a/automation/task.json",
+      ] as const) {
+        assertGuardAllowed(guardAutopilotWorkerScopeToolCall("bash", { command }, scope));
+      }
       for (const command of [
         "npm test",
         "npm run validate",
         "npm run openspec:validate",
         "npm run autopilot:check -- --level standard --change change-a",
-        "node tools/test-autopilot-worker-session-adapter.ts",
+        "npm run autopilot:check -- --level final --change change-a",
+        "npm run validate -- tools/out.txt",
+        "npm.cmd run validate -- tools/out.txt",
+        "npm.exe run validate -- tools/out.txt",
+        "node tools/test-library.ts",
+        "node ./tools/test-library.ts",
+        "node .\\tools\\test-library.ts",
+        "node --trace-warnings tools/test-library.ts",
+        "node tools/test-library.ts tools/out.txt",
+        "node tools/autopilot-ledger.ts-malicious",
+        "node tools/autopilot-ledger.ts.bak",
+        "node tools/autopilot-ledger.tsmalicious",
       ] as const) {
-        assertGuardAllowed(guardAutopilotWorkerScopeToolCall("bash", { command }, scope));
+        assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command }, scope), "unclassified");
       }
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "node tools/test-malicious.ts openspec/changes/change-a/automation/task.json" }, scope), "openspec/changes/change-a/automation/task.json");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "node -e \"require('fs').writeFileSync('.autopilot/state.json','{}')\" tools/autopilot-ledger.ts" }, scope), ".autopilot/state.json");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm run autopilot:validate -- openspec/changes/change-a/automation/task.json" }, scope), "openspec/changes/change-a/automation/task.json");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "Set-Content ('.auto' + 'pilot/state.json') '{}'" }, scope), "unclassified");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "node tools/autopilot-ledger.ts-malicious openspec/changes/change-a/automation/task.json" }, scope), "openspec/changes/change-a/automation/task.json");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "node tools/autopilot-ledger.ts.bak openspec/changes/change-a/automation/task.json" }, scope), "openspec/changes/change-a/automation/task.json");
+      assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "node tools/autopilot-ledger.tsmalicious openspec/changes/change-a/automation/task.json" }, scope), "openspec/changes/change-a/automation/task.json");
       assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm test && Set-Content tools/out.txt ok" }, scope), "unclassified");
       assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm run validate > tools/out.txt" }, scope), "unclassified");
       assertGuardBlocked(guardAutopilotWorkerScopeToolCall("bash", { command: "npm run unknown-script" }, scope), "unclassified");

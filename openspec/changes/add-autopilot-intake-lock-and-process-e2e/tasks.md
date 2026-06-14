@@ -3,7 +3,7 @@
 ## Tests First
 
 - [ ] Add `tools/test-autopilot-scenario-e2e.ts` with a failing full `feature` happy-path scenario using a temp mini-project, real controller/runtime/ledger code, and scripted fake worker output.
-- [ ] Add intake-lock tests proving materialized ledgers record locked task type, caliber, risk class, required gates, required artifacts, phase profile, review policy, and classification evidence.
+- [x] Add intake-lock tests proving materialized ledgers record locked task type, caliber, risk class, required gates, required artifacts, phase profile, review policy, and classification evidence.
 - [ ] Add negative collect tests proving a worker report cannot downgrade `feature` to `typo`, `docs`, or `research`, cannot weaken `phaseProfile`, cannot remove required reviewers, and cannot remove required gates.
 - [ ] Add tests proving worker reports with wrong `toStatus`, missing required phase evidence, or skipped mandatory artifacts fail closed without protected ledger mutation or report consumption.
 - [ ] Add `bugfix` scenario tests proving reproduction, characterization, regression test, or accepted infeasible evidence is required before implementation/review progression.
@@ -14,8 +14,8 @@
 
 ## Implementation
 
-- [ ] Add or extend TypeScript types for the locked `intake` ledger contract, including `schemaVersion`, `locked`, `source`, `classifiedAt`, `classifiedBy`, `taskType`, `taskCaliber`, `riskClass`, `requiredGates`, `requiredArtifacts`, and `classificationEvidence`.
-- [ ] Extend ledger validation to require or compatibility-diagnose `intake` for claim-capable Autopilot ledgers without breaking read-only inspection of legacy ledgers prematurely.
+- [x] Add or extend TypeScript types for the locked `intake` ledger contract, including `schemaVersion`, `locked`, `source`, `classifiedAt`, `classifiedBy`, `taskType`, `taskCaliber`, `riskClass`, `requiredGates`, `requiredArtifacts`, and `classificationEvidence`.
+- [x] Extend ledger validation to require or compatibility-diagnose `intake` for claim-capable Autopilot ledgers without breaking read-only inspection of legacy ledgers prematurely.
 - [ ] Extend materialization/prompt-intake integration so newly created ledgers write a locked intake contract from deterministic classification evidence.
 - [ ] Add a shared locked-contract verifier that detects weakening of task type, caliber, risk class, required gates, required artifacts, phase profile, review policy, validation commands, MR requirement, and scope boundaries.
 - [ ] Add a shared phase-evidence verifier that enforces `resolveAutopilotPhaseDispatch().evidenceRequirements` before protected ledger mutation.
@@ -29,7 +29,7 @@
 ## Documentation And Discoverability
 
 - [ ] Update README Autopilot guidance to describe locked intake, mocked-LLM process e2e, and the boundary between LLM artifact quality and Autopilot process guarantees.
-- [ ] Update `.opencode/skills/openspec-autopilot/SKILL.md` so workers treat locked intake fields as authoritative and do not attempt to simplify task type or gates after materialization.
+- [x] Update `.opencode/skills/openspec-autopilot/SKILL.md` so workers treat locked intake fields as authoritative and do not attempt to simplify task type or gates after materialization.
 - [ ] Update relevant instruction drift tests so command/skill/README wording cannot imply workers may reclassify or bypass Autopilot after intake.
 - [ ] Review active related OpenSpec changes for references that conflict with immutable intake or scenario e2e terminology.
 

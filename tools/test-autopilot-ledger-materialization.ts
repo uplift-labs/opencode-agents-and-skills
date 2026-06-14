@@ -34,6 +34,12 @@ function writeTasks(repo: string, changeId: string, markdown: string, options: {
   fs.writeFileSync(path.join(base, "tasks.md"), markdown.replace(/\r\n/g, "\n"), "utf8");
 }
 
+function writeOpenSpecDoc(repo: string, changeId: string, fileName: "proposal.md" | "design.md" | "tasks.md", markdown: string): void {
+  const base = path.join(repo, "openspec", "changes", changeId);
+  fs.mkdirSync(base, { recursive: true });
+  fs.writeFileSync(path.join(base, fileName), markdown.replace(/\r\n/g, "\n"), "utf8");
+}
+
 function writeTasksAtRoot(repo: string, ledgerRoot: string, changeId: string, markdown: string): void {
   const base = path.join(repo, ...ledgerRoot.split("/"), changeId);
   fs.mkdirSync(base, { recursive: true });
@@ -71,6 +77,20 @@ function readyResearchLedger(id: string): Record<string, unknown> {
   ledger.status = "Ready";
   ledger.history = [];
   ledger.mr = { required: true, status: "none" };
+  return ledger;
+}
+
+function doneResearchLedger(id: string): Record<string, unknown> {
+  const ledger = readyResearchLedger(id);
+  ledger.status = "Done";
+  ledger.history = [
+    { from: "Ready", to: "Analyze", at: "2026-06-10T00:00:00.000Z", by: "plugin", source: "autopilot_run_next", evidence: { reason: "Dependency selected." } },
+    { from: "Analyze", to: "Review", at: "2026-06-10T00:01:00.000Z", by: "plugin", source: "autopilot_collect", evidence: { artifact: "openspec/changes/base-change/research.md", reasonNoImplementation: "Dependency produces an evidence artifact only." } },
+    { from: "Review", to: "Acceptance", at: "2026-06-10T00:02:00.000Z", by: "plugin", source: "autopilot_collect", evidence: { reviewerSkips: [{ reviewer: "implementation-readiness-reviewer", reason: "Optional for this bounded research artifact." }] } },
+    { from: "Acceptance", to: "Done", at: "2026-06-10T00:03:00.000Z", by: "plugin", source: "autopilot_collect", evidence: { noMrAcceptancePolicy: "Research-only dependency accepted without file-changing MR." } },
+  ];
+  ledger.mr = { required: false, status: "not-required", noMrAcceptancePolicy: "Research-only dependency accepted without file-changing MR." };
+  ledger.revision = { number: 4, contentHash: "placeholder", updatedBy: "plugin", updatedAt: "2026-06-10T00:03:00.000Z" };
   return ledger;
 }
 
@@ -206,6 +226,16 @@ const tests: TestCase[] = [
       assertNpmLedgerValidation(ledgerPath(repo, "a-change"));
       assert(ledger.id === "a-change", `Expected ledger id a-change, got ${String(ledger.id)}.`);
       assert(ledger.status === "Ready", `Expected Ready status, got ${String(ledger.status)}.`);
+      const schedule = ledger.schedule as Record<string, unknown>;
+      assert(ledger.priority === "medium", `No-evidence materialization should keep medium priority, got ${String(ledger.priority)}.`);
+      assert(Array.isArray(ledger.dependencies) && ledger.dependencies.length === 0, "No-evidence materialization should keep empty dependencies.");
+      assert(schedule?.source === "default", `No-evidence materialization should record default schedule, got ${String(schedule?.source)}.`);
+      assert(Array.isArray(schedule?.evidence) && schedule.evidence.length === 0, "Default schedule evidence should be empty.");
+      const intake = ledger.intake as Record<string, unknown>;
+      assert(intake?.locked === true, "Materialized ledger must record locked intake.");
+      assert(intake.taskType === "planning", `Materialized intake should lock taskType planning, got ${String(intake.taskType)}.`);
+      assert(Array.isArray(intake.requiredGates) && intake.requiredGates.includes("review"), "Materialized intake should lock required gates.");
+      assert(Array.isArray(intake.classificationEvidence) && intake.classificationEvidence.length > 0, "Materialized intake should record classification evidence.");
       const validationCommands = (((ledger.validation as Record<string, unknown>).commands as Array<Record<string, unknown>>) ?? []).map((command) => String(command.command));
       assert(validationCommands.includes("npm run validate"), "Materializer must include available validate script.");
       assert(validationCommands.includes("npm test"), "Materializer must include available test script.");
@@ -215,6 +245,29 @@ const tests: TestCase[] = [
       const followUp = await controller.runNext({ changeId: "a-change" }, { kind: "model-tool", name: "autopilot_run_next" });
       assert(followUp.payload.reasonCode === "ready_runtime_deferred", `Expected follow-up ready_runtime_deferred, got ${followUp.payload.reasonCode}.`);
       assert(followUp.payload.taskSummaries[0]?.sourceKind === "ledger", "Follow-up run must use ledger-backed summary.");
+    }),
+  },
+  {
+    name: "materialization records explicit scheduling markers",
+    run: () => withTempRepo("schedule-markers", async (repo) => {
+      writeLedger(repo, "base-change", doneResearchLedger("base-change"));
+      writeTasks(repo, "scheduled-change", "# Tasks\n\n- [ ] Scheduled task\n");
+      writeOpenSpecDoc(repo, "scheduled-change", "proposal.md", "# Proposal\n\nPriority: high\nDepends-On: base-change\n");
+      const controller = createAutopilotController({ root: repo });
+
+      const result = await controller.runNext({ changeId: "scheduled-change" }, { kind: "model-tool", name: "autopilot_run_next" });
+      assertLedgerMaterializedOutput(result.payload as unknown as Record<string, unknown>, { changeId: "scheduled-change", path: "openspec/changes/scheduled-change/automation/task.json", candidates: [{ taskId: "scheduled-change", pathSuffix: "automation/task.json", selected: true, rank: 1 }] });
+      const ledger = readJson(ledgerPath(repo, "scheduled-change"));
+      assert(ledger.priority === "high", `Expected explicit high priority, got ${String(ledger.priority)}.`);
+      assert(JSON.stringify(ledger.dependencies) === JSON.stringify(["base-change"]), `Expected base-change dependency, got ${JSON.stringify(ledger.dependencies)}.`);
+      const schedule = ledger.schedule as Record<string, unknown>;
+      assert(schedule.priority === "high", `Expected schedule priority high, got ${String(schedule.priority)}.`);
+      assert(JSON.stringify(schedule.dependencies) === JSON.stringify(["base-change"]), `Expected schedule dependency, got ${JSON.stringify(schedule.dependencies)}.`);
+      assert(schedule.source === "explicit", `Expected explicit schedule source, got ${String(schedule.source)}.`);
+      const evidence = schedule.evidence as Array<Record<string, unknown>>;
+      assert(Array.isArray(evidence) && evidence.some((item) => item.kind === "Depends-On" && item.value === "base-change"), "Schedule evidence should include Depends-On marker.");
+      const validation = validateTaskLedger(ledger, { sourcePath: "openspec/changes/scheduled-change/automation/task.json" });
+      assert(validation.valid, `Scheduled materialized ledger must validate: ${validation.errors.join("; ")}`);
     }),
   },
   {

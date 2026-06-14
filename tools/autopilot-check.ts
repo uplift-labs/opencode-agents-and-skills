@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { redactText } from "./autopilot-evidence.ts";
 import { validateTaskLedger } from "./autopilot-ledger.ts";
+import { isActiveAutopilotRuntimeStatus, validateAutopilotRuntimeSnapshot } from "./autopilot-runtime-store.ts";
 import { inspectAutopilotChangeFreshness } from "./autopilot-report-freshness.ts";
 import { countMarkdownChecklistItems } from "./openspec-autopilot-active-change-queue.ts";
 import { readLedgerSummaries, type LedgerSummary } from "./openspec-autopilot-output.ts";
@@ -461,6 +462,59 @@ function ledgerChecks(ledgers: LedgerSummary[]): AutopilotCheckItem[] {
   });
 }
 
+function runtimeWriteGateCheck(root: string): AutopilotCheckItem {
+  const source = ".autopilot/runtime/state.json";
+  const runtimePath = path.join(root, source);
+  if (!fs.existsSync(runtimePath)) {
+    return {
+      id: "write-gate:runtime:none",
+      label: "Autopilot write gate runtime evidence",
+      status: "not-applicable",
+      blocking: false,
+      source,
+      summary: "No durable Autopilot runtime state exists; write gate remains in protected-path-only mode.",
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(runtimePath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      id: "write-gate:runtime:invalid",
+      label: "Autopilot write gate runtime evidence",
+      status: "failed",
+      blocking: true,
+      source,
+      summary: `Runtime state is unreadable; write gate must fail closed for mutations: ${message}`,
+    };
+  }
+  const validation = validateAutopilotRuntimeSnapshot(parsed);
+  if (!validation.valid) {
+    return {
+      id: "write-gate:runtime:invalid",
+      label: "Autopilot write gate runtime evidence",
+      status: "failed",
+      blocking: true,
+      source,
+      summary: `Runtime state is schema-invalid; write gate must fail closed for mutations: ${validation.errors.join("; ")}`,
+    };
+  }
+  const runs = isRecord(parsed.runs) ? Object.values(parsed.runs).filter(isRecord) : [];
+  const active = runs.filter((run) => isActiveAutopilotRuntimeStatus(run.status));
+  const activeTasks = active.flatMap((run) => typeof run.taskId === "string" ? [run.taskId] : []).sort((left, right) => left.localeCompare(right));
+  return {
+    id: active.length > 0 ? "write-gate:runtime:active" : "write-gate:runtime:valid",
+    label: "Autopilot write gate runtime evidence",
+    status: "passed",
+    blocking: false,
+    source,
+    summary: active.length > 0
+      ? `Runtime state is valid with active write ownership for ${active.length} run(s): ${activeTasks.join(", ")}. Main-session mutations should be blocked by the plugin write gate.`
+      : "Runtime state is valid and has no active write ownership.",
+  };
+}
+
 function freshnessCheck(root: string, level: AutopilotCheckLevel, changeId: string): AutopilotCheckItem {
   const mode = level === "final" ? "archive-strict" : "advisory";
   const report = inspectAutopilotChangeFreshness({ root, changeId, mode });
@@ -499,6 +553,7 @@ function buildStaticChecks(root: string, level: AutopilotCheckLevel, inventory: 
     ...scopeChecks(inventory.scopeIssues),
     activeChangeCheck(inventory.changes),
     ...ledgerChecks(inventory.ledgers),
+    runtimeWriteGateCheck(root),
   ];
   if (level === "final" && normalizeOptionalChangeId(options.change) == null) {
     checks.push({

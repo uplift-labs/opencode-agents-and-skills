@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import { inferChangeSchedule } from "./autopilot-change-graph.ts";
 import { isSymlinkPath, realPathIsInside } from "./autopilot-path-safety.ts";
 import type { LedgerSummary } from "./openspec-autopilot-output.ts";
 
@@ -60,14 +61,15 @@ function activeChangeSummary(root: string, changeId: string, taskPath: string, c
   if (counts.unchecked === 0) {
     return null;
   }
+  const schedule = inferChangeSchedule({ root, changeId });
   return {
     path: toRelative(root, taskPath),
     id: changeId,
     sourceKind: "active-change",
     taskType: "planning",
     status: "Ready",
-    priority: "medium",
-    dependencies: [],
+    priority: schedule.priority,
+    dependencies: schedule.dependencies,
     writeScope: [],
     forbiddenScope: ["openspec/changes/*/automation/**", ".autopilot/**"],
     writeScopeSize: 0,

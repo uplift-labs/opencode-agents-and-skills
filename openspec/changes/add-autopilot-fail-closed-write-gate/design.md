@@ -158,10 +158,12 @@ The feature should be configurable but safe by default for explicit Autopilot:
 
 ```json
 {
-  "writeGate": {
-    "enabled": true,
-    "mode": "active-autopilot-fail-closed",
-    "allowWhenRuntimeUnavailable": false
+  "triggers": {
+    "writeGate": {
+      "activeLock": {
+        "enabled": true
+      }
+    }
   }
 }
 ```

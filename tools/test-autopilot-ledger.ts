@@ -32,6 +32,33 @@ const tests: TestCase[] = [
   { name: "valid research", fixture: "valid-research.json", valid: true },
   { name: "valid feature Done after MR merge", value: validFeatureDoneMerged, valid: true },
   { name: "valid research Done with no-MR policy", value: validResearchDoneNoMrPolicy, valid: true },
+  { name: "valid optional schedule", value: validOptionalSchedule, valid: true },
+  { name: "valid optional locked intake", value: validOptionalLockedIntake, valid: true },
+  { name: "valid legacy ledger without schedule", fixture: "valid-feature.json", valid: true },
+  {
+    name: "invalid schedule dependency mismatch",
+    value: invalidScheduleDependencyMismatch,
+    valid: false,
+    expected: ["schedule.dependencies", "must match top-level dependencies"],
+  },
+  {
+    name: "invalid schedule duplicate self dependency",
+    value: invalidScheduleDuplicateSelfDependency,
+    valid: false,
+    expected: ["must not include the ledger id", "duplicate feature-ready-auth-flow"],
+  },
+  {
+    name: "invalid schedule priority mismatch",
+    value: invalidSchedulePriorityMismatch,
+    valid: false,
+    expected: ["schedule.priority", "must match top-level priority"],
+  },
+  {
+    name: "invalid intake task type downgrade",
+    value: invalidIntakeTaskTypeDowngrade,
+    valid: false,
+    expected: ["intake.taskType", "must match locked top-level taskType"],
+  },
   {
     name: "invalid bugfix missing reproduction gate",
     fixture: "invalid-bugfix-missing-reproduction.json",
@@ -214,6 +241,70 @@ function validResearchDoneNoMrPolicy(): unknown {
     evidence: { noMrAcceptancePolicy: "Research-only artifact accepted without file-changing MR." },
   });
   asRecord(ledger.revision, "Fixture revision must be an object.").number = 4;
+  return ledger;
+}
+
+function validOptionalSchedule(): unknown {
+  const ledger = cloneFixture("valid-feature.json");
+  ledger.priority = "high";
+  ledger.dependencies = ["base-change"];
+  ledger.schedule = {
+    priority: "high",
+    dependencies: ["base-change"],
+    source: "explicit",
+    evidence: [{ kind: "Depends-On", value: "base-change", source: "openspec/changes/feature-change/proposal.md" }],
+  };
+  return ledger;
+}
+
+function validOptionalLockedIntake(): unknown {
+  const ledger = cloneFixture("valid-feature.json");
+  ledger.intake = {
+    schemaVersion: 1,
+    locked: true,
+    source: "materialized-active-change",
+    classifiedAt: "2026-06-10T00:00:00.000Z",
+    classifiedBy: "autopilot-materializer",
+    taskType: "feature",
+    taskCaliber: "standard",
+    riskClass: "medium",
+    requiredGates: ["analyze", "test-decision", "review", "acceptance", "mr-policy"],
+    requiredArtifacts: ["proposal.md", "tasks.md"],
+    phaseProfile: ["analyze", "implementation", "review", "acceptance"],
+    reviewPolicy: ["code-quality-reviewer", "test-coverage-reviewer"],
+    classificationEvidence: [{ kind: "materialization", value: "taskType:feature", source: "openspec/changes/feature-ready-auth-flow" }],
+  };
+  return ledger;
+}
+
+function invalidIntakeTaskTypeDowngrade(): unknown {
+  const ledger = validOptionalLockedIntake() as Record<string, unknown>;
+  ledger.taskType = "typo";
+  return ledger;
+}
+
+function invalidScheduleDependencyMismatch(): unknown {
+  const ledger = validOptionalSchedule() as Record<string, unknown>;
+  ledger.dependencies = ["base-change"];
+  ledger.schedule = { ...(ledger.schedule as Record<string, unknown>), dependencies: ["other-change"] };
+  return ledger;
+}
+
+function invalidScheduleDuplicateSelfDependency(): unknown {
+  const ledger = cloneFixture("valid-feature.json");
+  ledger.dependencies = ["feature-ready-auth-flow", "feature-ready-auth-flow"];
+  ledger.schedule = {
+    priority: "high",
+    dependencies: ["feature-ready-auth-flow", "feature-ready-auth-flow"],
+    source: "explicit",
+    evidence: [{ kind: "Depends-On", value: "feature-ready-auth-flow", source: "openspec/changes/feature-ready-auth-flow/tasks.md" }],
+  };
+  return ledger;
+}
+
+function invalidSchedulePriorityMismatch(): unknown {
+  const ledger = validOptionalSchedule() as Record<string, unknown>;
+  ledger.priority = "low";
   return ledger;
 }
 

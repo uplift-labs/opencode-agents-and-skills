@@ -342,6 +342,49 @@ const tests: TestCase[] = [
     }),
   },
   {
+    name: "source-equivalent invalid triggers shape disables event jobs but keeps write gates",
+    run: () => withTempRepo("invalid-triggers-shape", async (repo) => {
+      writeTasks(repo, "trigger-change");
+      const plugin = await importAutopilotPlugin();
+      const logs: Array<Record<string, unknown>> = [];
+      const hooks = await plugin.server(
+        {
+          directory: repo,
+          worktree: repo,
+          client: { app: { log: async (entry: { body: Record<string, unknown> }) => logs.push(entry.body) } },
+        },
+        { triggers: false, runtimeState: { activeRun: { runId: "run-1", taskIds: ["task-runtime-state"] } } },
+      ) as PluginHooks;
+      assert(typeof hooks.event === "function", "Autopilot plugin must still expose event hook for invalid trigger shape.");
+      assert(typeof hooks["tool.execute.after"] === "function", "Autopilot plugin must still expose tool after hook for invalid trigger shape.");
+      assert(typeof hooks["tool.execute.before"] === "function", "Autopilot plugin must still expose before hook for write gates.");
+
+      await hooks.event({ event: { type: "file.watcher.updated", properties: { file: path.join(repo, "openspec", "changes", "trigger-change", "tasks.md"), event: "change" } } });
+      await hooks["tool.execute.after"](
+        { tool: "autopilot_run_next", sessionID: "session-1", callID: "call-advanced", args: {} },
+        { output: JSON.stringify({ reasonCode: "ledger_materialized", tasksAdvanced: [{ taskId: "trigger-change", changeId: "trigger-change" }] }) },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      assert(!logs.some((log) => log.message === "trigger job enqueued" || log.message === "trigger job completed"), "Invalid top-level triggers shape must not enqueue or run event-driven jobs.");
+
+      let protectedBlocked = false;
+      try {
+        await hooks["tool.execute.before"]({ tool: "write", sessionID: "main-session", callID: "invalid-triggers-protected" }, { args: { filePath: "openspec/changes/trigger-change/automation/task.json", content: "{}" } });
+      } catch (error) {
+        protectedBlocked = error instanceof Error && error.message.includes("protected Autopilot state");
+      }
+      assert(protectedBlocked, "Invalid top-level triggers shape must keep protected-path guard enabled.");
+
+      let activeBlocked = false;
+      try {
+        await hooks["tool.execute.before"]({ tool: "write", sessionID: "main-session", callID: "invalid-triggers-active" }, { args: { filePath: "docs/out.md", content: "x" } });
+      } catch (error) {
+        activeBlocked = error instanceof Error && error.message.includes("active write ownership");
+      }
+      assert(activeBlocked, "Invalid top-level triggers shape must keep active-lock guard enabled.");
+    }),
+  },
+  {
     name: "source-equivalent tool after hook schedules cheap checkpoint without no-progress loop",
     run: () => withTempRepo("tool-after-checkpoint", async (repo) => {
       writeTasks(repo, "trigger-change");
@@ -406,6 +449,67 @@ const tests: TestCase[] = [
         { tool: "apply_patch", sessionID: "session-1", callID: "call-safe" },
         { args: { patchText: "*** Begin Patch\n*** Update File: openspec/changes/change-a/tasks.md\n@@\n-- [ ] Task\n+- [x] Task\n*** End Patch" } },
       );
+    }),
+  },
+  {
+    name: "source-equivalent before hook blocks in-memory active ownership",
+    run: () => withTempRepo("before-runtime-state-active-lock", async (repo) => {
+      const plugin = await importAutopilotPlugin();
+      const hooks = await plugin.server({ directory: repo, worktree: repo }, { runtimeState: { activeRun: { runId: "run-1", taskIds: ["task-runtime-state"] } } }) as PluginHooks;
+      assert(typeof hooks["tool.execute.before"] === "function", "Autopilot plugin must expose before hook for runtimeState active lock.");
+      let blocked = false;
+      try {
+        await hooks["tool.execute.before"]({ tool: "write", sessionID: "main-session", callID: "runtime-state-active-lock" }, { args: { filePath: "docs/out.md", content: "x" } });
+      } catch (error) {
+        blocked = error instanceof Error && error.message.includes("active write ownership");
+      }
+      assert(blocked, "In-memory runtimeState active ownership must block main-session ordinary writes.");
+    }),
+  },
+  {
+    name: "source-equivalent before hook loads durable active ownership without worker dispatch",
+    run: () => withTempRepo("before-durable-active-lock", async (repo) => {
+      const runtimePath = path.join(repo, ".autopilot", "runtime", "state.json");
+      fs.mkdirSync(path.dirname(runtimePath), { recursive: true });
+      fs.writeFileSync(runtimePath, JSON.stringify({
+        schemaVersion: 1,
+        consumedWorkerReportIds: [],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "running",
+            createdAt: "2026-06-10T00:00:00.000Z",
+            updatedAt: "2026-06-10T00:00:01.000Z",
+            taskId: "task-durable",
+            ledgerPath: "openspec/changes/durable/automation/task.json",
+            fromStatus: "Implementation",
+            expectedReportId: "report-1",
+            workerId: "worker-1",
+            workerSessionId: "worker-session-1",
+            scope: { read: ["docs/**"], write: ["docs/allowed/**"], forbidden: ["openspec/changes/*/automation/**", ".autopilot/**"] },
+          },
+        },
+      }, null, 2), "utf8");
+      const plugin = await importAutopilotPlugin();
+      const hooks = await plugin.server({ directory: repo, worktree: repo }, { triggers: { triggerMode: "observe" } }) as PluginHooks;
+      assert(typeof hooks["tool.execute.before"] === "function", "Autopilot plugin must expose before hook for durable active lock.");
+
+      let blockedMain = false;
+      try {
+        await hooks["tool.execute.before"]({ tool: "write", sessionID: "main-session", callID: "durable-main-lock" }, { args: { filePath: "docs/out.md", content: "x" } });
+      } catch (error) {
+        blockedMain = error instanceof Error && error.message.includes("active write ownership");
+      }
+      assert(blockedMain, "Durable runtime active ownership must block main-session writes even when workerDispatch is disabled.");
+
+      await hooks["tool.execute.before"]({ tool: "write", sessionID: "worker-session-1", callID: "durable-worker-scope-allow" }, { args: { filePath: "docs/allowed/out.md", content: "x" } });
+      let blockedWorker = false;
+      try {
+        await hooks["tool.execute.before"]({ tool: "write", sessionID: "worker-session-1", callID: "durable-worker-scope" }, { args: { filePath: "docs/out.md", content: "x" } });
+      } catch (error) {
+        blockedWorker = error instanceof Error && error.message.includes("worker scope boundaries");
+      }
+      assert(blockedWorker, "Durable runtime worker scope must be enforced even when workerDispatch is disabled.");
     }),
   },
   {

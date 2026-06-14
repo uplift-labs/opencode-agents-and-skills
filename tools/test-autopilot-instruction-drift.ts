@@ -191,6 +191,12 @@ function assertAutopilotCheckDocs(text: string, label: string): void {
     "--level standard",
     "--level prepush",
     "--level final",
+    "openspec:gate",
+    "--operation apply",
+    "--operation archive",
+    "--operation prepush",
+    "--persist",
+    "automation/operation-gates",
     "not-applicable",
     "retro follow-ups",
   ]) {
@@ -200,6 +206,7 @@ function assertAutopilotCheckDocs(text: string, label: string): void {
   assert(/status-only[\s\S]{0,80}(do not|not require)|do not[\s\S]{0,80}status-only/i.test(text), `${label} must not require cheap checkpoints after status-only reads.`);
   assert(/final[\s\S]{0,160}(not read-only|write-authorized|may create\/update)|may create\/update[\s\S]{0,160}final/i.test(text), `${label} must warn that final checks can write follow-up/retrospective outputs.`);
   assert(/prepush[\s\S]{0,180}ready-to-land|ready-to-land[\s\S]{0,180}prepush/i.test(text), `${label} must route routine ready-to-land evidence to prepush rather than final.`);
+  assert(/--persist[\s\S]{0,220}write-authorized[\s\S]{0,220}(no active Autopilot write ownership|no active ownership)|write-authorized[\s\S]{0,220}--persist[\s\S]{0,220}(no active Autopilot write ownership|no active ownership)/i.test(text), `${label} must gate openspec:gate --persist behind write authorization and no active ownership.`);
 }
 
 function assertProgrammaticTriggerDocs(text: string, label: string): void {
@@ -214,7 +221,9 @@ function assertProgrammaticTriggerDocs(text: string, label: string): void {
     "tool.execute.before",
     "autopilot_collect",
     "autopilot_answer_blocker",
-    "protected-path guard",
+    "write gate",
+    "triggers.protectedPathGuard.enabled",
+    "triggers.writeGate.activeLock.enabled",
     "autopilot.status",
     "autopilot.check",
     "autopilot.run",
@@ -226,6 +235,7 @@ function assertProgrammaticTriggerDocs(text: string, label: string): void {
   }
   assert(/passive[\s\S]{0,160}(status|cheap check)[\s\S]{0,160}(never|not)[\s\S]{0,160}autopilot_run_next|autopilot_run_next[\s\S]{0,160}(never|not)[\s\S]{0,160}passive/i.test(text), `${label} must state passive events do not call autopilot_run_next by default.`);
   assert(/controlled[\s\S]{0,220}plugin-owned[\s\S]{0,220}(worker|blocker|permission|workspace|worktree)/i.test(text), `${label} must tie controlled runtime triggers to plugin-owned evidence.`);
+  assert(/\{\s*"triggers"\s*:\s*\{\s*\.\.\.\s*\}\s*\}/i.test(text), `${label} must document canonical nested triggers option shape.`);
   assert(/permission(?:\.replied| replies)[\s\S]{0,120}status-only|status-only[\s\S]{0,120}permission(?:\.replied| replies)/i.test(text), `${label} must document MVP permission replies as status-only.`);
   assert(/restart OpenCode/i.test(text), `${label} must include restart guidance for plugin/TUI trigger changes.`);
 }
@@ -453,7 +463,7 @@ const tests: TestCase[] = [
       assertAutopilotStatusOnlyBoundary(routing, "README Routing Map status-only boundary");
       assertPromptIntakeDocs(routing, "README Routing Map prompt intake");
       assertAutopilotToolAvailabilityGate(routing, "README Routing Map tool availability gate");
-      assert(/scope\.write[\s\S]{0,160}scope\.forbidden|scope\.forbidden[\s\S]{0,160}scope\.write/i.test(routing), "README Routing Map must document worker-scope protected-path guard boundaries.");
+      assert(/scope\.write[\s\S]{0,160}scope\.forbidden|scope\.forbidden[\s\S]{0,160}scope\.write/i.test(routing), "README Routing Map must document worker-scope write gate boundaries.");
     },
   },
   {

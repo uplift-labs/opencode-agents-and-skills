@@ -2,9 +2,9 @@
 
 ## Tests First: Shared Gate Contract
 
-- [ ] Add fixtures for passed, warning, failed, blocked, unknown, and not-applicable gate results.
-- [ ] Add tests for stable JSON output, deterministic ordering, redaction, safe change id validation, and `--persist` output paths.
-- [ ] Add tests proving gate reports are written as JSON under `automation/operation-gates/<operation>.json` only when persistence is requested.
+- [x] Add fixtures for passed, warning, failed, blocked, unknown, and not-applicable gate results.
+- [x] Add tests for stable JSON output, deterministic ordering, redaction, safe change id validation, and `--persist` output paths.
+- [x] Add tests proving gate reports are written as JSON under `automation/operation-gates/<operation>.json` only when persistence is requested.
 
 ## Tests First: Operation Coverage
 
@@ -22,14 +22,14 @@
 
 ## Implementation
 
-- [ ] Add `tools/openspec-operation-gate.ts` with a typed operation registry and shared JSON output contract.
-- [ ] Add `npm run openspec:gate` script.
+- [x] Add `tools/openspec-operation-gate.ts` with a typed operation registry and shared JSON output contract.
+- [x] Add `npm run openspec:gate` script.
 - [ ] Reuse existing validators: `openspec validate`, `autopilot:validate`, `autopilot:check`, freshness checks, and JSON retro gate.
-- [ ] Implement cheap read-only gates first, then full gates where existing validators are available.
-- [ ] Add optional `--persist` support for `automation/operation-gates/<operation>.json` reports.
-- [ ] Integrate `openspec:gate -- --operation prepush` into `tools/pre-push-validate.ts` without duplicating existing gates unnecessarily.
+- [x] Implement cheap read-only gates first, then full gates where existing validators are available.
+- [x] Add optional `--persist` support for `automation/operation-gates/<operation>.json` reports.
+- [x] Integrate `openspec:gate -- --operation prepush` into `tools/pre-push-validate.ts` without duplicating existing gates unnecessarily.
 - [ ] Update Autopilot programmatic triggers to schedule cheap operation gates for relevant OpenSpec file changes when trigger mode allows observe checks.
-- [ ] Update skills and README to call operation gates before sensitive lifecycle operations.
+- [x] Update skills and README to call operation gates before sensitive lifecycle operations.
 
 ## Operation-Specific Implementation Notes
 
@@ -55,11 +55,11 @@
 
 ## Validation
 
-- [ ] `npm run validate`
-- [ ] `npm test`
-- [ ] `npm run openspec:validate`
-- [ ] `npm run openspec:gate -- --operation prepush`
-- [ ] `npm run prepush:validate`
+- [x] `npm run validate`
+- [x] `npm test`
+- [x] `npm run openspec:validate`
+- [x] `npm run openspec:gate -- --operation prepush`
+- [x] `npm run prepush:validate`
 
 ## Retrospective Before Archive
 

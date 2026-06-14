@@ -1,7 +1,7 @@
 import { applyStopToRuntimeState, dependenciesSatisfied } from "./openspec-autopilot-runtime.ts";
 import { resolveAutopilotPhaseDispatch } from "./autopilot-phase-dispatcher.ts";
 import { applyAutopilotLedgerTransition } from "./autopilot-ledger-transition-writer.ts";
-import { type AutopilotRunRecord, type AutopilotRuntimeSnapshot, type AutopilotRuntimeStoreLoadResult } from "./autopilot-runtime-store.ts";
+import { isActiveAutopilotRuntimeStatus, isCollectClaimableAutopilotRuntimeStatus, type AutopilotRunRecord, type AutopilotRuntimeSnapshot, type AutopilotRuntimeStoreLoadResult } from "./autopilot-runtime-store.ts";
 import { parseAutopilotWorkerReportEnvelope, type AutopilotParsedWorkerReport } from "./autopilot-worker-report-parser.ts";
 import { buildAutopilotWorkerPrompt } from "./autopilot-worker-prompt-builder.ts";
 import { autopilotTaskStatuses, autopilotTaskTypes, type AutopilotTaskStatus, type AutopilotTaskType } from "./autopilot-contract.ts";
@@ -63,8 +63,6 @@ type ControllerContext = {
   root: string;
 };
 
-const activeRuntimeStatuses = new Set(["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr"]);
-const collectClaimableRuntimeStatuses = new Set(["claiming", "dispatching", "running"]);
 const taskTypeSet = new Set<string>(autopilotTaskTypes);
 const taskStatusSet = new Set<string>(autopilotTaskStatuses);
 
@@ -166,13 +164,13 @@ function timestampId(value: string): string {
 
 function activeRuns(snapshot: AutopilotRuntimeSnapshot): AutopilotRunRecord[] {
   return Object.values(snapshot.runs)
-    .filter((run) => activeRuntimeStatuses.has(run.status))
+    .filter((run) => isActiveAutopilotRuntimeStatus(run.status))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.runId.localeCompare(right.runId));
 }
 
 function collectClaimableRuns(snapshot: AutopilotRuntimeSnapshot): AutopilotRunRecord[] {
   return Object.values(snapshot.runs)
-    .filter((run) => collectClaimableRuntimeStatuses.has(run.status))
+    .filter((run) => isCollectClaimableAutopilotRuntimeStatus(run.status))
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.runId.localeCompare(right.runId));
 }
 
@@ -212,6 +210,16 @@ function runtimeStateFromSnapshot(snapshot: AutopilotRuntimeSnapshot): Record<st
       },
     }),
   };
+}
+
+function controllerRuntimeState(loaded: AutopilotRuntimeStoreLoadResult | null, runtimeState: AutopilotRuntimeState | undefined): unknown {
+  if (loaded == null) {
+    return runtimeState;
+  }
+  if (Object.keys(loaded.snapshot.runs).length === 0 && runtimeState != null) {
+    return runtimeState;
+  }
+  return { ...runtimeStateFromSnapshot(loaded.snapshot), ...(runtimeState ?? {}) };
 }
 
 function outputWithRuntimeState(output: AutopilotOutput, runtimeState: Record<string, unknown>): AutopilotOutput {
@@ -533,6 +541,23 @@ async function stopRuntimeStore(args: StopArgs, options: AutopilotOptions): Prom
   const now = options.now?.() ?? new Date().toISOString();
   const target = args.target ?? "run";
   let stoppedEntries: Array<Record<string, unknown>> = [];
+  const loaded = await options.runtimeStore.load();
+  if (runtimeLoadHasConflict(loaded)) {
+    const errors = loaded.errors.length > 0 ? loaded.errors : ["Runtime state recovered without diagnostic details."];
+    throw new Error(`Refusing to overwrite invalid Autopilot runtime state: ${errors.join("; ")}`);
+  }
+  const activeBeforeSave = activeRuns(loaded.snapshot).filter((run) => {
+    if (target === "all") {
+      return true;
+    }
+    if (target === "task") {
+      return args.id == null || run.taskId === args.id;
+    }
+    return args.id == null || run.runId === args.id;
+  });
+  if (activeBeforeSave.length === 0) {
+    return [];
+  }
   await options.runtimeStore.save((draft) => {
     const active = activeRuns(draft).filter((run) => {
       if (target === "all") {
@@ -700,7 +725,7 @@ export function createAutopilotController(ctx: ControllerContext, options: Autop
   return {
     async runNext(scope: AutopilotScope = {}, source?: TriggerSource): Promise<AutopilotControllerResult> {
       const runtimeSnapshot = options.runtimeStore == null ? null : await options.runtimeStore.load();
-      const runtimeState = runtimeSnapshot == null ? options.runtimeState : { ...runtimeStateFromSnapshot(runtimeSnapshot.snapshot), ...(options.runtimeState ?? {}) };
+      const runtimeState = controllerRuntimeState(runtimeSnapshot, options.runtimeState);
       const queue = readAutopilotQueueSummaries(ctx.root, options, { changeId: scope.changeId, taskId: scope.taskId });
       const output = outputWithWorkerDispatchDiagnostics(createRunNextOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph, runtimeState }), options);
       if (runtimeSnapshot != null && runtimeLoadHasConflict(runtimeSnapshot)) {
@@ -733,7 +758,7 @@ export function createAutopilotController(ctx: ControllerContext, options: Autop
 
     async status(scope: Pick<AutopilotScope, "changeId"> = {}, source?: TriggerSource): Promise<AutopilotControllerResult> {
       const runtimeSnapshot = options.runtimeStore == null ? null : await options.runtimeStore.load();
-      const runtimeState = runtimeSnapshot == null ? options.runtimeState : { ...runtimeStateFromSnapshot(runtimeSnapshot.snapshot), ...(options.runtimeState ?? {}) };
+      const runtimeState = controllerRuntimeState(runtimeSnapshot, options.runtimeState);
       const queue = readAutopilotQueueSummaries(ctx.root, options, { changeId: scope.changeId });
       const output = outputWithWorkerDispatchDiagnostics(outputWithRuntimeState(createStatusOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph, runtimeState }), runtimeState ?? {}), options);
       if (runtimeSnapshot != null && runtimeLoadHasConflict(runtimeSnapshot)) {

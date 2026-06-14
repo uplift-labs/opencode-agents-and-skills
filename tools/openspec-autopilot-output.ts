@@ -33,6 +33,7 @@ import {
 import type { AutopilotRuntimeState } from "./openspec-autopilot-runtime.ts";
 import type { AutopilotRuntimeStore } from "./autopilot-runtime-store.ts";
 import type { AutopilotWorkerSessionAdapter } from "./autopilot-worker-session-adapter.ts";
+import { buildChangeGraph, type AutopilotChangeGraph } from "./autopilot-change-graph.ts";
 import { countMarkdownChecklistItems, readActiveChangeSummaries } from "./openspec-autopilot-active-change-queue.ts";
 import {
   nextActionsAfterAnswerBlocker,
@@ -170,6 +171,7 @@ export type AutopilotOutput = {
   nextActions: AutopilotNextAction[];
   loopGuard: AutopilotLoopGuard;
   selection: AutopilotSelection;
+  changeGraph: AutopilotChangeGraph;
 };
 
 const defaultLedgerRoot = "openspec/changes";
@@ -298,7 +300,7 @@ export function readAutopilotQueueSummaries(root: string, options: AutopilotOpti
     return { ledgers, dependencyGraph };
   }
   const activeChanges = readActiveChangeSummaries(root, safeRelativeRoot(options.ledgerRoot, defaultLedgerRoot, "ledgerRoot"), normalizedFilter);
-  return { ledgers: activeChanges, dependencyGraph: activeChanges };
+  return { ledgers: activeChanges, dependencyGraph: [...dependencyGraph, ...activeChanges] };
 }
 
 export function changeIdForLedgerPath(ledger: LedgerSummary): string | undefined {
@@ -557,6 +559,16 @@ function staleCompletedNextActions(ledgers: LedgerSummary[]): AutopilotNextActio
   }];
 }
 
+function writeGateStatus(runtimeState: unknown): Record<string, unknown> {
+  const activeRun = activeRunState(runtimeState);
+  return {
+    mode: activeRun == null ? "protected-path-only" : "fail-closed-active-lock",
+    activeOwnership: activeRun != null,
+    activeRunId: activeRun?.runId,
+    activeTaskIds: activeRun?.taskIds ?? [],
+  };
+}
+
 function selectableLedgers(ledgers: LedgerSummary[]): LedgerSummary[] {
   return ledgers.filter((ledger) => {
     const classification = classifyLedger(ledger);
@@ -625,6 +637,13 @@ function loopGuardFor(reasonCode: AutopilotReasonCode, equivalentCall?: string):
 
 function outputFor(ledgers: LedgerSummary[], summary: string, reasonCode: AutopilotReasonCode, equivalentCall?: string, nextRecommendedCall: NextRecommendedCall = null, outputOptions: AutopilotOutputOptions = {}): AutopilotOutput {
   const dependencyGraph = outputOptions.dependencyGraph ?? ledgers;
+  const changeIdByTaskId = new Map(dependencyGraph.map((ledger) => [ledger.id, changeIdForLedgerPath(ledger) ?? ledger.id]));
+  const changeGraph = buildChangeGraph(dependencyGraph.map((ledger) => ({
+    changeId: changeIdForLedgerPath(ledger) ?? ledger.id,
+    priority: ledger.priority,
+    dependencies: ledger.dependencies.map((dependency) => changeIdByTaskId.get(dependency) ?? dependency),
+    writeScope: ledger.writeScope,
+  })));
   return {
     outcome: outcomeForReason(reasonCode),
     tasksStarted: [],
@@ -639,6 +658,7 @@ function outputFor(ledgers: LedgerSummary[], summary: string, reasonCode: Autopi
     nextActions: [...staleCompletedNextActions(ledgers), ...nextActionsFor(reasonCode)],
     loopGuard: loopGuardFor(reasonCode, equivalentCall),
     selection: selectionFor(ledgers, selectableLedgers(ledgers), reasonCode, dependencyGraph, outputOptions.runtimeState),
+    changeGraph,
   };
 }
 
@@ -735,6 +755,7 @@ export function createStatusOutput(ledgers: LedgerSummary[], outputOptions: Auto
     status: {
       ...summarizeLedgers(ledgers),
       ...(activeRun == null ? {} : { activeRun }),
+      writeGate: writeGateStatus(outputOptions.runtimeState),
     },
   };
 }
@@ -802,6 +823,7 @@ function emptyRuntimeOutput(overrides: Pick<AutopilotOutput, "outcome" | "summar
     nextActions: overrides.nextActions,
     loopGuard: overrides.loopGuard,
     selection: overrides.selection ?? emptySelection(),
+    changeGraph: { nodes: [], levels: [], parallelReady: [], dependencyBlocked: [], conflicts: [], cycles: [] },
   };
 }
 

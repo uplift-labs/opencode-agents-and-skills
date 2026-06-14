@@ -45,6 +45,12 @@ const testDecisionValues = new Set([
   "acceptance",
 ]);
 const requiredReviewStatuses = new Set(["pending", "passed", "failed", "needs-work"]);
+const schedulePriorityValues = new Set(["critical", "high", "medium", "low"]);
+const scheduleSourceValues = new Set(["explicit", "inferred", "default"]);
+const intakeSources = new Set(["materialized-active-change", "prompt-intake"]);
+const intakeClassifiers = new Set(["autopilot-materializer", "autopilot_intake"]);
+const intakeCalibers = new Set(["small", "standard", "large"]);
+const intakeRiskClasses = new Set(["low", "medium", "high"]);
 
 const legalTransitionTargets: Record<TaskStatus, Set<TaskStatus>> = {
   Ready: new Set(["Analyze", "Implementation", "Failed", "Cancelled"]),
@@ -208,7 +214,8 @@ function validateShape(ledger: RecordValue, errors: string[], options: ValidateT
   if (!isNonEmptyString(ledger.priority)) {
     addError(errors, options, "priority", "non-empty string is required");
   }
-  requireStringArray(ledger, "dependencies", errors, options);
+  const dependencies = requireStringArray(ledger, "dependencies", errors, options);
+  validateSchedule(ledger, dependencies ?? [], errors, options);
 
   const scope = requireRecord(ledger, "scope", errors, options);
   if (scope) {
@@ -260,6 +267,7 @@ function validateShape(ledger: RecordValue, errors: string[], options: ValidateT
       }
     }
   }
+  validateLockedIntake(ledger, errors, options);
 
   requireRecord(ledger, "phaseEvidence", errors, options);
   validateTestDecision(ledger, errors, options);
@@ -270,6 +278,147 @@ function validateShape(ledger: RecordValue, errors: string[], options: ValidateT
   requireArray(ledger, "feedback", errors, options);
   validateHistory(ledger, errors, options);
   validateRevision(ledger, errors, options);
+}
+
+function validateLockedIntake(ledger: RecordValue, errors: string[], options: ValidateTaskLedgerOptions): void {
+  if (ledger.intake == null) {
+    return;
+  }
+  const intake = readRecord(ledger, "intake");
+  if (!intake) {
+    addError(errors, options, "intake", "object is required when present");
+    return;
+  }
+  if (intake.schemaVersion !== 1) {
+    addError(errors, options, "intake.schemaVersion", "must be 1");
+  }
+  if (intake.locked !== true) {
+    addError(errors, options, "intake.locked", "must be true");
+  }
+  if (!isNonEmptyString(intake.source) || !intakeSources.has(intake.source)) {
+    addError(errors, options, "intake.source", `must be one of ${Array.from(intakeSources).join(", ")}`);
+  }
+  if (!isNonEmptyString(intake.classifiedAt)) {
+    addError(errors, options, "intake.classifiedAt", "non-empty timestamp string is required");
+  }
+  if (!isNonEmptyString(intake.classifiedBy) || !intakeClassifiers.has(intake.classifiedBy)) {
+    addError(errors, options, "intake.classifiedBy", `must be one of ${Array.from(intakeClassifiers).join(", ")}`);
+  }
+  if (!isNonEmptyString(intake.taskType) || !taskTypeSet.has(intake.taskType)) {
+    addError(errors, options, "intake.taskType", `must be one of ${taskTypes.join(", ")}`);
+  } else if (intake.taskType !== ledger.taskType) {
+    addError(errors, options, "intake.taskType", "must match locked top-level taskType");
+  }
+  if (!isNonEmptyString(intake.taskCaliber) || !intakeCalibers.has(intake.taskCaliber)) {
+    addError(errors, options, "intake.taskCaliber", `must be one of ${Array.from(intakeCalibers).join(", ")}`);
+  }
+  if (!isNonEmptyString(intake.riskClass) || !intakeRiskClasses.has(intake.riskClass)) {
+    addError(errors, options, "intake.riskClass", `must be one of ${Array.from(intakeRiskClasses).join(", ")}`);
+  }
+  for (const key of ["requiredGates", "requiredArtifacts", "phaseProfile", "reviewPolicy"] as const) {
+    const values = readStringArray(intake, key);
+    if (values == null || values.length === 0) {
+      addError(errors, options, `intake.${key}`, "non-empty string array is required");
+    }
+  }
+  const requiredGates = readStringArray(intake, "requiredGates") ?? [];
+  for (const gate of ["analyze", "review", "acceptance"]) {
+    if (!requiredGates.includes(gate)) {
+      addError(errors, options, "intake.requiredGates", `must include locked gate ${gate}`);
+    }
+  }
+  const phases = readStringArray(intake, "phaseProfile") ?? [];
+  for (const phase of ["analyze", "implementation", "review", "acceptance"]) {
+    if (!phases.includes(phase)) {
+      addError(errors, options, "intake.phaseProfile", `must include locked phase ${phase}`);
+    }
+  }
+  const evidence = readArray(intake, "classificationEvidence");
+  if (evidence == null || evidence.length === 0) {
+    addError(errors, options, "intake.classificationEvidence", "non-empty array is required");
+    return;
+  }
+  for (let index = 0; index < evidence.length; index++) {
+    const item = evidence[index];
+    if (!isRecord(item)) {
+      addError(errors, options, `intake.classificationEvidence[${index}]`, "object is required");
+      continue;
+    }
+    if (!isNonEmptyString(item.kind)) {
+      addError(errors, options, `intake.classificationEvidence[${index}].kind`, "non-empty string is required");
+    }
+    if (!isNonEmptyString(item.value)) {
+      addError(errors, options, `intake.classificationEvidence[${index}].value`, "non-empty string is required");
+    }
+    if (!isNonEmptyString(item.source)) {
+      addError(errors, options, `intake.classificationEvidence[${index}].source`, "non-empty string is required");
+    }
+  }
+}
+
+function validateSchedule(ledger: RecordValue, dependencies: string[], errors: string[], options: ValidateTaskLedgerOptions): void {
+  if (ledger.schedule == null) {
+    return;
+  }
+  const schedule = readRecord(ledger, "schedule");
+  if (!schedule) {
+    addError(errors, options, "schedule", "object is required when present");
+    return;
+  }
+  const priority = schedule.priority;
+  if (!isNonEmptyString(priority) || !schedulePriorityValues.has(priority)) {
+    addError(errors, options, "schedule.priority", `must be one of ${Array.from(schedulePriorityValues).join(", ")}`);
+  } else if (ledger.priority !== priority) {
+    addError(errors, options, "schedule.priority", "must match top-level priority");
+  }
+
+  const scheduleDependencies = readStringArray(schedule, "dependencies");
+  if (scheduleDependencies == null) {
+    addError(errors, options, "schedule.dependencies", "string array is required");
+  } else {
+    const selfDependencies = scheduleDependencies.filter((dependency) => dependency === ledger.id);
+    if (selfDependencies.length > 0) {
+      addError(errors, options, "schedule.dependencies", "must not include the ledger id");
+    }
+    const duplicates = scheduleDependencies.filter((dependency, index) => scheduleDependencies.indexOf(dependency) !== index);
+    if (duplicates.length > 0) {
+      addError(errors, options, "schedule.dependencies", `must be sorted unique values; duplicate ${Array.from(new Set(duplicates)).join(", ")}`);
+    }
+    const sorted = [...scheduleDependencies].sort((left, right) => left.localeCompare(right));
+    if (JSON.stringify(sorted) !== JSON.stringify(scheduleDependencies)) {
+      addError(errors, options, "schedule.dependencies", "must be sorted unique values");
+    }
+    if (JSON.stringify(scheduleDependencies) !== JSON.stringify(dependencies)) {
+      addError(errors, options, "schedule.dependencies", "must match top-level dependencies");
+    }
+  }
+
+  const source = schedule.source;
+  if (!isNonEmptyString(source) || !scheduleSourceValues.has(source)) {
+    addError(errors, options, "schedule.source", `must be one of ${Array.from(scheduleSourceValues).join(", ")}`);
+  }
+
+  const evidence = readArray(schedule, "evidence");
+  if (evidence == null) {
+    addError(errors, options, "schedule.evidence", "array is required");
+    return;
+  }
+  for (let index = 0; index < evidence.length; index++) {
+    const item = evidence[index];
+    if (!isRecord(item)) {
+      addError(errors, options, `schedule.evidence[${index}]`, "object is required");
+      continue;
+    }
+    if (!isNonEmptyString(item.kind)) {
+      addError(errors, options, `schedule.evidence[${index}].kind`, "non-empty string is required");
+    }
+    if (!isNonEmptyString(item.value)) {
+      addError(errors, options, `schedule.evidence[${index}].value`, "non-empty string is required");
+    }
+    if (!isNonEmptyString(item.source)) {
+      addError(errors, options, `schedule.evidence[${index}].source`, "non-empty string is required");
+    }
+  }
 }
 
 function validateTestDecision(ledger: RecordValue, errors: string[], options: ValidateTaskLedgerOptions): void {

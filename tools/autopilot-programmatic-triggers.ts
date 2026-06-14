@@ -10,6 +10,7 @@ export type AutopilotTriggerOptions = {
   blockerReplies?: { enabled?: boolean };
   permissionReplies?: { enabled?: boolean };
   protectedPathGuard?: { enabled?: boolean };
+  writeGate?: { activeLock?: { enabled?: boolean } };
   tuiCommands?: { enabled?: boolean };
   runNextEvents?: { enabled?: boolean; cooldownMs?: number };
 };
@@ -132,6 +133,10 @@ function recordOption(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
 }
 
+function invalidRecordOption(value: unknown): boolean {
+  return value != null && !isRecord(value);
+}
+
 function booleanOption(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -141,46 +146,61 @@ function boundedIntegerOption(value: unknown, fallback: number, max: number): nu
 }
 
 export function parseAutopilotTriggerOptions(value: unknown): AutopilotTriggerOptions {
+  const invalidTopLevel = value != null && !isRecord(value);
   const options = recordOption(value);
+  const invalidFileWatch = invalidRecordOption(options.fileWatch);
+  const invalidPostToolCheckpoints = invalidRecordOption(options.postToolCheckpoints);
+  const invalidWorkerCollect = invalidRecordOption(options.workerCollect);
+  const invalidBlockerReplies = invalidRecordOption(options.blockerReplies);
+  const invalidPermissionReplies = invalidRecordOption(options.permissionReplies);
+  const invalidTuiCommands = invalidRecordOption(options.tuiCommands);
+  const invalidRunNextEvents = invalidRecordOption(options.runNextEvents);
   const fileWatch = recordOption(options.fileWatch);
   const postToolCheckpoints = recordOption(options.postToolCheckpoints);
   const workerCollect = recordOption(options.workerCollect);
   const blockerReplies = recordOption(options.blockerReplies);
   const permissionReplies = recordOption(options.permissionReplies);
   const protectedPathGuard = recordOption(options.protectedPathGuard);
+  const writeGate = recordOption(options.writeGate);
+  const writeGateActiveLock = recordOption(writeGate.activeLock);
   const tuiCommands = recordOption(options.tuiCommands);
   const runNextEvents = recordOption(options.runNextEvents);
 
   return {
-    triggerMode: options.triggerMode == null ? "observe" : isTriggerMode(options.triggerMode) ? options.triggerMode : "off",
+    triggerMode: invalidTopLevel ? "off" : options.triggerMode == null ? "observe" : isTriggerMode(options.triggerMode) ? options.triggerMode : "off",
     fileWatch: {
-      enabled: booleanOption(fileWatch.enabled, true),
+      enabled: invalidTopLevel || invalidFileWatch ? false : booleanOption(fileWatch.enabled, true),
       debounceMs: boundedIntegerOption(fileWatch.debounceMs, 250, 60_000),
       cooldownMs: boundedIntegerOption(fileWatch.cooldownMs, 1000, 300_000),
     },
     postToolCheckpoints: {
-      enabled: booleanOption(postToolCheckpoints.enabled, true),
+      enabled: invalidTopLevel || invalidPostToolCheckpoints ? false : booleanOption(postToolCheckpoints.enabled, true),
       debounceMs: boundedIntegerOption(postToolCheckpoints.debounceMs, 250, 60_000),
       cooldownMs: boundedIntegerOption(postToolCheckpoints.cooldownMs, 1000, 300_000),
     },
     workerCollect: {
-      enabled: booleanOption(workerCollect.enabled, true),
+      enabled: invalidTopLevel || invalidWorkerCollect ? false : booleanOption(workerCollect.enabled, true),
       debounceMs: boundedIntegerOption(workerCollect.debounceMs, 250, 60_000),
     },
     blockerReplies: {
-      enabled: booleanOption(blockerReplies.enabled, true),
+      enabled: invalidTopLevel || invalidBlockerReplies ? false : booleanOption(blockerReplies.enabled, true),
     },
     permissionReplies: {
-      enabled: booleanOption(permissionReplies.enabled, true),
+      enabled: invalidTopLevel || invalidPermissionReplies ? false : booleanOption(permissionReplies.enabled, true),
     },
     protectedPathGuard: {
       enabled: booleanOption(protectedPathGuard.enabled, true),
     },
+    writeGate: {
+      activeLock: {
+        enabled: booleanOption(writeGateActiveLock.enabled, true),
+      },
+    },
     tuiCommands: {
-      enabled: booleanOption(tuiCommands.enabled, false),
+      enabled: invalidTopLevel || invalidTuiCommands ? false : booleanOption(tuiCommands.enabled, false),
     },
     runNextEvents: {
-      enabled: booleanOption(runNextEvents.enabled, false),
+      enabled: invalidTopLevel || invalidRunNextEvents ? false : booleanOption(runNextEvents.enabled, false),
       cooldownMs: boundedIntegerOption(runNextEvents.cooldownMs, 5000, 300_000),
     },
   };

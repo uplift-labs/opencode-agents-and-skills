@@ -636,6 +636,20 @@ const tests: TestCase[] = [
     }),
   },
   {
+    name: "changeGraph output uses change ids when task ids differ",
+    run: () => withTempRepo("change-graph-change-id", (repo) => {
+      const base = doneResearchLedger();
+      base.id = "task-base";
+      writeLedger(repo, "base-change", base);
+      writeLedger(repo, "feature-change", readyLedgerWithDependencies("task-feature", ["task-base"]));
+      const output = readSingleLedgerOutput(repo);
+
+      assert(JSON.stringify(output.changeGraph.levels) === JSON.stringify([["base-change"], ["feature-change"]]), `Expected change-id graph levels, got ${JSON.stringify(output.changeGraph.levels)}.`);
+      assert(JSON.stringify(output.changeGraph.dependencyBlocked) === JSON.stringify([{ changeId: "feature-change", dependencies: ["base-change"] }]), `Expected dependencyBlocked to use change ids, got ${JSON.stringify(output.changeGraph.dependencyBlocked)}.`);
+      assert(output.changeGraph.nodes.some((node) => node.changeId === "base-change") && output.changeGraph.nodes.some((node) => node.changeId === "feature-change"), `Graph nodes must expose change ids, got ${JSON.stringify(output.changeGraph.nodes)}.`);
+    }),
+  },
+  {
     name: "Ready selection reports dependency-blocked only queue without selected primary",
     run: () => withTempRepo("selection-only-dependency-blocked", (repo) => {
       writeLedger(repo, "dependent", readyLedgerWithDependencies("task-dependent", ["missing-dependency"]));
@@ -670,8 +684,22 @@ const tests: TestCase[] = [
       writeLedger(repo, "ready-research", readyResearchLedger());
       const output = createStatusOutput(readLedgerSummaries(repo));
       assert(output.reasonCode === "ready_runtime_deferred", `Expected ready_runtime_deferred, got ${output.reasonCode}.`);
+      const writeGate = output.status.writeGate as Record<string, unknown>;
+      assert(writeGate.mode === "protected-path-only" && writeGate.activeOwnership === false, `Expected protected-path-only write gate status, got ${JSON.stringify(writeGate)}.`);
       assert(output.nextRecommendedCall !== "autopilot_run_next", "Status must not recommend autopilot_run_next when runtime is deferred.");
       assertNoRepeatedTool(output, "autopilot_run_next");
+    }),
+  },
+  {
+    name: "status exposes active write gate ownership without raw runtime details",
+    run: () => withTempRepo("status-write-gate", (repo) => {
+      writeLedger(repo, "ready-research", readyResearchLedger());
+      const output = createStatusOutput(readLedgerSummaries(repo), { runtimeState: { activeRun: { runId: "run-1", taskIds: ["task-a"] } } });
+      const writeGate = output.status.writeGate as Record<string, unknown>;
+      assert(writeGate.mode === "fail-closed-active-lock", `Expected active write gate mode, got ${JSON.stringify(writeGate)}.`);
+      assert(writeGate.activeOwnership === true, "Active write gate status should mark activeOwnership=true.");
+      assert(writeGate.activeRunId === "run-1", "Active write gate status should expose compact run id.");
+      assert(JSON.stringify(writeGate).includes("task-a"), "Active write gate status should expose compact task id evidence.");
     }),
   },
   {

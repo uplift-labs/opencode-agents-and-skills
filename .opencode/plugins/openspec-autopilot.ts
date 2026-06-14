@@ -3,7 +3,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 import path from "node:path";
 import { runAutopilotCheck } from "../../tools/autopilot-check.ts";
 import { planAutopilotPromptIntake } from "../../tools/autopilot-prompt-intake.ts";
-import { createFileAutopilotRuntimeStore, type AutopilotRunRecord, type AutopilotRuntimeStore } from "../../tools/autopilot-runtime-store.ts";
+import { createFileAutopilotRuntimeStore, isActiveAutopilotRuntimeStatus, type AutopilotRuntimeStore } from "../../tools/autopilot-runtime-store.ts";
 import {
   classifyAutopilotEvent,
   classifyAutopilotToolExecutionAfter,
@@ -14,7 +14,7 @@ import {
   type AutopilotTriggerJob,
   type AutopilotTriggerRuntimeEvidence,
 } from "../../tools/autopilot-programmatic-triggers.ts";
-import { guardAutopilotProtectedPathToolCall, guardAutopilotWorkerScopeToolCall } from "../../tools/autopilot-protected-path-guard.ts";
+import { decideAutopilotWriteGate } from "../../tools/autopilot-write-gate.ts";
 import {
   createAutopilotTriggerScheduler,
   type AutopilotTriggerEnqueueResult,
@@ -173,7 +173,7 @@ async function durableRuntimeEvidence(store: AutopilotRuntimeStore | undefined, 
     };
   }
   const snapshot = loaded.snapshot;
-  const activeRuns = Object.values(snapshot.runs).filter((run) => ["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr"].includes(run.status));
+  const activeRuns = Object.values(snapshot.runs).filter((run) => isActiveAutopilotRuntimeStatus(run.status));
   const workerSessions = activeRuns.flatMap((run) => {
     if (run.workerSessionId == null) {
       return [];
@@ -204,7 +204,7 @@ async function durableRuntimeEvidence(store: AutopilotRuntimeStore | undefined, 
 }
 
 function triggerOptions(options: AutopilotPluginOptions): ReturnType<typeof parseAutopilotTriggerOptions> {
-  return parseAutopilotTriggerOptions(isRecord(options.triggers) ? options.triggers : undefined);
+  return parseAutopilotTriggerOptions(options.triggers);
 }
 
 function resolveWorkerDispatchOptions(options: AutopilotPluginOptions): WorkerDispatchOptionResolution {
@@ -233,17 +233,6 @@ function resolveWorkerDispatchOptions(options: AutopilotPluginOptions): WorkerDi
 
 function runtimeStatePath(root: string): string {
   return path.join(root, ".autopilot", "runtime", "state.json");
-}
-
-function workerRunForSession(snapshot: Awaited<ReturnType<AutopilotRuntimeStore["load"]>>["snapshot"], sessionID: string | undefined): AutopilotRunRecord | null {
-  if (sessionID == null || sessionID.trim().length === 0) {
-    return null;
-  }
-  return Object.values(snapshot.runs).find((run) => run.workerSessionId === sessionID) ?? null;
-}
-
-function workerRunAllowsWrites(run: AutopilotRunRecord): boolean {
-  return run.status === "running";
 }
 
 async function log(ctx: LogContext, level: "debug" | "info" | "warn" | "error", message: string, extra: Record<string, unknown>): Promise<void> {
@@ -316,6 +305,13 @@ function rememberRunNextOutput(runtimeState: unknown, payload: unknown): void {
   }
 }
 
+function activeOwnershipTaskIds(runtimeState: unknown): string[] | undefined {
+  if (!isRecord(runtimeState) || !isRecord(runtimeState.activeRun)) {
+    return undefined;
+  }
+  return stringArray(runtimeState.activeRun.taskIds);
+}
+
 function scopeContains(expected: AutopilotTriggerJob["scope"], actual: AutopilotTriggerJob["scope"]): boolean {
   for (const [key, value] of Object.entries(expected ?? {})) {
     if (typeof value === "string" && value.length > 0 && actual?.[key as keyof typeof actual] !== value) {
@@ -382,7 +378,9 @@ export default {
     const resolvedOptions = options ?? {};
     const root = repoRoot(ctx);
     const workerDispatch = resolveWorkerDispatchOptions(resolvedOptions);
-    const runtimeStore = resolvedOptions.runtimeStore ?? (workerDispatch.enabled ? createFileAutopilotRuntimeStore(runtimeStatePath(root)) : undefined);
+    const resolvedTriggerOptions = triggerOptions(resolvedOptions);
+    const writeGateNeedsRuntimeStore = resolvedTriggerOptions.writeGate?.activeLock?.enabled !== false;
+    const runtimeStore = resolvedOptions.runtimeStore ?? (workerDispatch.enabled || writeGateNeedsRuntimeStore ? createFileAutopilotRuntimeStore(runtimeStatePath(root)) : undefined);
     const controllerFor = (parentSessionId?: string) => createAutopilotController({ root }, {
       ...resolvedOptions,
       runtimeStore,
@@ -392,7 +390,6 @@ export default {
         : undefined),
     });
     const controller = controllerFor();
-    const resolvedTriggerOptions = triggerOptions(resolvedOptions);
     const pendingWorkerReportIds = new Map<string, string>();
     void log(ctx, "debug", "trigger config resolved", {
       triggerMode: resolvedTriggerOptions.triggerMode,
@@ -402,6 +399,7 @@ export default {
       blockerReplies: resolvedTriggerOptions.blockerReplies?.enabled,
       permissionReplies: resolvedTriggerOptions.permissionReplies?.enabled,
       protectedPathGuard: resolvedTriggerOptions.protectedPathGuard?.enabled,
+      writeGateActiveLock: resolvedTriggerOptions.writeGate?.activeLock?.enabled,
       runNextEvents: resolvedTriggerOptions.runNextEvents?.enabled,
     });
     if (workerDispatch.diagnostics.length > 0) {
@@ -554,33 +552,23 @@ export default {
         await enqueueDecision(classifyAutopilotEvent(event, resolvedTriggerOptions, await mergedDurableEvidence()));
       },
       "tool.execute.before": async (input: { tool: string; sessionID?: string }, output: { args: unknown }) => {
-        if (resolvedTriggerOptions.protectedPathGuard?.enabled === false) {
+        const protectedPathGuardEnabled = resolvedTriggerOptions.protectedPathGuard?.enabled !== false;
+        const activeLockEnabled = resolvedTriggerOptions.writeGate?.activeLock?.enabled !== false;
+        const runtimeStateActiveOwnershipTaskIds = activeOwnershipTaskIds(resolvedOptions.runtimeState);
+        if (!protectedPathGuardEnabled && !activeLockEnabled && runtimeStore == null && runtimeStateActiveOwnershipTaskIds == null) {
           return;
         }
         const loadedRuntime = runtimeStore == null ? null : await runtimeStore.load();
-        if (loadedRuntime != null && (loadedRuntime.recovered || loadedRuntime.errors.length > 0) && input.sessionID != null) {
-          const decision = guardAutopilotWorkerScopeToolCall(input.tool, output.args, { read: [], write: [], forbidden: ["**"] });
-          if (decision.action === "block") {
-            await log(ctx, "warn", "worker scope mutation blocked because durable runtime evidence is invalid", { tool: input.tool, sessionID: input.sessionID, paths: decision.paths, errors: loadedRuntime.errors });
-            throw new Error(`Autopilot runtime state recovery failed; worker scope cannot be verified: ${(loadedRuntime.errors.length > 0 ? loadedRuntime.errors : ["unknown recovery error"]).join("; ")}. ${decision.reason}: ${decision.paths.join(", ")}.`);
-          }
-          return;
-        }
-        const workerRun = loadedRuntime == null ? null : workerRunForSession(loadedRuntime.snapshot, input.sessionID);
-        if (workerRun != null && !workerRunAllowsWrites(workerRun)) {
-          const inactiveDecision = guardAutopilotWorkerScopeToolCall(input.tool, output.args, { read: [], write: [], forbidden: ["**"] });
-          if (inactiveDecision.action === "block") {
-            await log(ctx, "warn", "inactive worker scope mutation blocked", { tool: input.tool, sessionID: input.sessionID, taskId: workerRun.taskId, runId: workerRun.runId, status: workerRun.status, paths: inactiveDecision.paths });
-            throw new Error(`Autopilot worker session is not active for writes (status ${workerRun.status}); worker scope expired for task ${workerRun.taskId}. ${inactiveDecision.reason}: ${inactiveDecision.paths.join(", ")}.`);
-          }
-          return;
-        }
-        const decision = workerRun == null
-          ? guardAutopilotProtectedPathToolCall(input.tool, output.args)
-          : guardAutopilotWorkerScopeToolCall(input.tool, output.args, workerRun.scope);
+        const decision = decideAutopilotWriteGate(input.tool, output.args, {
+          sessionID: input.sessionID,
+          runtime: loadedRuntime,
+          protectedPathGuardEnabled,
+          activeLockEnabled,
+          activeOwnershipTaskIds: runtimeStateActiveOwnershipTaskIds,
+        });
         if (decision.action === "block") {
-          await log(ctx, "warn", workerRun == null ? "protected path mutation blocked" : "worker scope mutation blocked", { tool: input.tool, sessionID: input.sessionID, taskId: workerRun?.taskId, paths: decision.paths });
-          throw new Error(`${decision.reason}: ${decision.paths.join(", ")}. Protected Autopilot state must be mutated only by plugin-owned controller paths.`);
+          await log(ctx, "warn", "autopilot write gate mutation blocked", { tool: input.tool, sessionID: input.sessionID, paths: decision.paths, reason: decision.reason, runtimeErrors: loadedRuntime?.errors });
+          throw new Error(`${decision.reason}: ${decision.paths.join(", ")}. Protected Autopilot state and active write ownership must be mutated only by plugin-owned controller paths or active scoped workers.`);
         }
       },
       "tool.execute.after": async (input: AutopilotToolExecutionInput, output: unknown) => {

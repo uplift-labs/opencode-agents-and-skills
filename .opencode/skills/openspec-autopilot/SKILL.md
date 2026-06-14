@@ -61,7 +61,7 @@ When Autopilot tool output exists, prefer the returned `nextActions[]` guidance,
 | Worker | Executes bounded Analyze/Implementation/Review/Acceptance work and returns reports. Never edits automation ledgers. |
 | User | Decides true blockers: credentials, unsafe scope, secrets, MR review/merge, protected branches, deploys, or policy exceptions. |
 
-Protected paths are controller/helper-owned: `openspec/changes/*/automation/**` and `.autopilot/**`. Use repository helpers for documented JSON outputs such as `automation/retro.json`; use plugin-owned controller paths for Autopilot runtime state, task ledgers, worker reports, and protected ledger transitions.
+Protected paths are controller/helper-owned: `openspec/changes/*/automation/**` and `.autopilot/**`. Use repository helpers for documented JSON outputs such as `automation/retro.json`; use plugin-owned controller paths for Autopilot runtime state, task ledgers, worker reports, and protected ledger transitions. Treat write-gate blocks as authoritative: if active Autopilot write ownership exists, do not continue manual implementation in the main session; stop, collect, status, or follow returned `nextActions[]`.
 
 ## Public Tools
 
@@ -140,6 +140,13 @@ Expected shared Autopilot tool output for `autopilot_run_next`, `autopilot_statu
       }
     ]
   },
+  "changeGraph": {
+    "levels": [["task-or-change-id"]],
+    "parallelReady": [],
+    "dependencyBlocked": [],
+    "conflicts": [],
+    "cycles": []
+  },
   "loopGuard": {
     "repeatedNoProgress": true,
     "equivalentCall": "autopilot_run_next",
@@ -148,7 +155,7 @@ Expected shared Autopilot tool output for `autopilot_run_next`, `autopilot_statu
 }
 ```
 
-When `reasonCode` is `ledger_materialized`, report `tasksAdvanced[]` creation evidence and follow returned `nextActions[]` because a ledger-backed follow-up run is safe after state changed. When `reasonCode` is `active_change_handoff`, continue the selected unfinished active OpenSpec change through `openspec-apply-change`; do not repeat the equivalent no-progress tool call. When `reasonCode` is `ready_runtime_deferred`, `collect_deferred`, `stop_no_active_state`, `no_ledgers`, or `no_actionable_tasks`, do not repeat the equivalent no-progress tool call unless `nextActions[]` explicitly says it is safe. Use `selection` to identify the deterministic primary Ready task or active change and serial-default non-selected candidates; use `taskSummaries[]` to explain which discovered task is actionable, invalid, blocked, waiting for MR, terminal, or runtime-deferred without re-reading full ledgers.
+When `reasonCode` is `ledger_materialized`, report `tasksAdvanced[]` creation evidence and follow returned `nextActions[]` because a ledger-backed follow-up run is safe after state changed. Materialized ledgers may include locked `intake`; workers must not downgrade task type, gates, phases, review policy, MR requirements, or required artifacts after intake exists. When `reasonCode` is `active_change_handoff`, continue the selected unfinished active OpenSpec change through `openspec-apply-change`; do not repeat the equivalent no-progress tool call. When `reasonCode` is `ready_runtime_deferred`, `collect_deferred`, `stop_no_active_state`, `no_ledgers`, or `no_actionable_tasks`, do not repeat the equivalent no-progress tool call unless `nextActions[]` explicitly says it is safe. Use `selection` to identify the deterministic primary Ready task or active change and serial-default non-selected candidates; use `changeGraph` to explain dependency levels, blocked dependencies, conflicts, and cycle evidence; use `taskSummaries[]` to explain which discovered task is actionable, invalid, blocked, waiting for MR, terminal, or runtime-deferred without re-reading full ledgers.
 
 Live `workerDispatch.enabled` assumes a single OpenCode server/plugin runtime instance owns a repository at a time. If multiple OpenCode server instances target the same `.autopilot/runtime/state.json`, require an external lock/CAS layer or keep live worker dispatch disabled.
 
@@ -164,7 +171,7 @@ Tool result metadata may include `metadata.argumentContext` for no-op/runtime-on
 
 ## Programmatic Trigger Hooks
 
-The plugin may also react to OpenCode events and hooks without a new assistant turn. These hooks are helpers around the same controller contract; they do not make passive events user consent for claim-capable work. Configure triggers through the canonical nested plugin option shape `{ "triggers": { ... } }`; invalid `triggerMode` values fail closed to `off`, and invalid timer values fall back to bounded safe defaults. Restart OpenCode after changing plugin, trigger, skill, command, or TUI files because those files are loaded at startup.
+The plugin may also react to OpenCode events and hooks without a new assistant turn. These hooks are helpers around the same controller contract; they do not make passive events user consent for claim-capable work. Configure triggers through the canonical nested plugin option shape `{ "triggers": { ... } }`; invalid `triggerMode` values fail closed to `off`, invalid event-trigger option shapes disable that event trigger, invalid protected/write-gate option shapes keep protection enabled, and invalid timer values fall back to bounded safe defaults. Restart OpenCode after changing plugin, trigger, skill, command, or TUI files because those files are loaded at startup.
 
 Trigger modes:
 
@@ -173,7 +180,7 @@ Trigger modes:
 - `triggerMode: controlled`: observe mode plus plugin-owned runtime evidence gates. Worker idle/report events may schedule `autopilot_collect` using durable worker-session evidence, `question.replied` may schedule `autopilot_answer_blocker`, `permission.replied` is MVP status-only, and workspace/worktree ready or failed events may schedule status or stop handling only when the session, request, permission, workspace, or worktree is plugin-owned.
 - `triggerMode: autonomous`: controlled mode plus explicit `runNextEvents.enabled: true`. Event-sourced `autopilot_run_next` still requires plugin-owned active-run evidence, valid locks, cooldown eligibility, no blockers, no MR wait, and loop-guard safety.
 
-Interpret event-triggered outputs exactly like tool outputs. A trigger job that logs or returns status/check/collect evidence is not permission to repeat an equivalent no-progress `autopilot_run_next`; apply the `reasonCode`, `taskSummaries`, `nextActions`, `selection`, and `loopGuard` rules above. The protected-path guard runs through `tool.execute.before` and blocks direct model-facing writes to `.autopilot/**` and `openspec/changes/*/automation/**`; for plugin-owned worker sessions it also blocks writes outside assigned `scope.write`, writes inside `scope.forbidden`, unsafe absolute/traversal paths, and writes from known worker sessions whose runtime status is no longer actively `running`. Plugin-owned controller paths remain the only allowed protected-state writer.
+Interpret event-triggered outputs exactly like tool outputs. A trigger job that logs or returns status/check/collect evidence is not permission to repeat an equivalent no-progress `autopilot_run_next`; apply the `reasonCode`, `taskSummaries`, `nextActions`, `selection`, and `loopGuard` rules above. The write gate runs through `tool.execute.before` and blocks direct model-facing writes to `.autopilot/**` and `openspec/changes/*/automation/**`; `triggers.protectedPathGuard.enabled` controls that protected-state guard. During active write ownership it also blocks main-session ordinary file mutations; `triggers.writeGate.activeLock.enabled` controls that separate active-lock guard, and both guards default on. For plugin-owned worker sessions it blocks writes outside assigned `scope.write`, writes inside `scope.forbidden`, unsafe absolute/traversal paths, and writes from known worker sessions whose runtime status is no longer actively `running`. Plugin-owned controller paths remain the only allowed protected-state writer.
 
 TUI commands are separate from the server prompt flow and require `triggers.tuiCommands.enabled: true`. `autopilot.status` and `autopilot.check` are zero-LLM TUI actions for status and cheap checks. `autopilot.run` and `autopilot.stop` are explicit user actions that use a prompt-mediated fallback unless a direct server-owned bridge is proven for the current OpenCode version.
 
@@ -210,6 +217,7 @@ Executable checkpoint guidance when this repository exposes `npm run autopilot:c
 - Before claiming `Implementation -> Review`, reviewer handoff, or MR/PR handoff for a scoped change, run `npm run autopilot:check -- --level standard --change <change-id>` unless a stricter gate already ran.
 - Before push, MR/PR handoff, or local ready-to-land evidence, run `npm run autopilot:check -- --level prepush` or the repository `npm run prepush:validate` gate.
 - Before archive-ready or final-closure claims, run `npm run autopilot:check -- --level final --change <change-id>` only when repository writes are authorized; final mode is not read-only because it may create/update OpenSpec follow-up changes, retro follow-ups, and retrospective outputs before the retro gate.
+- When `npm run openspec:gate` exists, run the matching operation gate before sensitive lifecycle steps, for example `npm run openspec:gate -- --operation apply --change <change-id>`, `npm run openspec:gate -- --operation archive --change <change-id>`, or `npm run openspec:gate -- --operation prepush`. Default runs are read-only. Use `--persist` only in write-authorized main sessions after status/write-gate evidence shows no active Autopilot write ownership, because it writes `automation/operation-gates/<operation>.json`.
 - Treat `not-applicable` no-ledger output as a reported state, not a failure; treat blocking failures, stale evidence, or `--fail-on-warnings` failures as stop conditions.
 
 ## Retrospective Archive Gate

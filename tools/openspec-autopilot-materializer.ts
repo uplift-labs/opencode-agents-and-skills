@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { inferChangeSchedule } from "./autopilot-change-graph.ts";
+import { buildMaterializedActiveChangeIntake } from "./autopilot-intake-lock.ts";
 import { validateTaskLedger, type ValidateTaskLedgerResult } from "./autopilot-ledger.ts";
 import { isSymlinkPath, pathIsInside, realPathIsInside } from "./autopilot-path-safety.ts";
 
@@ -102,6 +104,8 @@ function availableValidationCommands(root: string, ledgerRelativePath: string): 
 
 function buildLedger(root: string, ledgerRoot: string, changeId: string, ledgerRelativePath: string, updatedAt: string): Record<string, unknown> {
   const changeRelativeRoot = `${ledgerRoot}/${changeId}`;
+  const schedule = inferChangeSchedule({ root, changeId });
+  const taskType = "planning";
   const forbidden = ["openspec/changes/*/automation/**", ".autopilot/**"];
   if (ledgerRoot !== "openspec/changes") {
     forbidden.push(`${ledgerRoot}/*/automation/**`);
@@ -109,10 +113,17 @@ function buildLedger(root: string, ledgerRoot: string, changeId: string, ledgerR
   const ledger: Record<string, unknown> = {
     schemaVersion: 1,
     id: changeId,
-    taskType: "planning",
+    taskType,
     status: "Ready",
-    priority: "medium",
-    dependencies: [],
+    priority: schedule.priority,
+    dependencies: schedule.dependencies,
+    schedule: {
+      priority: schedule.priority,
+      dependencies: schedule.dependencies,
+      source: schedule.source,
+      evidence: schedule.markers,
+    },
+    intake: buildMaterializedActiveChangeIntake({ changeId, taskType, classifiedAt: updatedAt, evidence: schedule.markers }),
     scope: {
       read: [`${changeRelativeRoot}/**`, "openspec/project.md", "package.json"],
       write: [`${changeRelativeRoot}/**`],

@@ -44,6 +44,12 @@ function writeTasks(repo: string, changeId: string, markdown: string, options: {
   fs.writeFileSync(path.join(base, "tasks.md"), markdown.replace(/\r\n/g, "\n"), "utf8");
 }
 
+function writeOpenSpecDoc(repo: string, changeId: string, fileName: "proposal.md" | "design.md" | "tasks.md", markdown: string): void {
+  const base = path.join(repo, "openspec", "changes", changeId);
+  fs.mkdirSync(base, { recursive: true });
+  fs.writeFileSync(path.join(base, fileName), markdown.replace(/\r\n/g, "\n"), "utf8");
+}
+
 function writeTasksDirectory(repo: string, changeId: string): void {
   fs.mkdirSync(path.join(repo, "openspec", "changes", changeId, "tasks.md"), { recursive: true });
 }
@@ -172,6 +178,28 @@ const tests: TestCase[] = [
       assert(whitespace.reasonCode === "active_change_handoff", `Expected active_change_handoff for whitespace scope args, got ${whitespace.reasonCode}.`);
       assertSummary(whitespace.taskSummaries[0], { taskId: "a-change", actionability: "actionable", reasonCode: "active_change_handoff", sourceKind: "active-change" });
       assertSelection(whitespace, { selectedTaskId: "a-change", candidates: [{ taskId: "a-change", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" }] });
+    }),
+  },
+  {
+    name: "active OpenSpec preview exposes inferred dependency blocking",
+    run: () => withTempRepo("schedule-preview", (repo) => {
+      writeTasks(repo, "base-change", "# Tasks\n\n- [ ] Base task\n");
+      writeTasks(repo, "scheduled-change", "# Tasks\n\n- [ ] Scheduled task\n");
+      writeOpenSpecDoc(repo, "scheduled-change", "proposal.md", "# Proposal\n\nPriority: high\nDepends-On: base-change\n");
+      const queue = readAutopilotQueueSummaries(repo);
+      const scheduled = queue.ledgers.find((ledger) => ledger.id === "scheduled-change");
+      assert(scheduled?.priority === "high", `Expected high priority preview, got ${String(scheduled?.priority)}.`);
+      assert(JSON.stringify(scheduled?.dependencies) === JSON.stringify(["base-change"]), `Expected preview dependency, got ${JSON.stringify(scheduled?.dependencies)}.`);
+      const output = createRunNextOutput(queue.ledgers, { dependencyGraph: queue.dependencyGraph });
+      assert(JSON.stringify(output.changeGraph.levels) === JSON.stringify([["base-change"], ["scheduled-change"]]), `Expected stable changeGraph levels, got ${JSON.stringify(output.changeGraph.levels)}.`);
+      assert(JSON.stringify(output.changeGraph.dependencyBlocked) === JSON.stringify([{ changeId: "scheduled-change", dependencies: ["base-change"] }]), `Expected machine-readable dependencyBlocked, got ${JSON.stringify(output.changeGraph.dependencyBlocked)}.`);
+      assertSelection(output, {
+        selectedTaskId: "base-change",
+        candidates: [
+          { taskId: "base-change", rank: 1, selected: true, selectionReason: "selected_primary", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" },
+          { taskId: "scheduled-change", rank: null, selected: false, selectionReason: "dependency_blocked", parallelDecision: "not_evaluated", pathSuffix: "tasks.md" },
+        ],
+      });
     }),
   },
   {

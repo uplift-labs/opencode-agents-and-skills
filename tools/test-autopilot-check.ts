@@ -98,6 +98,10 @@ function writeArchivedLedger(repo: string, changeId: string): void {
   writeJson(path.join(repo, "openspec", "changes", "archive", changeId, "automation", "task.json"), validLedger(changeId));
 }
 
+function writeRuntimeState(repo: string, value: unknown): void {
+  writeJson(path.join(repo, ".autopilot", "runtime", "state.json"), value);
+}
+
 function spawnChecker(repo: string, args: string[]): { status: number; stdout: string; stderr: string } {
   const result = spawnSync("node", [checker, "--root", repo, ...args], { cwd: root, encoding: "utf8", shell: false });
   if (result.error) {
@@ -198,6 +202,50 @@ const tests: TestCase[] = [
       assertEqual(output.exitCode, 1, "Missing scoped ledger should return non-zero.");
       assert(output.checks.some((check) => check.id.startsWith("scope:ledger:") && check.blocking && check.status === "failed"), "Missing scoped ledger should have a blocking failed check.");
       assert(output.nextActions.some((action) => action.label.includes("Fix Autopilot scoped ledger")), "Missing scoped ledger should produce a focused next action.");
+    }),
+  },
+  {
+    name: "cheap check reports write gate active runtime evidence",
+    run: () => withTempRepo("write-gate-active", (repo) => {
+      writeRuntimeState(repo, {
+        schemaVersion: 1,
+        consumedWorkerReportIds: [],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "running",
+            createdAt: "2026-06-10T00:00:00.000Z",
+            updatedAt: "2026-06-10T00:00:01.000Z",
+            taskId: "task-a",
+            ledgerPath: "openspec/changes/task-a/automation/task.json",
+            fromStatus: "Implementation",
+            expectedReportId: "report-1",
+            workerId: "worker-1",
+            workerSessionId: "worker-session-1",
+            scope: { read: ["tools/**"], write: ["tools/**"], forbidden: ["openspec/changes/*/automation/**", ".autopilot/**"] },
+          },
+        },
+      });
+      const output = runAutopilotCheck(repo, { level: "cheap", generatedAt });
+      const writeGate = output.checks.find((check) => check.id === "write-gate:runtime:active");
+
+      assertEqual(output.exitCode, 0, "Valid active runtime evidence should not fail cheap check.");
+      assert(writeGate?.status === "passed", `Expected active write gate check to pass, got ${JSON.stringify(writeGate)}.`);
+      assert(writeGate.summary.includes("active write ownership") && writeGate.summary.includes("task-a"), `Active write gate summary should name compact task evidence, got ${writeGate.summary}.`);
+    }),
+  },
+  {
+    name: "cheap check fails for corrupt write gate runtime evidence",
+    run: () => withTempRepo("write-gate-corrupt", (repo) => {
+      fs.mkdirSync(path.join(repo, ".autopilot", "runtime"), { recursive: true });
+      fs.writeFileSync(path.join(repo, ".autopilot", "runtime", "state.json"), "{not json", "utf8");
+      const output = runAutopilotCheck(repo, { level: "cheap", generatedAt });
+      const writeGate = output.checks.find((check) => check.id === "write-gate:runtime:invalid");
+
+      assertEqual(output.status, "failed", "Corrupt runtime evidence should fail check.");
+      assertEqual(output.exitCode, 1, "Corrupt runtime evidence should return non-zero.");
+      assert(writeGate?.blocking === true && writeGate.status === "failed", `Expected blocking failed write gate check, got ${JSON.stringify(writeGate)}.`);
+      assert(writeGate.summary.includes("fail closed"), `Corrupt write gate summary should explain fail-closed mutation behavior, got ${writeGate.summary}.`);
     }),
   },
   {

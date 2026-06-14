@@ -3,9 +3,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  autopilotActiveRuntimeRunStatuses,
+  autopilotCollectClaimableRuntimeRunStatuses,
   createEmptyAutopilotRuntimeSnapshot,
   createFileAutopilotRuntimeStore,
   createInMemoryAutopilotRuntimeStore,
+  isActiveAutopilotRuntimeStatus,
+  isAutopilotRuntimeRunStatus,
+  isCollectClaimableAutopilotRuntimeStatus,
+  isWorkerWritableAutopilotRuntimeStatus,
+  autopilotRuntimeRunStatuses,
+  autopilotWorkerWritableRuntimeRunStatuses,
   validateAutopilotRuntimeSnapshot,
   type AutopilotRuntimeSnapshot,
 } from "./autopilot-runtime-store.ts";
@@ -18,6 +26,12 @@ type TestCase = {
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
+  }
+}
+
+function assertArrayEqual(actual: readonly string[], expected: readonly string[], message: string): void {
+  if (actual.length !== expected.length || actual.some((value, index) => value !== expected[index])) {
+    throw new Error(`${message}\nExpected: ${expected.join(",")}\nActual: ${actual.join(",")}`);
   }
 }
 
@@ -51,10 +65,39 @@ function fullRun(): AutopilotRuntimeSnapshot["runs"][string] {
     blockers: [{ reason: "needs owner", questionId: "q-1" }],
     mr: { status: "waiting-review", url: "https://example.invalid/mr/1" },
     stopReason: "paused for review",
+    lastRunNextOutput: { reasonCode: "advanced", loopGuard: { repeatedNoProgress: false, suppressRepeatRecommendation: false } },
   });
 }
 
 const tests: TestCase[] = [
+  {
+    name: "runtime status predicates match literal contract",
+    run: () => {
+      const allStatuses = ["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr", "stopped", "failed", "done"];
+      const activeStatuses = ["claiming", "dispatching", "running", "collecting", "blocked", "waiting_mr"];
+      const collectClaimableStatuses = ["claiming", "dispatching", "running"];
+      const writableStatuses = ["running"];
+
+      assertArrayEqual(autopilotRuntimeRunStatuses, allStatuses, "Runtime status list must stay explicit and stable.");
+      assertArrayEqual(autopilotActiveRuntimeRunStatuses, activeStatuses, "Active runtime status list must stay explicit and stable.");
+      assertArrayEqual(autopilotCollectClaimableRuntimeRunStatuses, collectClaimableStatuses, "Collect-claimable runtime status list must stay explicit and stable.");
+      assertArrayEqual(autopilotWorkerWritableRuntimeRunStatuses, writableStatuses, "Worker-writable runtime status list must stay explicit and stable.");
+
+      for (const status of allStatuses) {
+        assert(isAutopilotRuntimeRunStatus(status), `${status} must be accepted as runtime status.`);
+        assert(isActiveAutopilotRuntimeStatus(status) === activeStatuses.includes(status), `${status} active predicate mismatch.`);
+        assert(isCollectClaimableAutopilotRuntimeStatus(status) === collectClaimableStatuses.includes(status), `${status} collect predicate mismatch.`);
+        assert(isWorkerWritableAutopilotRuntimeStatus(status) === writableStatuses.includes(status), `${status} worker-writable predicate mismatch.`);
+      }
+
+      for (const invalid of ["", "RUNNING", "waiting-mr", "ready", undefined, null]) {
+        assert(!isAutopilotRuntimeRunStatus(invalid), `${String(invalid)} must not be accepted as runtime status.`);
+        assert(!isActiveAutopilotRuntimeStatus(invalid), `${String(invalid)} must not be active.`);
+        assert(!isCollectClaimableAutopilotRuntimeStatus(invalid), `${String(invalid)} must not be collect-claimable.`);
+        assert(!isWorkerWritableAutopilotRuntimeStatus(invalid), `${String(invalid)} must not be worker-writable.`);
+      }
+    },
+  },
   {
     name: "validates runtime snapshot schema",
     run: () => {
@@ -97,14 +140,55 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: "validates durable trigger evidence fields",
+    run: () => {
+      const valid = validateAutopilotRuntimeSnapshot({
+        schemaVersion: 1,
+        runs: { "run-1": fullRun() },
+        consumedWorkerReportIds: ["report-a"],
+        blockerQuestions: [{ requestID: "question-request-1", questionId: "question-1", taskId: "task-a", options: [{ label: "Continue", action: "continue" }] }],
+        pendingPermissions: [{ requestID: "permission-request-1", taskId: "task-a" }],
+        waitingWorkspaces: [{ name: "workspace-a", taskId: "task-a" }],
+        waitingWorktrees: [{ name: "worktree-a", runId: "run-1" }],
+      });
+      assert(valid.valid, `Expected durable trigger evidence valid, got ${valid.errors.join("; ")}.`);
+
+      const invalid = validateAutopilotRuntimeSnapshot({
+        schemaVersion: 1,
+        runs: {
+          "run-1": { ...validRun(), lastRunNextOutput: "bad" },
+        },
+        consumedWorkerReportIds: [],
+        blockerQuestions: [{ requestID: "", questionId: "question-1", options: [{ label: "" }] }],
+        pendingPermissions: [{ requestID: "" }],
+        waitingWorkspaces: ["workspace-a"],
+        waitingWorktrees: [{ name: "" }],
+      });
+      assert(!invalid.valid, "Malformed durable trigger evidence must fail validation.");
+      assert(invalid.errors.some((error) => error.includes("lastRunNextOutput")), "Invalid lastRunNextOutput must be reported.");
+      assert(invalid.errors.some((error) => error.includes("blockerQuestions")), "Invalid blockerQuestions must be reported.");
+      assert(invalid.errors.some((error) => error.includes("pendingPermissions")), "Invalid pendingPermissions must be reported.");
+      assert(invalid.errors.some((error) => error.includes("waitingWorkspaces")), "Invalid waitingWorkspaces must be reported.");
+      assert(invalid.errors.some((error) => error.includes("waitingWorktrees")), "Invalid waitingWorktrees must be reported.");
+    },
+  },
+  {
     name: "in-memory store saves stable cloned state",
     run: async () => {
       const store = createInMemoryAutopilotRuntimeStore();
       const saved = await store.save((draft) => {
         draft.runs["run-1"] = validRun();
         draft.consumedWorkerReportIds.push("report-b", "report-a", "report-a");
+        draft.blockerQuestions = [{ requestID: "question-b", questionId: "question-b" }, { requestID: "question-a", questionId: "question-a" }];
+        draft.pendingPermissions = [{ requestID: "permission-b" }, { requestID: "permission-a" }];
+        draft.waitingWorkspaces = [{ name: "workspace-b" }, { name: "workspace-a" }];
+        draft.waitingWorktrees = [{ name: "worktree-b" }, { name: "worktree-a" }];
       });
       assert(saved.snapshot.consumedWorkerReportIds.join(",") === "report-a,report-b", `Expected sorted unique reports, got ${saved.snapshot.consumedWorkerReportIds.join(",")}.`);
+      assert(saved.snapshot.blockerQuestions?.map((question) => question.requestID).join(",") === "question-a,question-b", "Blocker questions must be sorted deterministically.");
+      assert(saved.snapshot.pendingPermissions?.map((permission) => permission.requestID).join(",") === "permission-a,permission-b", "Pending permissions must be sorted deterministically.");
+      assert(saved.snapshot.waitingWorkspaces?.map((wait) => wait.name).join(",") === "workspace-a,workspace-b", "Workspace waits must be sorted deterministically.");
+      assert(saved.snapshot.waitingWorktrees?.map((wait) => wait.name).join(",") === "worktree-a,worktree-b", "Worktree waits must be sorted deterministically.");
       saved.snapshot.runs["run-1"].status = "stopped";
       const loaded = await store.load();
       assert(loaded.snapshot.runs["run-1"].status === "running", "Loaded state must be cloned, not externally mutated.");
@@ -189,6 +273,7 @@ const tests: TestCase[] = [
       assert(run.blockers?.length === 1 && run.blockers[0]?.reason === "needs owner" && run.blockers[0]?.questionId === "q-1", "File store must persist blocker evidence exactly.");
       assert(run.mr?.status === "waiting-review" && run.mr.url === "https://example.invalid/mr/1", "File store must persist MR evidence exactly.");
       assert(run.stopReason === "paused for review", "File store must persist stop evidence.");
+      assert(run.lastRunNextOutput?.reasonCode === "advanced", "File store must persist last run-next output evidence.");
       assert(reloaded.snapshot.consumedWorkerReportIds.join(",") === "report-a,report-b", "File store must persist sorted consumed report ids.");
       assert(!fs.readdirSync(path.dirname(filePath)).some((entry) => entry.endsWith(".tmp")), "Atomic save must not leave temp files after success.");
     }),

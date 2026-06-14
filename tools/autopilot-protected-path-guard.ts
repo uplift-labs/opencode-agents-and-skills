@@ -50,7 +50,7 @@ function normalizedPath(value: string): string {
 }
 
 function protectedPath(value: string): boolean {
-  const candidate = normalizedPath(value);
+  const candidate = normalizedPath(value).toLowerCase();
   return candidate === ".autopilot"
     || candidate.startsWith(".autopilot/")
     || candidate.includes("/.autopilot/")
@@ -117,6 +117,29 @@ function shellPathToken(value: string): string {
   return value.trim().replace(/^['"]|['"]$/g, "").replace(/[),]+$/g, "");
 }
 
+function shellWords(command: string): string[] {
+  const words: string[] = [];
+  for (const match of command.matchAll(/"([^"]+)"|'([^']+)'|([^\s'"`;|&<>]+)/g)) {
+    const word = shellPathToken(match[1] ?? match[2] ?? match[3] ?? "").trim();
+    if (word.length > 0) {
+      words.push(word);
+    }
+  }
+  return words;
+}
+
+function normalizedCommandWord(value: string): string {
+  return value.toLowerCase().replaceAll("\\", "/").replace(/^(?:\.\/)+/, "");
+}
+
+function isNpmCommand(value: string | undefined): boolean {
+  return value != null && /^npm(?:\.cmd|\.exe)?$/.test(normalizedCommandWord(value));
+}
+
+function isNodeCommand(value: string | undefined): boolean {
+  return value != null && /^node(?:\.cmd|\.exe)?$/.test(normalizedCommandWord(value));
+}
+
 function bashPathTokens(command: string): string[] {
   const tokens: string[] = [];
   for (const match of command.matchAll(/"([^"]+)"|'([^']+)'|([^\s'"`;|&<>]+)/g)) {
@@ -146,6 +169,24 @@ function bashProtectedPathMentions(command: string, workdir?: string): string[] 
   return paths;
 }
 
+function bashHasIndirectProtectedPathConstruction(command: string, workdir?: string): boolean {
+  const normalized = command.replaceAll("\\", "/").toLowerCase();
+  const compact = normalized.replace(/[^a-z0-9._/-]+/g, "/");
+  const collapsedWithDots = normalized.replace(/[^a-z0-9.]+/g, "");
+  const collapsedAlpha = normalized.replace(/[^a-z0-9]+/g, "");
+  const normalizedWorkdir = workdir == null ? "" : normalizedPath(workdir).toLowerCase();
+  const commandHasAutomationFragments = /\bautomation\b/.test(normalized) || (/\bauto\b/.test(normalized) && /\bmation\b/.test(normalized)) || collapsedAlpha.includes("automation");
+  return /openspec\/changes\/[^/]+\/automation(?:\/|$)/.test(compact)
+    || /\.autopilot(?:\/|$)/.test(compact)
+    || collapsedWithDots.includes(".autopilot")
+    || /(?:^|\/)\.\/autopilot(?:\/|$)/.test(compact)
+    || /(?:^|\/)\.auto\/pilot(?:\/|$)/.test(compact)
+    || (normalized.includes(".auto") && /\bpilot\b/.test(normalized))
+    || /openspec.*changes.*automation/.test(collapsedAlpha)
+    || (((/\bopenspec\b/.test(normalized) || (/\bopen\b/.test(normalized) && /\bspec\b/.test(normalized))) && /\bchanges\b/.test(normalized) && commandHasAutomationFragments))
+    || (/(?:^|\/)openspec\/changes\/[^/]+(?:\/|$)/.test(normalizedWorkdir) && commandHasAutomationFragments);
+}
+
 function shellHasControlSyntax(command: string): boolean {
   return /[\r\n`]|\$\(|;|&&|\|\||[|<>]/.test(command);
 }
@@ -155,14 +196,23 @@ function bashLooksReadOnly(command: string): boolean {
   if (shellHasControlSyntax(normalized)) {
     return false;
   }
+  if (bashMustFailClosedAsMutation(command)) {
+    return false;
+  }
+  const words = shellWords(command).map(normalizedCommandWord);
   return /^(get-content|test-path|rg|grep|select-string)\b/.test(normalized)
-    || /^npm\s+test(?:\s|$)/.test(normalized)
-    || /^npm\s+run\s+validate(?:\s|$)/.test(normalized)
-    || /^npm\s+run\s+openspec:validate(?:\s|$)/.test(normalized)
-    || /^npm\s+run\s+autopilot:check(?:\s|$)/.test(normalized)
-    || /^npm\s+run\s+autopilot:validate\b/.test(normalized)
-    || /^node\s+tools\/test-[a-z0-9-]+\.ts(?:\s|$)/.test(normalized)
-    || /^node\s+tools\/autopilot-ledger\.ts\b/.test(normalized);
+    || (isNodeCommand(words[0]) && words[1] === "tools/autopilot-ledger.ts");
+}
+
+function bashMustFailClosedAsMutation(command: string): boolean {
+  const words = shellWords(command).map(normalizedCommandWord);
+  if (isNpmCommand(words[0])) {
+    return true;
+  }
+  if (!isNodeCommand(words[0])) {
+    return false;
+  }
+  return words.slice(1).some((word) => /^tools\/test-[a-z0-9-]+\.ts$/.test(word) || word.startsWith("tools/autopilot-ledger.ts") && word !== "tools/autopilot-ledger.ts");
 }
 
 function toolNameLooksMutating(tool: string): boolean {
@@ -258,6 +308,9 @@ function workerMutationPaths(tool: string, args: unknown): { paths: string[]; re
     if (bashLooksReadOnly(command)) {
       return { paths: [], readOnly: true, unclassified: false };
     }
+    if (bashMustFailClosedAsMutation(command)) {
+      return { paths: ["unclassified"], readOnly: false, unclassified: true };
+    }
     const cwd = typeof args.cwd === "string" && args.cwd.trim().length > 0 ? args.cwd : undefined;
     const workdir = typeof args.workdir === "string" && args.workdir.trim().length > 0 ? args.workdir : cwd;
     const paths = shellMutatingCandidatePaths(command, workdir);
@@ -303,8 +356,9 @@ export function guardAutopilotProtectedPathToolCall(tool: string, args: unknown)
     const cwd = typeof args.cwd === "string" && args.cwd.trim().length > 0 ? args.cwd : undefined;
     const workdir = typeof args.workdir === "string" && args.workdir.trim().length > 0 ? args.workdir : cwd;
     const protectedPaths = bashProtectedPathMentions(command, workdir).filter(protectedPath);
-    return protectedPaths.length > 0 && !bashLooksReadOnly(command)
-      ? block(protectedPaths, `${tool} cannot directly mutate protected Autopilot state paths`)
+    const indirectProtectedPath = bashHasIndirectProtectedPathConstruction(command, workdir);
+    return (protectedPaths.length > 0 || indirectProtectedPath) && !bashLooksReadOnly(command)
+      ? block(protectedPaths.length > 0 ? protectedPaths : ["unclassified"], `${tool} cannot directly mutate protected Autopilot state paths`)
       : allow(`${tool} command does not directly mutate protected Autopilot state paths`);
   }
 
