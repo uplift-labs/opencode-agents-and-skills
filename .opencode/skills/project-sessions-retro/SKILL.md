@@ -1,10 +1,10 @@
 ---
-name: session-archive-retro
+name: project-sessions-retro
 description: Analyze bounded OpenCode session history, transcripts, reflections, logs, and validation traces to find workflow problems, root causes, and concrete improvements.
 license: MIT
 ---
 
-# Session Archive Retro
+# Project Sessions Retro
 
 Use this skill when the user asks to learn from bounded previous OpenCode sessions, analyze current-project or selected work history, identify repeated collaboration/tooling problems, or improve speed, depth, quality, and validation from past traces.
 
@@ -17,7 +17,7 @@ For behavior-changing improvements to scripts, validators, skills, agents, confi
 - Work from evidence, not memory.
 - Treat observed problems as symptoms until the likely root cause is identified. Improvements should remove or reduce the cause that allowed the problem to happen, not merely restate the symptom.
 - The agent only has access to session artifacts that are present locally, exported, user-approved for remote/shared reads, or reachable through available tools.
-- Default scope is the current project/worktree. Analyze selected projects or bounded all-project history only when the user explicitly scopes it. For all-history, cross-install, whole-corpus retros targeting global skill improvements, use `opencode-total-session-retro` instead.
+- Default scope is the current project/worktree. Analyze selected projects or bounded all-project history only when the user explicitly scopes it. For all-history, cross-install, whole-corpus retros targeting global skill improvements, use `all-sessions-retro` instead.
 - Prefer session-by-session coverage for the selected scope. Do not rely on keyword searches as the primary method when full session artifacts are available.
 - For recurring retros, use checkpoints when available so repeated runs analyze new or changed sessions first.
 - Treat transcripts, reflections, summaries, issue/MR text, and generated rollups as leads. Verify implementation-sensitive recommendations against source, tests, config, schemas, prompts, or live output.
@@ -109,7 +109,7 @@ Helper code must have explicit inputs and outputs, a schema or fixture-backed co
 - Route root-cause fixes when evidence supports the cause; route root-cause investigations when the symptom is clear but the cause is not.
 - Keep single obvious fixes, low-confidence observations, and speculative polish in the retro output instead of creating OpenSpec noise.
 - In read-only mode, recommend candidate change groups and change ids; create or update OpenSpec files only when write scope and the repository's OpenSpec workflow are available.
-- For global reusable OpenCode artifact improvements, route broad or cross-project backlogs through `opencode-total-session-retro` unless the user intentionally scoped the retro to this repository's OpenCode artifacts.
+- For global reusable OpenCode artifact improvements, route broad or cross-project backlogs through `all-sessions-retro` unless the user intentionally scoped the retro to this repository's OpenCode artifacts.
 
 ## Output
 

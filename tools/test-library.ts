@@ -1482,7 +1482,7 @@ const tests: TestCase[] = [
       const result = invokeInstaller(["--dry-run", "--config-dir", configDir]);
       assertSuccess(result, "Installer dry-run should succeed.");
       assertOutputContains(result, "Install profile: all", "Default installer run should install all repo artifacts without profile selection.");
-      assertOutputContains(result, "skill opencode-total-session-retro", "Default installer run should include advanced skills.");
+      assertOutputContains(result, "skill all-sessions-retro", "Default installer run should include advanced skills.");
       assertOutputContains(result, "agent deployment-config-reviewer", "Default installer run should include advanced reviewers.");
       if (fs.existsSync(configDir)) {
         throw new Error(`Installer dry-run created config directory: ${configDir}`);
@@ -1500,10 +1500,10 @@ const tests: TestCase[] = [
         assertOutputContains(result, "skill adaptive-delivery", `${profile} should include the Universal Development Loop entrypoint.`);
         assertOutputContains(result, "agent code-quality-reviewer", `${profile} should include the core code-quality reviewer.`);
         if (profile === "advanced") {
-          assertOutputContains(result, "skill opencode-total-session-retro", "Advanced profile should include heavyweight retro skills.");
+          assertOutputContains(result, "skill all-sessions-retro", "Advanced profile should include heavyweight retro skills.");
           assertOutputContains(result, "agent deployment-config-reviewer", "Advanced profile should include advanced reviewers.");
         } else {
-          assertOutputExcludes(result, "skill opencode-total-session-retro", `${profile} should exclude heavyweight retro skills.`);
+          assertOutputExcludes(result, "skill all-sessions-retro", `${profile} should exclude heavyweight retro skills.`);
           assertOutputExcludes(result, "agent deployment-config-reviewer", `${profile} should exclude advanced reviewers.`);
         }
       }

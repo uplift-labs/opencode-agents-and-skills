@@ -1,10 +1,10 @@
 ---
-name: opencode-total-session-retro
+name: all-sessions-retro
 description: Analyze all reachable OpenCode sessions across projects and installs to synthesize trends, root causes, and, when authorized, design/apply improvements to global skills, agents, prompts, rules, validators, tools, and reusable instructions.
 license: MIT
 ---
 
-# OpenCode Total Session Retro
+# All Sessions Retro
 
 Use ONLY when the user asks to analyze all OpenCode sessions ever run, all reachable OpenCode history, cross-project session archives, or the whole personal/team OpenCode corpus to improve global skills, agents, prompts, `AGENTS.md`, validators, hooks, or reusable workflow artifacts.
 
@@ -26,7 +26,7 @@ For behavior-changing improvements to scripts, validators, skills, agents, confi
 
 ## Relationship To Nearby Skills
 
-- Use `session-archive-retro` for current-project, selected-project, or bounded session, transcript, reflection, and log retros.
+- Use `project-sessions-retro` for current-project, selected-project, or bounded session, transcript, reflection, and log retros.
 - Use this skill for whole-corpus OpenCode retros where the goal is improving global skills, agents, rules, prompts, guards, validators, or reusable OpenCode workflows.
 - Use `instruction-artifact-tuning` after this skill identifies concrete artifact edits that need focused review or implementation.
 
