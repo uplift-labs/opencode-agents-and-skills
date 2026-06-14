@@ -46,6 +46,7 @@
     "openspec-architecture-reviewer",
     "performance-reliability-reviewer",
     "protocol-api-reviewer",
+    "qwen-local-worker",
     "rust-concurrency-reviewer",
     "session-delivery-reviewer",
     "test-coverage-reviewer",

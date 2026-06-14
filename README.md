@@ -4,7 +4,7 @@ Installable OpenCode development kit for reusable AI-assisted engineering workfl
 
 ## What This Is
 
-`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer agents, project templates, instruction templates, and deterministic helper tools. Its purpose is to make work in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
+`opencode-dev-kit` packages reusable OpenCode skills, read-only reviewer and worker agents, project templates, instruction templates, and deterministic helper tools. Its purpose is to make work in other repositories faster, cheaper in tokens, and safer without creating a different workflow for every technology stack.
 
 The kit optimizes one process: gather evidence, prove current state, choose the smallest useful slice, work test-first when behavior changes, validate, run proportional reviewer gates, and hand off with residual risks.
 
@@ -21,7 +21,7 @@ Technology adapters may change commands and constraints, but not the loop.
 ## Contents
 
 - `.opencode/skills/`: reusable OpenCode skills.
-- `.opencode/agents/`: reusable read-only reviewer agents.
+- `.opencode/agents/`: reusable read-only reviewer and worker agents.
 - `instructions/`: copyable instruction templates for global/project `AGENTS.md`, reviewer contracts, evidence discipline, and porting.
 - `templates/`: project bootstrap and CI templates for applying the Universal Development Loop to another repository.
 - `profiles/`: install manifests that choose artifacts without creating separate workflows.
@@ -132,7 +132,7 @@ OpenCode agents are loaded from project or global agent folders. Copy selected f
 - Project: `.opencode/agents/<name>.md`
 - Global: `~/.config/opencode/agents/<name>.md`
 
-Copy only the reviewers that are useful for the target project. They are read-only leaf validators by default.
+Copy only the agents that are useful for the target project. They are read-only leaf validators or bounded read-only workers by default.
 
 ### Manual Commands
 
@@ -252,6 +252,7 @@ Routing and reviewer maps assume all/advanced artifacts; restricted profiles use
 - Several session-scoped follow-ups from an audit, retro, reviewer gate, broad discovery, or validation failure -> group them into lightweight OpenSpec changes with `openspec-propose` when OpenSpec exists or is approved and the advanced profile is available; otherwise return grouped continuation candidates.
 - Initial MR/PR title/body preparation -> `merge-request-author`; existing MR/PR checks, reviewer feedback, approvals, and outcome handling -> `merge-request-review-loop`.
 - Broad independent tracks -> `orchestrator` from the `advanced` profile only after bounded workstreams, success criteria, and validation evidence are clear; if it is unavailable, use the Universal Development Loop serially or return an orchestration follow-up candidate.
+- Bounded first-pass helper work that benefits from cheap/offline local context, such as long-context retrieval, JSON extraction, scoped review, test ideas, planning, or tool-call checks -> `qwen-local-worker` from the `advanced` profile when the target machine has a configured `qwen-local` provider.
 - Session delivery-control review for transcript/summary, compaction/resume continuity, user goal, changed files, and validation output -> `session-delivery-reviewer`.
 - Skills, agents, prompts, `AGENTS.md`, and other instruction artifacts -> `instruction-artifact-tuning`; bounded/current-project/selected-project OpenCode session, transcript, reflection, and log retros -> `session-archive-retro`; all-history/cross-install/whole-corpus retros targeting global skills, agents, prompts, rules, validators, tools, and reusable instructions -> `opencode-total-session-retro`; for broad audits also use `instruction-artifact-audit-runbook.md`; use `instruction-artifact-reviewer` as the read-only post-change gate.
 - Documentation review selection: use `documentation-learning-quest` for guided onboarding, `file-review-quest` for one-file block review, `documentation-hardening-loop` for non-trivial doc/spec hardening, `openspec-consistency-review` for OpenSpec synchronization, and `codebase-audit-loop` only for exhaustive codebase audits.
@@ -349,6 +350,7 @@ Before archiving a completed OpenSpec change, write `openspec/changes/<change-id
 - `performance-reliability-reviewer`: latency, throughput, starvation, overload, recovery evidence.
 - `deployment-config-reviewer`: config/deployment readiness and operational safety.
 - `protocol-api-reviewer`: framed/client API, schema evolution, correlation, reconnect.
+- `qwen-local-worker`: optional local Qwen3.6 first-pass helper for bounded long-context retrieval, JSON extraction, scoped review, test ideas, planning, and tool-call checks; requires a configured `qwen-local` OpenAI-compatible provider.
 - `wire-protocol-reviewer`: byte-level protocol/transport review.
 - `legacy-evidence-reviewer`: requirement/design verification against legacy evidence.
 - `legacy-client-compatibility-reviewer`: compatibility with legacy clients/tools/workflows.
